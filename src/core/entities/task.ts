@@ -31,6 +31,7 @@ export type Task = {
   lastTimerStoppedAt?: string;
   lastTimerDurationSeconds?: number;
   totalTrackedSeconds?: number;
+  isEstimateTemplateTask?: boolean;
   sharedRoles?: string[];
   createdBy: string;
   createdAt: string;

@@ -861,6 +861,9 @@ export default function Page() {
     try {
       if (selectedTask) {
         const previous = selectedTask;
+        const estimateFlag =
+          previous.isEstimateTemplateTask === true ||
+          previous.title.trim().toLowerCase() === 'estimate';
         const updated = await firebaseTaskRepository.update(selectedTask.id, {
           title: taskFormState.title.trim(),
           description: taskFormState.description.trim(),
@@ -871,6 +874,7 @@ export default function Page() {
           priority: taskFormState.priority,
           dueDate: taskFormState.dueDate,
           referenceModelNumber: taskFormState.referenceModelNumber.trim(),
+          isEstimateTemplateTask: estimateFlag,
           updatedAt: new Date().toISOString(),
         });
         const previousAssignees =
@@ -1021,6 +1025,7 @@ export default function Page() {
         parentTaskId: '',
         projectId: selectedProject.id,
         referenceModelNumber: '',
+        isEstimateTemplateTask: template.title.trim().toLowerCase() === 'estimate',
         sharedRoles: [],
         createdBy: user.id,
       });
@@ -1875,7 +1880,9 @@ export default function Page() {
                       projectTasks.map((task) => {
                         const assignees =
                           task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []);
-                        const isEstimateTask = task.title.trim().toLowerCase() === 'estimate';
+                        const isEstimateTask =
+                          task.isEstimateTemplateTask === true ||
+                          task.title.trim().toLowerCase() === 'estimate';
                         const canOpenPoFromEstimate =
                           isEstimateTask &&
                           canRequestPo &&
