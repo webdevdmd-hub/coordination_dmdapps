@@ -15,6 +15,7 @@ import { firebaseNotificationRepository } from '@/adapters/repositories/firebase
 import type { Notification } from '@/core/entities/notification';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { getPublicEnv } from '@/frameworks/firebase/config';
 import { listenForForegroundMessages, requestPushToken } from '@/frameworks/firebase/messaging';
 
 type NotificationContextValue = {
@@ -127,7 +128,7 @@ function NotificationProviderInner({
       if (!('serviceWorker' in navigator)) {
         return;
       }
-      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ?? '';
+      const vapidKey = getPublicEnv('NEXT_PUBLIC_FIREBASE_VAPID_KEY');
       if (!vapidKey) {
         return;
       }
@@ -200,7 +201,7 @@ function NotificationProviderInner({
     if (permission !== 'granted') {
       return;
     }
-    const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ?? '';
+    const vapidKey = getPublicEnv('NEXT_PUBLIC_FIREBASE_VAPID_KEY');
     if (!vapidKey) {
       return;
     }
