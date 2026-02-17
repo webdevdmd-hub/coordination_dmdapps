@@ -1,0 +1,38 @@
+export type TaskStatus = 'todo' | 'in-progress' | 'review' | 'done';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export type Task = {
+  id: string;
+  title: string;
+  description: string;
+  assignedTo: string;
+  assignedUsers?: string[];
+  status: TaskStatus;
+  priority: TaskPriority;
+  recurrence: TaskRecurrence;
+  startDate: string;
+  endDate: string;
+  dueDate: string;
+  parentTaskId?: string;
+  projectId?: string;
+  leadId?: string;
+  leadReference?: string;
+  quotationRequestId?: string;
+  quotationRequestTaskId?: string;
+  rfqTag?: string;
+  quotationNumber?: string;
+  recurrence_type?: TaskRecurrence;
+  is_all_day?: boolean;
+  startTime?: string;
+  endTime?: string;
+  referenceModelNumber?: string;
+  timerStartedAt?: string;
+  lastTimerStoppedAt?: string;
+  lastTimerDurationSeconds?: number;
+  totalTrackedSeconds?: number;
+  sharedRoles?: string[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};

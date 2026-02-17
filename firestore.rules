@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isAuthed() && request.auth.uid == ownerId;
+    }
+
+    // Notifications: users can only read their own and mark read.
+    match /notifications/{notificationId} {
+      allow read: if isAuthed() && resource.data.userId == request.auth.uid;
+      allow create, delete: if false;
+      allow update: if isAuthed()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+    }
+
+    // Notification events: clients can only create events for themselves.
+    match /notificationEvents/{eventId} {
+      allow create: if isAuthed()
+        && request.resource.data.actorId == request.auth.uid
+        && (
+          request.resource.data.broadcast == true
+          || (request.resource.data.recipients is list
+            && request.resource.data.recipients.size() > 0)
+        );
+      allow read, update, delete: if false;
+    }
+
+    // Push tokens per user.
+    match /userDevices/{userId} {
+      allow read, write: if isOwner(userId);
+      match /tokens/{tokenId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Core app collections (authenticated users only).
+    match /users/{userId} {
+      allow read, write: if isAuthed();
+    }
+    match /roles/{roleId} {
+      allow read, write: if isAuthed();
+    }
+    match /tasks/{taskId} {
+      allow read, write: if isAuthed();
+    }
+    match /sales/{namespaceId}/customers/{customerId} {
+      allow read, write: if isAuthed();
+    }
+    match /sales/{namespaceId}/projects/{projectId} {
+      allow read, write: if isAuthed();
+      match /activities/{activityId} {
+        allow read, write: if isAuthed();
+      }
+    }
+    match /sales/{namespaceId}/quotation_requests/{requestId} {
+      allow read, write: if isAuthed();
+      match /tasks/{taskId} {
+        allow read, write: if isAuthed();
+      }
+    }
+    match /sales/{namespaceId}/quatations/{quotationId} {
+      allow read, write: if isAuthed();
+    }
+    match /crm/{namespaceId}/crm_leads/{leadId} {
+      allow read, write: if isAuthed();
+      match /activities/{activityId} {
+        allow read, write: if isAuthed();
+      }
+    }
+    match /crm/{namespaceId}/crm_calendar/{calendarId} {
+      allow read, write: if isAuthed();
+    }
+    match /crm/{namespaceId}/lead_sources/{sourceId} {
+      allow read, write: if isAuthed();
+    }
+    match /accounts/{namespaceId}/po_requests/{requestId} {
+      allow read, write: if isAuthed();
+    }
+  }
+}
