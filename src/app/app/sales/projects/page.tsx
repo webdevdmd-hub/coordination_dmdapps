@@ -1803,6 +1803,15 @@ export default function Page() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-3">
+                      {canRequestPo && (isAdmin || selectedProject.assignedTo === user?.id) ? (
+                        <button
+                          type="button"
+                          onClick={handleOpenPoModal}
+                          className="rounded-full border border-border/60 bg-surface/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80"
+                        >
+                          Request PO
+                        </button>
+                      ) : null}
                       {canEdit && (isAdmin || selectedProject.assignedTo === user?.id) ? (
                         <button
                           type="button"
@@ -1838,34 +1847,17 @@ export default function Page() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {taskTemplates.map((template) => {
-                      const isEstimate = template.title === 'Estimate';
-                      if (isEstimate) {
-                        const canOpenPo = canRequestPo && (isAdmin || selectedProject.assignedTo === user?.id);
-                        return (
-                          <button
-                            key={template.title}
-                            type="button"
-                            onClick={handleOpenPoModal}
-                            disabled={!canOpenPo}
-                            className="rounded-full border border-border/60 bg-surface/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Request PO
-                          </button>
-                        );
-                      }
-                      return (
-                        <button
-                          key={template.title}
-                          type="button"
-                          onClick={() => handleCreateFromTemplate(template)}
-                          disabled={!canCreateTasks}
-                          className="rounded-full border border-border/60 bg-surface/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {template.title}
-                        </button>
-                      );
-                    })}
+                    {taskTemplates.map((template) => (
+                      <button
+                        key={template.title}
+                        type="button"
+                        onClick={() => handleCreateFromTemplate(template)}
+                        disabled={!canCreateTasks}
+                        className="rounded-full border border-border/60 bg-surface/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {template.title}
+                      </button>
+                    ))}
                   </div>
 
                   {taskError ? (
@@ -1883,6 +1875,11 @@ export default function Page() {
                       projectTasks.map((task) => {
                         const assignees =
                           task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []);
+                        const isEstimateTask = task.title.trim().toLowerCase() === 'estimate';
+                        const canOpenPoFromEstimate =
+                          isEstimateTask &&
+                          canRequestPo &&
+                          (isAdmin || selectedProject.assignedTo === user?.id);
                         return (
                           <div
                             key={task.id}
@@ -1925,6 +1922,15 @@ export default function Page() {
                               </div>
                             </div>
                             <div className="mt-3 flex flex-wrap items-center gap-2">
+                              {canOpenPoFromEstimate ? (
+                                <button
+                                  type="button"
+                                  onClick={handleOpenPoModal}
+                                  className="rounded-full border border-border/60 bg-surface/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
+                                >
+                                  Request PO
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => handleOpenTaskModal(task)}
