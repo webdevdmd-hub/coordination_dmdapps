@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { FirebaseError } from 'firebase/app';
 
 import Image from 'next/image';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { establishServerSession, signInWithEmail } from '@/frameworks/firebase/auth';
@@ -32,7 +32,6 @@ const getSignInErrorMessage = (code: string, fallback: string) => {
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -47,7 +46,10 @@ export default function LoginPage() {
       const credential = await signInWithEmail(email.trim(), password);
       const idToken = await credential.user.getIdToken();
       await establishServerSession(idToken);
-      const nextPath = searchParams.get('next');
+      const nextPath =
+        typeof window === 'undefined'
+          ? null
+          : new URLSearchParams(window.location.search).get('next');
       router.push(nextPath && nextPath.startsWith('/app') ? nextPath : '/app');
     } catch (err) {
       const errorCode =
