@@ -679,7 +679,7 @@ export default function Page() {
         return;
       }
       const idToken = await currentUser.getIdToken();
-      const response = await fetch('/api/sales-order/po-requests', {
+      const response = await fetch('/api/sales-order/sales-order-requests', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1756,7 +1756,7 @@ export default function Page() {
                           onClick={handleOpenPoModal}
                           className="rounded-full border border-border/60 bg-surface/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80"
                         >
-                          Request PO
+                          Sales Order Req
                         </button>
                       ) : null}
                       {canEdit && (isAdmin || selectedProject.assignedTo === user?.id) ? (
@@ -1877,7 +1877,7 @@ export default function Page() {
                                   onClick={handleOpenPoModal}
                                   className="rounded-full border border-border/60 bg-surface/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
                                 >
-                                  Request PO
+                                  Sales Order Req
                                 </button>
                               ) : null}
                               <button
