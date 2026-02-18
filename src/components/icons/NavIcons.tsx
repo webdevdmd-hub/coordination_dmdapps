@@ -17,7 +17,7 @@ export type NavIconName =
   | 'quotationRequests'
   | 'quotations'
   | 'invoices'
-  | 'accounts'
+  | 'salesOrder'
   | 'store'
   | 'procurement'
   | 'logistics'
@@ -131,7 +131,7 @@ const icons: Record<NavIconName, (props: IconProps) => React.ReactElement> = {
       <path d="M14.5 16.5h.01" />
     </svg>
   ),
-  accounts: ({ className }) => (
+  salesOrder: ({ className }) => (
     <svg {...baseProps} className={className} aria-hidden="true">
       <path d="M4 8h16a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
       <path d="M4 8V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v1" />

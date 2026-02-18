@@ -72,7 +72,7 @@ export const toPermissions = (value: unknown): PermissionKey[] => {
         'invoices_view',
         'sales',
         'operations',
-        'accounts',
+        'sales_order',
         'store',
         'procurement',
         'logistics',
@@ -83,10 +83,16 @@ export const toPermissions = (value: unknown): PermissionKey[] => {
       ] as PermissionKey[]
     ).forEach((permission) => permissionSet.add(permission));
   }
-  return value.filter(
-    (item): item is PermissionKey =>
-      typeof item === 'string' && permissionSet.has(item as PermissionKey),
-  );
+  return value.reduce<PermissionKey[]>((acc, item) => {
+    if (typeof item !== 'string') {
+      return acc;
+    }
+    const normalized = item === 'accounts' ? 'sales_order' : item;
+    if (permissionSet.has(normalized as PermissionKey)) {
+      acc.push(normalized as PermissionKey);
+    }
+    return acc;
+  }, []);
 };
 
 export const fetchRoleSummaries = async (): Promise<RoleSummary[]> => {

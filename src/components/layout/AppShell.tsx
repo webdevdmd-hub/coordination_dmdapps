@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith('/app/sales/quotation-requests')) return 'Quotation Requests';
     if (pathname.startsWith('/app/sales/quotations')) return 'Quotations';
     if (pathname.startsWith('/app/sales/invoices')) return 'Invoices';
-    if (pathname.startsWith('/app/accounts')) return 'Accounts';
+    if (pathname.startsWith('/app/sales-order')) return 'Sales Order';
     if (pathname.startsWith('/app/store')) return 'Store';
     if (pathname.startsWith('/app/procurement')) return 'Procurement';
     if (pathname.startsWith('/app/logistics')) return 'Logistics';

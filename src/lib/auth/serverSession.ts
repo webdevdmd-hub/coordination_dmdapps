@@ -46,18 +46,21 @@ const resolveRolePermissions = async (
   const db = getFirebaseAdminDb();
   const byKey = await db.collection('roles').where('key', '==', normalized).limit(1).get();
   if (!byKey.empty) {
-    const permissions = ((byKey.docs[0]?.data().permissions ?? []) as PermissionKey[]).filter(
-      (permission) => ALL_PERMISSIONS.includes(permission),
-    );
+    const permissions = ((byKey.docs[0]?.data().permissions ?? []) as string[])
+      .map((permission) => (permission === 'accounts' ? 'sales_order' : permission))
+      .filter((permission): permission is PermissionKey => ALL_PERMISSIONS.includes(permission as PermissionKey));
     cache.set(normalized, permissions);
     return permissions;
   }
 
   const byId = await db.collection('roles').doc(normalized).get();
   if (byId.exists) {
-    const permissions = (((byId.data()?.permissions as PermissionKey[]) ?? []) as PermissionKey[]).filter(
-      (permission) => ALL_PERMISSIONS.includes(permission),
-    );
+    const permissions = ((((byId.data()?.permissions as string[]) ?? []) as string[])
+      .map((permission) => (permission === 'accounts' ? 'sales_order' : permission))
+      .filter(
+        (permission): permission is PermissionKey =>
+          ALL_PERMISSIONS.includes(permission as PermissionKey),
+      ));
     cache.set(normalized, permissions);
     return permissions;
   }

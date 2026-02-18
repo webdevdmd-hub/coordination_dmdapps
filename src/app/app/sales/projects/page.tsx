@@ -675,11 +675,11 @@ export default function Page() {
       const auth = getFirebaseAuth();
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        setPoError('You must be signed in to submit PO requests.');
+        setPoError('You must be signed in to submit Sales Order Reqs.');
         return;
       }
       const idToken = await currentUser.getIdToken();
-      const response = await fetch('/api/accounts/po-requests', {
+      const response = await fetch('/api/sales-order/po-requests', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -696,15 +696,15 @@ export default function Page() {
       });
       const data = (await response.json()) as { error?: string; requestNo?: string };
       if (!response.ok) {
-        setPoError(data.error ?? 'Unable to submit PO request.');
+        setPoError(data.error ?? 'Unable to submit Sales Order Req.');
         return;
       }
 
-      const requestNo = data.requestNo ?? 'PO request';
+      const requestNo = data.requestNo ?? 'Sales Order Req';
       setPoSuccess(`${requestNo} submitted for approval.`);
       setPoFormState(emptyPoForm());
     } catch {
-      setPoError('Unable to submit PO request. Please try again.');
+      setPoError('Unable to submit Sales Order Req. Please try again.');
     } finally {
       setIsPoSubmitting(false);
     }
@@ -2147,13 +2147,13 @@ export default function Page() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
-                  Purchase order request
+                  Sales Order Req
                 </p>
                 <h3 className="mt-2 font-display text-xl text-text sm:text-2xl">
                   Request for {selectedProject.name}
                 </h3>
                 <p className="mt-2 text-xs text-muted sm:text-sm">
-                  Submit estimate and PO details to Accounts for approval.
+                  Submit estimate and PO details to Sales Order for approval.
                 </p>
               </div>
               <button

@@ -59,7 +59,7 @@ export type PermissionKey =
   | 'invoices_view'
   | 'sales'
   | 'operations'
-  | 'accounts'
+  | 'sales_order'
   | 'store'
   | 'procurement'
   | 'logistics'
@@ -129,7 +129,7 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'invoices_view',
   'sales',
   'operations',
-  'accounts',
+  'sales_order',
   'store',
   'procurement',
   'logistics',

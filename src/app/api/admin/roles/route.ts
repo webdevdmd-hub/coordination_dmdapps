@@ -43,6 +43,22 @@ const toRoleKey = (name: string) =>
     .replace(/^-+|-+$/g, '');
 
 const ADMIN_ROLE_KEY = 'admin';
+const normalizePermission = (permission: string) =>
+  permission === 'accounts' ? 'sales_order' : permission;
+const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
+  Array.from(
+    new Set(
+      Array.isArray(permissions)
+        ? permissions
+            .filter((permission): permission is string => typeof permission === 'string')
+            .map((permission) => normalizePermission(permission))
+            .filter(
+              (permission): permission is PermissionKey =>
+                ALL_PERMISSIONS.includes(permission as PermissionKey),
+            )
+        : [],
+    ),
+  );
 
 export async function GET(request: Request) {
   const authError = await requireAdmin(request);
@@ -66,6 +82,7 @@ export async function GET(request: Request) {
       return {
         id: doc.id,
         ...data,
+        permissions: toKnownPermissions(data.permissions),
       };
     });
     return NextResponse.json({ roles }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
@@ -151,9 +168,7 @@ export async function PATCH(request: Request) {
 
   const updates: Record<string, unknown> = {};
   if (payload.permissions !== undefined) {
-    updates.permissions = Array.from(
-      new Set(payload.permissions.filter((permission) => ALL_PERMISSIONS.includes(permission))),
-    );
+    updates.permissions = toKnownPermissions(payload.permissions);
   }
   if (typeof payload.description === 'string') {
     updates.description = payload.description.trim();

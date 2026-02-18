@@ -17,9 +17,9 @@ const toPurchaseOrderRequest = (
   ...data,
 });
 
-const ACCOUNTS_NAMESPACE_ID = 'main';
+const SALES_ORDER_NAMESPACE_ID = 'main';
 const poRequestsCollection = () =>
-  collection(getFirebaseDb(), 'accounts', ACCOUNTS_NAMESPACE_ID, 'po_requests');
+  collection(getFirebaseDb(), 'sales_order', SALES_ORDER_NAMESPACE_ID, 'po_requests');
 
 export const firebasePurchaseOrderRequestRepository: PurchaseOrderRequestRepository = {
   async listAll() {

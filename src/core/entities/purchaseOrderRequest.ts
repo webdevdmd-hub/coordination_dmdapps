@@ -31,7 +31,7 @@ export type PurchaseOrderRequest = {
   poDate: string;
   status: PurchaseOrderRequestStatus;
   approval?: PurchaseOrderApproval;
-  accountsEntryId?: string;
+  salesOrderEntryId?: string;
   createdAt: string;
   updatedAt: string;
 };

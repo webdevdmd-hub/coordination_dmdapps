@@ -35,10 +35,16 @@ const toPermissions = (value: unknown): PermissionKey[] => {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter(
-    (item): item is PermissionKey =>
-      typeof item === 'string' && permissionSet.has(item as PermissionKey),
-  );
+  return value.reduce<PermissionKey[]>((acc, item) => {
+    if (typeof item !== 'string') {
+      return acc;
+    }
+    const normalized = item === 'accounts' ? 'sales_order' : item;
+    if (permissionSet.has(normalized as PermissionKey)) {
+      acc.push(normalized as PermissionKey);
+    }
+    return acc;
+  }, []);
 };
 
 const getRolePermissions = async (roleKey: string): Promise<PermissionKey[]> => {

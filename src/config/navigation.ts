@@ -108,7 +108,12 @@ export const navigation: NavSection[] = [
   {
     title: 'Operations',
     items: [
-      { label: 'Accounts', href: '/app/accounts', permissions: ['accounts'], icon: 'accounts' },
+      {
+        label: 'Sales Order',
+        href: '/app/sales-order',
+        permissions: ['sales_order'],
+        icon: 'salesOrder',
+      },
       { label: 'Store', href: '/app/store', permissions: ['store'], icon: 'store' },
       {
         label: 'Procurement',
