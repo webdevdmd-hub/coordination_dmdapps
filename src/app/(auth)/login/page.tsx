@@ -5,10 +5,10 @@ import { useState } from 'react';
 import { FirebaseError } from 'firebase/app';
 
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
-import { signInWithEmail } from '@/frameworks/firebase/auth';
+import { establishServerSession, signInWithEmail } from '@/frameworks/firebase/auth';
 
 const getSignInErrorMessage = (code: string, fallback: string) => {
   switch (code) {
@@ -32,6 +32,7 @@ const getSignInErrorMessage = (code: string, fallback: string) => {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -43,8 +44,11 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await signInWithEmail(email.trim(), password);
-      router.push('/app');
+      const credential = await signInWithEmail(email.trim(), password);
+      const idToken = await credential.user.getIdToken();
+      await establishServerSession(idToken);
+      const nextPath = searchParams.get('next');
+      router.push(nextPath && nextPath.startsWith('/app') ? nextPath : '/app');
     } catch (err) {
       const errorCode =
         err instanceof FirebaseError ? err.code : ((err as { code?: string })?.code ?? 'unknown');

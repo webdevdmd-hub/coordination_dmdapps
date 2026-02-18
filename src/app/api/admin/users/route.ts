@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import type { UserRole } from '@/core/entities/user';
 import { getFirebaseAdminAuth, getFirebaseAdminDb } from '@/frameworks/firebase/admin';
+import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,20 @@ type CreateUserRequest = {
 
 const toErrorResponse = (message: string, status = 400) =>
   NextResponse.json({ error: message }, { status });
+
+const requireAdmin = async (request: Request) => {
+  const authedUser = await getAuthedUserFromSession(request);
+  if (!authedUser) {
+    return toErrorResponse('Unauthorized.', 401);
+  }
+  if (!authedUser.active) {
+    return toErrorResponse('Your account is inactive.', 403);
+  }
+  if (!authedUser.permissions.includes('admin')) {
+    return toErrorResponse('Forbidden.', 403);
+  }
+  return null;
+};
 
 const resolveRoleKey = async (roleInput: string) => {
   const trimmed = roleInput.trim();
@@ -47,6 +62,11 @@ const resolveRoleKey = async (roleInput: string) => {
 };
 
 export async function POST(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   let payload: CreateUserRequest;
   try {
     payload = (await request.json()) as CreateUserRequest;
@@ -115,7 +135,12 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   const db = getFirebaseAdminDb();
 
   try {
@@ -131,6 +156,11 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   let payload: Partial<CreateUserRequest> & { id?: string };
   try {
     payload = (await request.json()) as Partial<CreateUserRequest> & {
@@ -186,6 +216,11 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   let payload: { id?: string };
   try {
     payload = (await request.json()) as { id?: string };

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { ALL_PERMISSIONS } from '@/core/entities/permissions';
 import type { PermissionKey } from '@/core/entities/permissions';
 import { getFirebaseAdminDb } from '@/frameworks/firebase/admin';
+import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +21,20 @@ type UpdateRoleRequest = {
 const toErrorResponse = (message: string, status = 400) =>
   NextResponse.json({ error: message }, { status });
 
+const requireAdmin = async (request: Request) => {
+  const authedUser = await getAuthedUserFromSession(request);
+  if (!authedUser) {
+    return toErrorResponse('Unauthorized.', 401);
+  }
+  if (!authedUser.active) {
+    return toErrorResponse('Your account is inactive.', 403);
+  }
+  if (!authedUser.permissions.includes('admin')) {
+    return toErrorResponse('Forbidden.', 403);
+  }
+  return null;
+};
+
 const toRoleKey = (name: string) =>
   name
     .trim()
@@ -29,7 +44,12 @@ const toRoleKey = (name: string) =>
 
 const ADMIN_ROLE_KEY = 'admin';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   const db = getFirebaseAdminDb();
 
   try {
@@ -55,6 +75,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   let payload: CreateRoleRequest;
   try {
     payload = (await request.json()) as CreateRoleRequest;
@@ -104,6 +129,11 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const authError = await requireAdmin(request);
+  if (authError) {
+    return authError;
+  }
+
   let payload: UpdateRoleRequest;
   try {
     payload = (await request.json()) as UpdateRoleRequest;

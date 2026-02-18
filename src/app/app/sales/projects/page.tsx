@@ -105,21 +105,12 @@ type ProjectTaskFormState = {
   referenceModelNumber: string;
 };
 
-type PoLineItemFormState = {
-  description: string;
-  qty: string;
-  unitPrice: string;
-  taxRate: string;
-  notes: string;
-};
-
 type PoRequestFormState = {
-  vendorId: string;
-  vendorName: string;
-  currency: string;
-  dueDate: string;
-  notes: string;
-  lineItems: PoLineItemFormState[];
+  estimateNumber: string;
+  estimateAmount: string;
+  poNumber: string;
+  poAmount: string;
+  poDate: string;
 };
 
 type ProjectActivity = {
@@ -133,21 +124,12 @@ type ProjectActivity = {
 const TIMELINE_PAGE_SIZE = 12;
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
-const emptyPoLineItem = (): PoLineItemFormState => ({
-  description: '',
-  qty: '1',
-  unitPrice: '',
-  taxRate: '0',
-  notes: '',
-});
-
 const emptyPoForm = (): PoRequestFormState => ({
-  vendorId: '',
-  vendorName: '',
-  currency: 'AED',
-  dueDate: '',
-  notes: '',
-  lineItems: [emptyPoLineItem()],
+  estimateNumber: '',
+  estimateAmount: '',
+  poNumber: '',
+  poAmount: '',
+  poDate: todayKey(),
 });
 
 const formatDate = (value: string) => {
@@ -654,74 +636,35 @@ export default function Page() {
     setIsPoModalOpen(true);
   };
 
-  const handleAddPoLineItem = () => {
-    setPoFormState((prev) => ({
-      ...prev,
-      lineItems: [...prev.lineItems, emptyPoLineItem()],
-    }));
-  };
-
-  const handleRemovePoLineItem = (index: number) => {
-    setPoFormState((prev) => {
-      if (prev.lineItems.length <= 1) {
-        return prev;
-      }
-      return {
-        ...prev,
-        lineItems: prev.lineItems.filter((_, itemIndex) => itemIndex !== index),
-      };
-    });
-  };
-
-  const handlePoLineItemChange = (
-    index: number,
-    field: keyof PoLineItemFormState,
-    value: string,
-  ) => {
-    setPoFormState((prev) => ({
-      ...prev,
-      lineItems: prev.lineItems.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, [field]: value } : item,
-      ),
-    }));
-  };
-
   const handleSubmitPoRequest = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || !selectedProject || !canRequestPo) {
       return;
     }
-    const vendorName = poFormState.vendorName.trim();
-    if (!vendorName) {
-      setPoError('Vendor name is required.');
+    const estimateNumber = poFormState.estimateNumber.trim();
+    const poNumber = poFormState.poNumber.trim();
+    const poDate = poFormState.poDate.trim();
+    const estimateAmount = Number(poFormState.estimateAmount);
+    const poAmount = Number(poFormState.poAmount);
+
+    if (!estimateNumber) {
+      setPoError('Estimate number is required.');
       return;
     }
-    const normalizedItems = poFormState.lineItems.map((item) => {
-      const qty = Number(item.qty);
-      const unitPrice = Number(item.unitPrice);
-      const taxRate = Number(item.taxRate || '0');
-      return {
-        description: item.description.trim(),
-        qty,
-        unitPrice,
-        taxRate,
-        notes: item.notes.trim(),
-      };
-    });
-    if (normalizedItems.some((item) => !item.description)) {
-      setPoError('Each line item needs a description.');
+    if (!Number.isFinite(estimateAmount) || estimateAmount <= 0) {
+      setPoError('Estimate amount must be greater than 0.');
       return;
     }
-    if (normalizedItems.some((item) => !Number.isFinite(item.qty) || item.qty <= 0)) {
-      setPoError('Each line item needs quantity greater than 0.');
+    if (!poNumber) {
+      setPoError('PO number is required.');
       return;
     }
-    if (normalizedItems.some((item) => !Number.isFinite(item.unitPrice) || item.unitPrice < 0)) {
-      setPoError('Each line item needs unit price of 0 or more.');
+    if (!Number.isFinite(poAmount) || poAmount <= 0) {
+      setPoError('PO amount must be greater than 0.');
       return;
     }
-    if (normalizedItems.some((item) => !Number.isFinite(item.taxRate) || item.taxRate < 0)) {
-      setPoError('Tax rate cannot be negative.');
+    if (!poDate) {
+      setPoError('Date of the PO is required.');
       return;
     }
 
@@ -744,12 +687,11 @@ export default function Page() {
         },
         body: JSON.stringify({
           projectId: selectedProject.id,
-          vendorId: poFormState.vendorId.trim(),
-          vendorName,
-          currency: poFormState.currency.trim().toUpperCase() || 'AED',
-          dueDate: poFormState.dueDate,
-          notes: poFormState.notes.trim(),
-          lineItems: normalizedItems,
+          estimateNumber,
+          estimateAmount,
+          poNumber,
+          poAmount,
+          poDate,
         }),
       });
       const data = (await response.json()) as { error?: string; requestNo?: string };
@@ -2211,7 +2153,7 @@ export default function Page() {
                   Request for {selectedProject.name}
                 </h3>
                 <p className="mt-2 text-xs text-muted sm:text-sm">
-                  Submit line items to Accounts for approval.
+                  Submit estimate and PO details to Accounts for approval.
                 </p>
               </div>
               <button
@@ -2230,29 +2172,33 @@ export default function Page() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Vendor name
+                    Estimate number
                   </label>
                   <input
                     required
-                    value={poFormState.vendorName}
+                    value={poFormState.estimateNumber}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, vendorName: event.target.value }))
+                      setPoFormState((prev) => ({ ...prev, estimateNumber: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                    placeholder="Vendor LLC"
+                    placeholder="EST-2026-001"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Vendor ID (optional)
+                    Estimate amount
                   </label>
                   <input
-                    value={poFormState.vendorId}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    value={poFormState.estimateAmount}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, vendorId: event.target.value }))
+                      setPoFormState((prev) => ({ ...prev, estimateAmount: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                    placeholder="SUP-1002"
+                    placeholder="15000"
                   />
                 </div>
               </div>
@@ -2260,126 +2206,49 @@ export default function Page() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Currency
+                    PO number
                   </label>
                   <input
-                    value={poFormState.currency}
+                    required
+                    value={poFormState.poNumber}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, currency: event.target.value }))
+                      setPoFormState((prev) => ({ ...prev, poNumber: event.target.value }))
                     }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm uppercase text-text outline-none"
-                    placeholder="AED"
-                    maxLength={8}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="PO-2026-015"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Needed by (optional)
+                    PO amount
                   </label>
                   <input
-                    type="date"
-                    value={poFormState.dueDate}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    value={poFormState.poAmount}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, dueDate: event.target.value }))
+                      setPoFormState((prev) => ({ ...prev, poAmount: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="17500"
                   />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-border/60 bg-bg/70 p-3 sm:p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Line items
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleAddPoLineItem}
-                    className="rounded-full border border-border/60 bg-surface/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
-                  >
-                    Add line
-                  </button>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {poFormState.lineItems.map((item, index) => (
-                    <div key={`po-line-${index}`} className="rounded-2xl border border-border/60 p-3">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <input
-                          required
-                          value={item.description}
-                          onChange={(event) =>
-                            handlePoLineItemChange(index, 'description', event.target.value)
-                          }
-                          className="w-full rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-sm text-text outline-none"
-                          placeholder="Description"
-                        />
-                        <input
-                          value={item.notes}
-                          onChange={(event) =>
-                            handlePoLineItemChange(index, 'notes', event.target.value)
-                          }
-                          className="w-full rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-sm text-text outline-none"
-                          placeholder="Line note (optional)"
-                        />
-                      </div>
-                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          required
-                          value={item.qty}
-                          onChange={(event) => handlePoLineItemChange(index, 'qty', event.target.value)}
-                          className="w-full rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-sm text-text outline-none"
-                          placeholder="Qty"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          required
-                          value={item.unitPrice}
-                          onChange={(event) =>
-                            handlePoLineItemChange(index, 'unitPrice', event.target.value)
-                          }
-                          className="w-full rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-sm text-text outline-none"
-                          placeholder="Unit price"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.taxRate}
-                          onChange={(event) =>
-                            handlePoLineItemChange(index, 'taxRate', event.target.value)
-                          }
-                          className="w-full rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-sm text-text outline-none"
-                          placeholder="Tax %"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePoLineItem(index)}
-                          disabled={poFormState.lineItems.length <= 1}
-                          className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
 
               <div>
                 <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Request notes (optional)
+                  Date of the PO
                 </label>
-                <textarea
-                  value={poFormState.notes}
+                <input
+                  type="date"
+                  required
+                  value={poFormState.poDate}
                   onChange={(event) =>
-                    setPoFormState((prev) => ({ ...prev, notes: event.target.value }))
+                    setPoFormState((prev) => ({ ...prev, poDate: event.target.value }))
                   }
-                  className="mt-2 min-h-[100px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                 />
               </div>
 

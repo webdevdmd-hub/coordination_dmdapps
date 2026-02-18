@@ -1,11 +1,12 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, onIdTokenChanged, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 
 import { ALL_PERMISSIONS, PermissionKey } from '@/core/entities/permissions';
 import { UserRole } from '@/core/entities/user';
+import { clearServerSession, establishServerSession } from '@/frameworks/firebase/auth';
 import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
 
 type UserProfile = {
@@ -122,6 +123,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPermissionsSyncedAt(null);
       } finally {
         setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const auth = getFirebaseAuth();
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        await clearServerSession();
+        return;
+      }
+
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        await establishServerSession(idToken);
+      } catch {
+        await clearServerSession();
       }
     });
 

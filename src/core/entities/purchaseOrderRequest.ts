@@ -5,16 +5,6 @@ export type PurchaseOrderRequestStatus =
   | 'rejected'
   | 'cancelled';
 
-export type PurchaseOrderLineItem = {
-  description: string;
-  qty: number;
-  unitPrice: number;
-  taxRate: number;
-  taxAmount: number;
-  lineTotal: number;
-  notes?: string;
-};
-
 export type PurchaseOrderApproval = {
   approvedBy?: string;
   approvedByName?: string;
@@ -34,16 +24,12 @@ export type PurchaseOrderRequest = {
   customerName: string;
   requestedBy: string;
   requestedByName: string;
-  vendorId?: string;
-  vendorName: string;
-  currency: string;
-  lineItems: PurchaseOrderLineItem[];
-  subtotal: number;
-  taxAmount: number;
-  total: number;
-  notes: string;
+  estimateNumber: string;
+  estimateAmount: number;
+  poNumber: string;
+  poAmount: number;
+  poDate: string;
   status: PurchaseOrderRequestStatus;
-  dueDate?: string;
   approval?: PurchaseOrderApproval;
   accountsEntryId?: string;
   createdAt: string;

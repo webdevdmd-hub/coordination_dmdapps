@@ -1,26 +1,18 @@
 import { NextResponse } from 'next/server';
 
 import { ALL_PERMISSIONS, PermissionKey } from '@/core/entities/permissions';
-import { getFirebaseAdminAuth, getFirebaseAdminDb } from '@/frameworks/firebase/admin';
+import { getFirebaseAdminDb } from '@/frameworks/firebase/admin';
+import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
 
 export const runtime = 'nodejs';
 
-type CreatePoRequestLineItem = {
-  description?: string;
-  qty?: number;
-  unitPrice?: number;
-  taxRate?: number;
-  notes?: string;
-};
-
 type CreatePoRequestPayload = {
   projectId?: string;
-  vendorId?: string;
-  vendorName?: string;
-  currency?: string;
-  lineItems?: CreatePoRequestLineItem[];
-  notes?: string;
-  dueDate?: string;
+  estimateNumber?: string;
+  estimateAmount?: number;
+  poNumber?: string;
+  poAmount?: number;
+  poDate?: string;
 };
 
 const SALES_NAMESPACE_ID = 'main';
@@ -36,7 +28,7 @@ const toFiniteNumber = (value: unknown) => {
   return value;
 };
 
-const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+const roundAmount = (value: number) => Math.round(value * 100) / 100;
 
 const resolveRolePermissions = async (
   roleKey: string,
@@ -77,27 +69,6 @@ const resolveRolePermissions = async (
   return [];
 };
 
-const getAuthedUser = async (request: Request) => {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization') ?? '';
-  const parts = header.split(' ');
-  if (parts.length !== 2 || parts[0]?.toLowerCase() !== 'bearer' || !parts[1]) {
-    return null;
-  }
-  const token = parts[1];
-  const decoded = await getFirebaseAdminAuth().verifyIdToken(token);
-  const userSnap = await getFirebaseAdminDb().collection('users').doc(decoded.uid).get();
-  if (!userSnap.exists) {
-    return null;
-  }
-  const data = userSnap.data() as Record<string, unknown>;
-  return {
-    id: decoded.uid,
-    fullName: String(data.fullName ?? decoded.name ?? 'User'),
-    active: Boolean(data.active ?? true),
-    roleKey: String(data.role ?? '').trim().toLowerCase(),
-  };
-};
-
 const buildRequestNo = (id: string, nowIso: string) => {
   const ymd = nowIso.slice(0, 10).replace(/-/g, '');
   return `POR-${ymd}-${id.slice(0, 6).toUpperCase()}`;
@@ -111,7 +82,7 @@ export async function POST(request: Request) {
     return toErrorResponse('Invalid JSON payload.');
   }
 
-  const authedUser = await getAuthedUser(request);
+  const authedUser = await getAuthedUserFromSession(request);
   if (!authedUser) {
     return toErrorResponse('Unauthorized.', 401);
   }
@@ -120,7 +91,7 @@ export async function POST(request: Request) {
   }
 
   const permissionCache = new Map<string, PermissionKey[]>();
-  const requesterPermissions = await resolveRolePermissions(authedUser.roleKey, permissionCache);
+  const requesterPermissions = authedUser.permissions;
   const canCreate =
     requesterPermissions.includes('admin') || requesterPermissions.includes('po_request_create');
   if (!canCreate) {
@@ -128,68 +99,29 @@ export async function POST(request: Request) {
   }
 
   const projectId = payload.projectId?.trim();
-  const vendorName = payload.vendorName?.trim();
+  const estimateNumber = payload.estimateNumber?.trim();
+  const poNumber = payload.poNumber?.trim();
+  const poDate = payload.poDate?.trim();
+  const estimateAmount = toFiniteNumber(payload.estimateAmount);
+  const poAmount = toFiniteNumber(payload.poAmount);
   if (!projectId) {
     return toErrorResponse('Project id is required.');
   }
-  if (!vendorName) {
-    return toErrorResponse('Vendor name is required.');
+  if (!estimateNumber) {
+    return toErrorResponse('Estimate number is required.');
   }
-
-  const rawLineItems = Array.isArray(payload.lineItems) ? payload.lineItems : [];
-  if (rawLineItems.length === 0) {
-    return toErrorResponse('At least one line item is required.');
+  if (estimateAmount === null || estimateAmount <= 0) {
+    return toErrorResponse('Estimate amount must be greater than 0.');
   }
-
-  let lineItems: Array<{
-    description: string;
-    qty: number;
-    unitPrice: number;
-    taxRate: number;
-    taxAmount: number;
-    lineTotal: number;
-    notes: string;
-  }>;
-  try {
-    lineItems = rawLineItems.map((item) => {
-      const description = String(item.description ?? '').trim();
-      const qty = toFiniteNumber(item.qty);
-      const unitPrice = toFiniteNumber(item.unitPrice);
-      const taxRateRaw = toFiniteNumber(item.taxRate);
-      const taxRate = taxRateRaw === null ? 0 : taxRateRaw;
-      if (!description) {
-        throw new Error('Each line item requires a description.');
-      }
-      if (qty === null || qty <= 0) {
-        throw new Error('Each line item requires qty greater than 0.');
-      }
-      if (unitPrice === null || unitPrice < 0) {
-        throw new Error('Each line item requires unit price of 0 or more.');
-      }
-      if (taxRate < 0) {
-        throw new Error('Tax rate cannot be negative.');
-      }
-      const base = qty * unitPrice;
-      const taxAmount = base * (taxRate / 100);
-      const lineTotal = base + taxAmount;
-      return {
-        description,
-        qty,
-        unitPrice: roundCurrency(unitPrice),
-        taxRate: roundCurrency(taxRate),
-        taxAmount: roundCurrency(taxAmount),
-        lineTotal: roundCurrency(lineTotal),
-        notes: String(item.notes ?? '').trim(),
-      };
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Invalid line item payload.';
-    return toErrorResponse(message, 400);
+  if (!poNumber) {
+    return toErrorResponse('PO number is required.');
   }
-
-  const subtotal = roundCurrency(lineItems.reduce((sum, item) => sum + item.qty * item.unitPrice, 0));
-  const taxAmount = roundCurrency(lineItems.reduce((sum, item) => sum + item.taxAmount, 0));
-  const total = roundCurrency(subtotal + taxAmount);
+  if (poAmount === null || poAmount <= 0) {
+    return toErrorResponse('PO amount must be greater than 0.');
+  }
+  if (!poDate) {
+    return toErrorResponse('Date of the PO is required.');
+  }
 
   const db = getFirebaseAdminDb();
   const projectRef = db.collection('sales').doc(SALES_NAMESPACE_ID).collection('projects').doc(projectId);
@@ -213,7 +145,6 @@ export async function POST(request: Request) {
     .collection('po_requests')
     .doc();
   const requestNo = buildRequestNo(poRef.id, now);
-  const currency = payload.currency?.trim().toUpperCase() || 'AED';
 
   const usersSnap = await db.collection('users').where('active', '==', true).get();
   const approverIds: string[] = [];
@@ -240,15 +171,11 @@ export async function POST(request: Request) {
     customerName: String(projectData.customerName ?? ''),
     requestedBy: authedUser.id,
     requestedByName: authedUser.fullName,
-    vendorId: payload.vendorId?.trim() || '',
-    vendorName,
-    currency,
-    lineItems,
-    subtotal,
-    taxAmount,
-    total,
-    notes: payload.notes?.trim() ?? '',
-    dueDate: payload.dueDate?.trim() ?? '',
+    estimateNumber,
+    estimateAmount: roundAmount(estimateAmount),
+    poNumber,
+    poAmount: roundAmount(poAmount),
+    poDate,
     status: 'pending_approval',
     approval: {},
     accountsEntryId: '',
@@ -262,7 +189,7 @@ export async function POST(request: Request) {
   const activityRef = projectRef.collection('activities').doc();
   batch.set(activityRef, {
     type: 'note',
-    note: `PO request ${requestNo} submitted for approval (${currency} ${total.toLocaleString()}).`,
+    note: `PO request ${requestNo} submitted for approval (PO ${roundAmount(poAmount).toLocaleString()}).`,
     date: now,
     createdBy: authedUser.id,
   });
@@ -282,8 +209,11 @@ export async function POST(request: Request) {
       meta: {
         requestNo,
         projectId,
-        total,
-        currency,
+        estimateNumber,
+        estimateAmount: roundAmount(estimateAmount),
+        poNumber,
+        poAmount: roundAmount(poAmount),
+        poDate,
       },
     });
   }
