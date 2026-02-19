@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { firebaseCalendarRepository } from '@/adapters/repositories/firebaseCalendarRepository';
 import { firebaseLeadRepository } from '@/adapters/repositories/firebaseLeadRepository';
@@ -14,6 +15,7 @@ import { Project } from '@/core/entities/project';
 import { Quotation } from '@/core/entities/quotation';
 import { Task } from '@/core/entities/task';
 import { formatCurrency } from '@/lib/currency';
+import { getFirstAccessiblePath } from '@/lib/navigationAccess';
 import { hasPermission } from '@/lib/permissions';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -39,7 +41,8 @@ const isBeforeToday = (value?: string) => {
 };
 
 export default function DashboardPage() {
-  const { user, permissions } = useAuth();
+  const router = useRouter();
+  const { user, permissions, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -54,9 +57,25 @@ export default function DashboardPage() {
   const canViewProjects = hasPermission(permissions ?? [], ['admin', 'project_view']);
   const canViewQuotations = hasPermission(permissions ?? [], ['admin', 'quotation_view']);
   const canViewCalendar = hasPermission(permissions ?? [], ['admin', 'calendar_view']);
+  const canViewDashboard = hasPermission(permissions ?? [], ['admin', 'dashboard']);
+  const firstAccessiblePath = useMemo(
+    () => getFirstAccessiblePath(permissions ?? [], '/app'),
+    [permissions],
+  );
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
     if (!user) {
+      setLoading(false);
+      return;
+    }
+    if (!canViewDashboard) {
+      if (firstAccessiblePath !== '/app') {
+        router.replace(firstAccessiblePath);
+        return;
+      }
       setLoading(false);
       return;
     }
@@ -104,7 +123,11 @@ export default function DashboardPage() {
     };
     load();
   }, [
+    authLoading,
     user,
+    canViewDashboard,
+    firstAccessiblePath,
+    router,
     isAdmin,
     canViewLeads,
     canViewTasks,
@@ -161,10 +184,22 @@ export default function DashboardPage() {
 
   const recentQuotations = useMemo(() => [...quotations].slice(0, 4), [quotations]);
 
-  if (loading) {
+  if (authLoading || loading || (!canViewDashboard && firstAccessiblePath !== '/app')) {
     return (
       <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
-        <p className="text-sm text-muted">Loading dashboard...</p>
+        <p className="text-sm text-muted">
+          {canViewDashboard ? 'Loading dashboard...' : 'Redirecting to your workspace...'}
+        </p>
+      </section>
+    );
+  }
+
+  if (!canViewDashboard) {
+    return (
+      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+        <p className="text-sm text-muted">
+          You do not have permission to view the dashboard. Ask an admin to assign access.
+        </p>
       </section>
     );
   }
