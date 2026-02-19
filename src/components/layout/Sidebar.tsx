@@ -19,7 +19,10 @@ type SidebarProps = {
 
 export function Sidebar({ activeItem, permissions = [], open, onClose }: SidebarProps) {
   const router = useRouter();
-  const collapsibleSections = useMemo(() => new Set(['Admin', 'CRM', 'Operations', 'Sales']), []);
+  const collapsibleSections = useMemo(
+    () => new Set(['Admin', 'CRM', 'Operations', 'Sales', 'Accounts']),
+    [],
+  );
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     navigation.forEach((section) => {
