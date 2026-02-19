@@ -261,6 +261,7 @@ export default function Page() {
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEditTasks = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canAssignTasks = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
+  const canReassignProjectTasks = isAdmin;
   const canRequestPo = !!user &&
     hasPermission(user.permissions, [
       'admin',
@@ -814,6 +815,18 @@ export default function Page() {
     setTaskError(null);
     const assignedUsers = taskFormState.assignedUsers.filter(Boolean);
     const assignedTo = assignedUsers[0] ?? '';
+    if (selectedTask && !isAdmin) {
+      const previousAssignees =
+        selectedTask.assignedUsers ?? (selectedTask.assignedTo ? [selectedTask.assignedTo] : []);
+      const assignmentChanged =
+        selectedTask.assignedTo !== assignedTo ||
+        !areSameRecipientSets(previousAssignees, assignedUsers);
+      if (assignmentChanged) {
+        setTaskError('Only admins can reassign tasks after assignment.');
+        setIsTaskSaving(false);
+        return;
+      }
+    }
     const isEstimateTask =
       selectedTask?.isEstimateTemplateTask === true ||
       taskFormState.title.trim().toLowerCase() === 'estimate';
@@ -1057,6 +1070,10 @@ export default function Page() {
     }
     if (!canEditTasks || !canAssignTasks) {
       setTaskError('You do not have permission to assign tasks.');
+      return;
+    }
+    if (!isAdmin) {
+      setTaskError('Only admins can reassign tasks after assignment.');
       return;
     }
     const assignedUsers = assigneeId ? [assigneeId] : [];
@@ -1951,7 +1968,7 @@ export default function Page() {
                                 <select
                                   value={assignees[0] ?? ''}
                                   onChange={(event) => handleAssignTask(task, event.target.value)}
-                                  disabled={!canEditTasks || !canAssignTasks}
+                                  disabled={!canEditTasks || !canAssignTasks || !canReassignProjectTasks}
                                   className="peer appearance-none rounded-2xl border border-border/60 bg-white px-4 py-2 pr-9 text-[11px] font-semibold uppercase tracking-[0.2em] text-black shadow-soft outline-none transition hover:bg-gray-50 focus:border-border/80 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   <option value="">Unassigned</option>
@@ -2071,7 +2088,11 @@ export default function Page() {
                     }))
                   }
                   className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-sm text-text outline-none"
-                  disabled={assigneeOptions.length === 0 || !canAssignTasks}
+                  disabled={
+                    assigneeOptions.length === 0 ||
+                    !canAssignTasks ||
+                    (selectedTask !== null && !canReassignProjectTasks)
+                  }
                 >
                   <option value="">Unassigned</option>
                   {assigneeOptions.length === 0 ? (

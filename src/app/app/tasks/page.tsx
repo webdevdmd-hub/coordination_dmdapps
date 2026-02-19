@@ -145,6 +145,7 @@ export default function Page() {
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'task_delete']);
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
+  const canEditAssignment = canAssign && (!selectedTask || isAdmin);
 
   const emptyTask = (assignedTo: string): TaskFormState => ({
     title: '',
@@ -497,6 +498,17 @@ export default function Page() {
     if (isEditing && !isAdmin && selectedTask?.assignedTo !== user.id) {
       setError('You can only edit tasks assigned to you.');
       return;
+    }
+    if (isEditing && selectedTask && !isAdmin) {
+      const previousAssignedUsers =
+        selectedTask.assignedUsers ?? (selectedTask.assignedTo ? [selectedTask.assignedTo] : []);
+      const assignmentChanged =
+        selectedTask.assignedTo !== formState.assignedTo ||
+        !areSameRecipientSets(previousAssignedUsers, formState.assignedUsers);
+      if (assignmentChanged) {
+        setError('Only admins can reassign tasks after assignment.');
+        return;
+      }
     }
     const estimateNumber = formState.estimateNumber.trim();
     const estimateAmountRaw = formState.estimateAmount.trim();
@@ -1125,10 +1137,10 @@ export default function Page() {
                           assignedUsers: event.target.value ? [event.target.value] : [],
                         }))
                       }
-                      disabled={!canAssign}
+                      disabled={!canEditAssignment}
                       className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
                     >
-                      {!canAssign ? (
+                      {!canEditAssignment ? (
                         <option value={formState.assignedTo}>
                           {formState.assignedTo
                             ? (ownerNameMap.get(formState.assignedTo) ?? formState.assignedTo)
