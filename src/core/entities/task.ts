@@ -27,6 +27,8 @@ export type Task = {
   startTime?: string;
   endTime?: string;
   referenceModelNumber?: string;
+  estimateNumber?: string;
+  estimateAmount?: number;
   timerStartedAt?: string;
   lastTimerStoppedAt?: string;
   lastTimerDurationSeconds?: number;

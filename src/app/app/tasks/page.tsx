@@ -39,6 +39,8 @@ type TaskFormState = {
   parentTaskId: string;
   projectId: string;
   referenceModelNumber: string;
+  estimateNumber: string;
+  estimateAmount: string;
 };
 
 const statusOptions: Array<{ value: TaskStatus; label: string }> = [
@@ -159,9 +161,16 @@ export default function Page() {
     parentTaskId: '',
     projectId: '',
     referenceModelNumber: '',
+    estimateNumber: '',
+    estimateAmount: '',
   });
 
   const [formState, setFormState] = useState<TaskFormState>(() => emptyTask(''));
+
+  const isEstimateTaskForm =
+    selectedTask?.isEstimateTemplateTask === true || formState.title.trim().toLowerCase() === 'estimate';
+  const canEditEstimateDetails =
+    !!user && isEstimateTaskForm && (formState.assignedTo === user.id || formState.assignedUsers.includes(user.id));
 
   const logProjectActivity = async (projectId: string, note: string, type: string = 'task') => {
     if (!user) {
@@ -451,6 +460,11 @@ export default function Page() {
       parentTaskId: task.parentTaskId ?? '',
       projectId: task.projectId ?? '',
       referenceModelNumber: task.referenceModelNumber ?? '',
+      estimateNumber: task.estimateNumber ?? '',
+      estimateAmount:
+        typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
+          ? String(task.estimateAmount)
+          : '',
     });
     setIsEditOpen(true);
   };
@@ -484,16 +498,51 @@ export default function Page() {
       setError('You can only edit tasks assigned to you.');
       return;
     }
+    const estimateNumber = formState.estimateNumber.trim();
+    const estimateAmountRaw = formState.estimateAmount.trim();
+    const estimateAmount = estimateAmountRaw.length > 0 ? Number(estimateAmountRaw) : null;
+    if (canEditEstimateDetails) {
+      if ((estimateNumber.length > 0 && estimateAmountRaw.length === 0) || (estimateNumber.length === 0 && estimateAmountRaw.length > 0)) {
+        setError('Provide both Estimate No and Estimate Amount.');
+        return;
+      }
+      if (estimateAmountRaw.length > 0 && (!Number.isFinite(estimateAmount) || estimateAmount === null || estimateAmount <= 0)) {
+        setError('Estimate amount must be greater than 0.');
+        return;
+      }
+    }
     setIsSaving(true);
     setError(null);
     try {
+      const basePayload = {
+        title: formState.title.trim(),
+        description: formState.description.trim(),
+        assignedTo: formState.assignedTo,
+        assignedUsers: formState.assignedUsers,
+        status: formState.status,
+        priority: formState.priority,
+        recurrence: formState.recurrence,
+        quotationNumber: formState.quotationNumber,
+        startDate: formState.startDate,
+        endDate: formState.endDate,
+        dueDate: formState.dueDate,
+        parentTaskId: formState.parentTaskId,
+        projectId: formState.projectId,
+        referenceModelNumber: formState.referenceModelNumber,
+      };
+      const estimatePayload =
+        canEditEstimateDetails && estimateNumber.length > 0 && estimateAmount !== null
+          ? {
+              estimateNumber,
+              estimateAmount,
+            }
+          : {};
+
       if (isEditing && selectedTask) {
         const previousStatus = selectedTask.status;
         const updated = await firebaseTaskRepository.update(selectedTask.id, {
-          ...formState,
-          title: formState.title.trim(),
-          description: formState.description.trim(),
-          assignedUsers: formState.assignedUsers,
+          ...basePayload,
+          ...estimatePayload,
           updatedAt: new Date().toISOString(),
         });
         const updatedAssignedUsers =
@@ -598,10 +647,8 @@ export default function Page() {
         setTasks((prev) => prev.map((task) => (task.id === updated.id ? updated : task)));
       } else {
         const created = await firebaseTaskRepository.create({
-          ...formState,
-          title: formState.title.trim(),
-          description: formState.description.trim(),
-          assignedUsers: formState.assignedUsers,
+          ...basePayload,
+          ...estimatePayload,
           sharedRoles: [],
           createdBy: user.id,
         });
@@ -933,6 +980,16 @@ export default function Page() {
                           Ref: {task.referenceModelNumber}
                         </p>
                       ) : null}
+                      {task.estimateNumber ? (
+                        <p className="mt-1 text-xs text-emerald-200">
+                          Estimate No: {task.estimateNumber}
+                        </p>
+                      ) : null}
+                      {typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount) ? (
+                        <p className="mt-1 text-xs text-emerald-200">
+                          Estimate Amount: {task.estimateAmount.toLocaleString()}
+                        </p>
+                      ) : null}
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
                         {isRunning ? (
                           <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-100">
@@ -1163,6 +1220,40 @@ export default function Page() {
                     />
                   </div>
                 </div>
+
+                {canEditEstimateDetails ? (
+                  <div className="col-span-2 grid gap-4 grid-cols-2">
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                        Estimate No
+                      </label>
+                      <input
+                        value={formState.estimateNumber}
+                        onChange={(event) =>
+                          setFormState((prev) => ({ ...prev, estimateNumber: event.target.value }))
+                        }
+                        className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        placeholder="EST-2026-001"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                        Estimate Amount
+                      </label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={formState.estimateAmount}
+                        onChange={(event) =>
+                          setFormState((prev) => ({ ...prev, estimateAmount: event.target.value }))
+                        }
+                        className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        placeholder="10000"
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="col-span-2 grid gap-4 grid-cols-2">
                   <div>

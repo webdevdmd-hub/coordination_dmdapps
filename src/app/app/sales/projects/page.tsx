@@ -103,6 +103,8 @@ type ProjectTaskFormState = {
   priority: TaskPriority;
   dueDate: string;
   referenceModelNumber: string;
+  estimateNumber: string;
+  estimateAmount: string;
 };
 
 type PoRequestFormState = {
@@ -291,6 +293,8 @@ export default function Page() {
     priority: 'medium',
     dueDate: '',
     referenceModelNumber: '',
+    estimateNumber: '',
+    estimateAmount: '',
   });
 
   const [taskFormState, setTaskFormState] = useState<ProjectTaskFormState>(() => emptyTask());
@@ -772,6 +776,11 @@ export default function Page() {
         priority: task.priority,
         dueDate: task.dueDate ?? '',
         referenceModelNumber: task.referenceModelNumber ?? '',
+        estimateNumber: task.estimateNumber ?? '',
+        estimateAmount:
+          typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
+            ? String(task.estimateAmount)
+            : '',
       });
     } else {
       setSelectedTask(null);
@@ -805,6 +814,39 @@ export default function Page() {
     setTaskError(null);
     const assignedUsers = taskFormState.assignedUsers.filter(Boolean);
     const assignedTo = assignedUsers[0] ?? '';
+    const isEstimateTask =
+      selectedTask?.isEstimateTemplateTask === true ||
+      taskFormState.title.trim().toLowerCase() === 'estimate';
+    const canEditEstimateDetails =
+      !!user && isEstimateTask && (assignedTo === user.id || assignedUsers.includes(user.id));
+    const estimateNumber = taskFormState.estimateNumber.trim();
+    const estimateAmountRaw = taskFormState.estimateAmount.trim();
+    const estimateAmount = estimateAmountRaw.length > 0 ? Number(estimateAmountRaw) : null;
+    if (canEditEstimateDetails) {
+      if (
+        (estimateNumber.length > 0 && estimateAmountRaw.length === 0) ||
+        (estimateNumber.length === 0 && estimateAmountRaw.length > 0)
+      ) {
+        setTaskError('Provide both Estimate No and Estimate Amount.');
+        setIsTaskSaving(false);
+        return;
+      }
+      if (
+        estimateAmountRaw.length > 0 &&
+        (!Number.isFinite(estimateAmount) || estimateAmount === null || estimateAmount <= 0)
+      ) {
+        setTaskError('Estimate amount must be greater than 0.');
+        setIsTaskSaving(false);
+        return;
+      }
+    }
+    const estimatePayload =
+      canEditEstimateDetails && estimateNumber.length > 0 && estimateAmount !== null
+        ? {
+            estimateNumber,
+            estimateAmount,
+          }
+        : {};
     try {
       if (selectedTask) {
         const previous = selectedTask;
@@ -821,6 +863,7 @@ export default function Page() {
           priority: taskFormState.priority,
           dueDate: taskFormState.dueDate,
           referenceModelNumber: taskFormState.referenceModelNumber.trim(),
+          ...estimatePayload,
           isEstimateTemplateTask: estimateFlag,
           updatedAt: new Date().toISOString(),
         });
@@ -918,6 +961,7 @@ export default function Page() {
           parentTaskId: '',
           projectId: selectedProject.id,
           referenceModelNumber: taskFormState.referenceModelNumber.trim(),
+          ...estimatePayload,
           sharedRoles: [],
           createdBy: user.id,
         });
@@ -1841,6 +1885,17 @@ export default function Page() {
                                     Ref: {task.referenceModelNumber}
                                   </p>
                                 ) : null}
+                                {task.estimateNumber ? (
+                                  <p className="mt-1 text-xs text-emerald-200">
+                                    Estimate No: {task.estimateNumber}
+                                  </p>
+                                ) : null}
+                                {typeof task.estimateAmount === 'number' &&
+                                Number.isFinite(task.estimateAmount) ? (
+                                  <p className="mt-1 text-xs text-emerald-200">
+                                    Estimate Amount: {task.estimateAmount.toLocaleString()}
+                                  </p>
+                                ) : null}
                                 {task.dueDate ? (
                                   <p className="mt-1 text-xs text-muted">
                                     Due {formatDate(task.dueDate)}
@@ -2106,6 +2161,50 @@ export default function Page() {
                   />
                 </div>
               </div>
+
+              {(selectedTask?.isEstimateTemplateTask === true ||
+                taskFormState.title.trim().toLowerCase() === 'estimate') &&
+              user &&
+              ((taskFormState.assignedUsers[0] ?? '') === user.id ||
+                taskFormState.assignedUsers.includes(user.id)) ? (
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Estimate No
+                    </label>
+                    <input
+                      value={taskFormState.estimateNumber}
+                      onChange={(event) =>
+                        setTaskFormState((prev) => ({
+                          ...prev,
+                          estimateNumber: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                      placeholder="EST-2026-001"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Estimate Amount
+                    </label>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={taskFormState.estimateAmount}
+                      onChange={(event) =>
+                        setTaskFormState((prev) => ({
+                          ...prev,
+                          estimateAmount: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                      placeholder="10000"
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               {taskError ? (
                 <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
