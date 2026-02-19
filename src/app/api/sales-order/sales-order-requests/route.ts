@@ -93,7 +93,9 @@ export async function POST(request: Request) {
   const permissionCache = new Map<string, PermissionKey[]>();
   const requesterPermissions = authedUser.permissions;
   const canCreate =
-    requesterPermissions.includes('admin') || requesterPermissions.includes('po_request_create');
+    requesterPermissions.includes('admin') ||
+    requesterPermissions.includes('sales_order_request_create') ||
+    requesterPermissions.includes('po_request_create');
   if (!canCreate) {
     return toErrorResponse('You do not have permission to create Sales Order Reqs.', 403);
   }
@@ -158,7 +160,11 @@ export async function POST(request: Request) {
       continue;
     }
     const perms = await resolveRolePermissions(roleKey, permissionCache);
-    if (perms.includes('admin') || perms.includes('po_request_approve')) {
+    if (
+      perms.includes('admin') ||
+      perms.includes('sales_order_request_approve') ||
+      perms.includes('po_request_approve')
+    ) {
       approverIds.push(userDoc.id);
     }
   }

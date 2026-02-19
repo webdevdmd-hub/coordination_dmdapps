@@ -113,8 +113,14 @@ export default function Page() {
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canView = !!user && hasPermission(user.permissions, ['admin', 'po_request_view']);
-  const canApprove = !!user && hasPermission(user.permissions, ['admin', 'po_request_approve']);
+  const canView = !!user &&
+    hasPermission(user.permissions, ['admin', 'sales_order_request_view', 'po_request_view']);
+  const canApprove = !!user &&
+    hasPermission(user.permissions, [
+      'admin',
+      'sales_order_request_approve',
+      'po_request_approve',
+    ]);
 
   useEffect(() => {
     if (!canView) {

@@ -39,7 +39,16 @@ const toPermissions = (value: unknown): PermissionKey[] => {
     if (typeof item !== 'string') {
       return acc;
     }
-    const normalized = item === 'accounts' ? 'sales_order' : item;
+    const normalized =
+      item === 'accounts'
+        ? 'sales_order'
+        : item === 'po_request_create'
+          ? 'sales_order_request_create'
+          : item === 'po_request_view'
+            ? 'sales_order_request_view'
+            : item === 'po_request_approve'
+              ? 'sales_order_request_approve'
+              : item;
     if (permissionSet.has(normalized as PermissionKey)) {
       acc.push(normalized as PermissionKey);
     }

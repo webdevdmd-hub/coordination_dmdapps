@@ -139,7 +139,12 @@ const permissionGroups: Array<
     sections: [
       {
         title: 'Sales Order',
-        keys: ['sales_order', 'po_request_create', 'po_request_view', 'po_request_approve'],
+        keys: [
+          'sales_order',
+          'sales_order_request_create',
+          'sales_order_request_view',
+          'sales_order_request_approve',
+        ],
       },
       {
         title: 'Store',

@@ -52,6 +52,9 @@ export type PermissionKey =
   | 'quotation_request_edit'
   | 'quotation_request_delete'
   | 'quotation_request_assign'
+  | 'sales_order_request_create'
+  | 'sales_order_request_view'
+  | 'sales_order_request_approve'
   | 'po_request_create'
   | 'po_request_view'
   | 'po_request_approve'
@@ -122,6 +125,9 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'quotation_request_edit',
   'quotation_request_delete',
   'quotation_request_assign',
+  'sales_order_request_create',
+  'sales_order_request_view',
+  'sales_order_request_approve',
   'po_request_create',
   'po_request_view',
   'po_request_approve',

@@ -47,7 +47,17 @@ const resolveRolePermissions = async (
   const byKey = await db.collection('roles').where('key', '==', normalized).limit(1).get();
   if (!byKey.empty) {
     const permissions = ((byKey.docs[0]?.data().permissions ?? []) as string[])
-      .map((permission) => (permission === 'accounts' ? 'sales_order' : permission))
+      .map((permission) =>
+        permission === 'accounts'
+          ? 'sales_order'
+          : permission === 'po_request_create'
+            ? 'sales_order_request_create'
+            : permission === 'po_request_view'
+              ? 'sales_order_request_view'
+              : permission === 'po_request_approve'
+                ? 'sales_order_request_approve'
+                : permission,
+      )
       .filter((permission): permission is PermissionKey => ALL_PERMISSIONS.includes(permission as PermissionKey));
     cache.set(normalized, permissions);
     return permissions;
@@ -56,7 +66,17 @@ const resolveRolePermissions = async (
   const byId = await db.collection('roles').doc(normalized).get();
   if (byId.exists) {
     const permissions = ((((byId.data()?.permissions as string[]) ?? []) as string[])
-      .map((permission) => (permission === 'accounts' ? 'sales_order' : permission))
+      .map((permission) =>
+        permission === 'accounts'
+          ? 'sales_order'
+          : permission === 'po_request_create'
+            ? 'sales_order_request_create'
+            : permission === 'po_request_view'
+              ? 'sales_order_request_view'
+              : permission === 'po_request_approve'
+                ? 'sales_order_request_approve'
+                : permission,
+      )
       .filter(
         (permission): permission is PermissionKey =>
           ALL_PERMISSIONS.includes(permission as PermissionKey),

@@ -44,7 +44,15 @@ const toRoleKey = (name: string) =>
 
 const ADMIN_ROLE_KEY = 'admin';
 const normalizePermission = (permission: string) =>
-  permission === 'accounts' ? 'sales_order' : permission;
+  permission === 'accounts'
+    ? 'sales_order'
+    : permission === 'po_request_create'
+      ? 'sales_order_request_create'
+      : permission === 'po_request_view'
+        ? 'sales_order_request_view'
+        : permission === 'po_request_approve'
+          ? 'sales_order_request_approve'
+          : permission;
 const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
   Array.from(
     new Set(

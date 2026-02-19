@@ -259,7 +259,12 @@ export default function Page() {
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEditTasks = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canAssignTasks = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
-  const canRequestPo = !!user && hasPermission(user.permissions, ['admin', 'po_request_create']);
+  const canRequestPo = !!user &&
+    hasPermission(user.permissions, [
+      'admin',
+      'sales_order_request_create',
+      'po_request_create',
+    ]);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
 
@@ -1750,15 +1755,6 @@ export default function Page() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      {canRequestPo && (isAdmin || selectedProject.assignedTo === user?.id) ? (
-                        <button
-                          type="button"
-                          onClick={handleOpenPoModal}
-                          className="rounded-full border border-border/60 bg-surface/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80"
-                        >
-                          Sales Order Req
-                        </button>
-                      ) : null}
                       {canEdit && (isAdmin || selectedProject.assignedTo === user?.id) ? (
                         <button
                           type="button"
