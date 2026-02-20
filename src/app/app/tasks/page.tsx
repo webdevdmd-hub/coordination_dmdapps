@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
 import { firebaseQuotationRequestRepository } from '@/adapters/repositories/firebaseQuotationRequestRepository';
@@ -124,6 +124,7 @@ export default function Page() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectNameOverrides, setProjectNameOverrides] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
@@ -137,6 +138,7 @@ export default function Page() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [timerTick, setTimerTick] = useState(() => Date.now());
   const [timerBusyId, setTimerBusyId] = useState<string | null>(null);
+  const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
@@ -168,10 +170,8 @@ export default function Page() {
 
   const [formState, setFormState] = useState<TaskFormState>(() => emptyTask(''));
 
-  const isEstimateTaskForm =
-    selectedTask?.isEstimateTemplateTask === true || formState.title.trim().toLowerCase() === 'estimate';
   const canEditEstimateDetails =
-    !!user && isEstimateTaskForm && (formState.assignedTo === user.id || formState.assignedUsers.includes(user.id));
+    !!user && (formState.assignedTo === user.id || formState.assignedUsers.includes(user.id));
 
   const logProjectActivity = async (projectId: string, note: string, type: string = 'task') => {
     if (!user) {
@@ -284,6 +284,16 @@ export default function Page() {
     projects.forEach((project) => map.set(project.id, project.name));
     return map;
   }, [projects]);
+
+  const taskProjectNameMap = useMemo(() => {
+    const map = new Map(projectNameMap);
+    Object.entries(projectNameOverrides).forEach(([id, name]) => {
+      if (!map.has(id)) {
+        map.set(id, name);
+      }
+    });
+    return map;
+  }, [projectNameMap, projectNameOverrides]);
 
   const activityItems = useMemo(() => {
     if (!selectedTask) {
@@ -414,6 +424,57 @@ export default function Page() {
     return () => window.clearInterval(id);
   }, [tasks]);
 
+  useEffect(() => {
+    const missingProjectIds = Array.from(
+      new Set(
+        tasks
+          .map((task) => task.projectId)
+          .filter(
+            (projectId): projectId is string =>
+              Boolean(projectId) &&
+              !projectNameMap.has(projectId) &&
+              !projectNameOverrides[projectId],
+          ),
+      ),
+    );
+    if (missingProjectIds.length === 0) {
+      return;
+    }
+    let active = true;
+    const loadMissingNames = async () => {
+      const resolved = await Promise.all(
+        missingProjectIds.map(async (projectId) => {
+          const snap = await getDoc(doc(getFirebaseDb(), 'sales', 'main', 'projects', projectId));
+          if (!snap.exists()) {
+            return null;
+          }
+          const data = snap.data() as { name?: unknown };
+          const name = typeof data.name === 'string' && data.name.trim().length > 0 ? data.name : null;
+          if (!name) {
+            return null;
+          }
+          return { projectId, name } as const;
+        }),
+      );
+      if (!active) {
+        return;
+      }
+      const updates: Record<string, string> = {};
+      resolved.forEach((item) => {
+        if (item) {
+          updates[item.projectId] = item.name;
+        }
+      });
+      if (Object.keys(updates).length > 0) {
+        setProjectNameOverrides((prev) => ({ ...prev, ...updates }));
+      }
+    };
+    loadMissingNames();
+    return () => {
+      active = false;
+    };
+  }, [tasks, projectNameMap, projectNameOverrides]);
+
   const filteredTasks = useMemo(() => {
     const term = search.trim().toLowerCase();
     return tasks.filter((task) => {
@@ -536,7 +597,7 @@ export default function Page() {
         recurrence: formState.recurrence,
         quotationNumber: formState.quotationNumber,
         startDate: formState.startDate,
-        endDate: formState.endDate,
+        endDate: formState.status === 'done' ? todayKey() : formState.endDate,
         dueDate: formState.dueDate,
         parentTaskId: formState.parentTaskId,
         projectId: formState.projectId,
@@ -707,8 +768,11 @@ export default function Page() {
     setError(null);
     try {
       const startedAt = new Date().toISOString();
+      const startedDate = todayKey();
       const updated = await firebaseTaskRepository.update(task.id, {
         timerStartedAt: startedAt,
+        startDate: startedDate,
+        status: task.status === 'todo' ? 'in-progress' : task.status,
         updatedAt: startedAt,
       });
       setTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
@@ -763,6 +827,7 @@ export default function Page() {
     setError(null);
     try {
       const stoppedAt = new Date().toISOString();
+      const stoppedDate = todayKey();
       const durationSeconds = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
       const totalSeconds = (task.totalTrackedSeconds ?? 0) + durationSeconds;
       const updated = await firebaseTaskRepository.update(task.id, {
@@ -770,6 +835,7 @@ export default function Page() {
         lastTimerStoppedAt: stoppedAt,
         lastTimerDurationSeconds: durationSeconds,
         totalTrackedSeconds: totalSeconds,
+        endDate: stoppedDate,
         updatedAt: stoppedAt,
       });
       setTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
@@ -804,6 +870,79 @@ export default function Page() {
       setError('Unable to stop timer. Please try again.');
     } finally {
       setTimerBusyId(null);
+    }
+  };
+
+  const handleQuickStatusChange = async (task: Task, nextStatus: TaskStatus) => {
+    if (!user) {
+      setError('You must be signed in to update task status.');
+      return;
+    }
+    if (!canTrackTask(task)) {
+      setError('You do not have permission to update this task status.');
+      return;
+    }
+    if (nextStatus === task.status) {
+      return;
+    }
+    setStatusBusyId(task.id);
+    setError(null);
+    try {
+      const updatedAt = new Date().toISOString();
+      const updated = await firebaseTaskRepository.update(task.id, {
+        status: nextStatus,
+        endDate: nextStatus === 'done' ? todayKey() : task.endDate,
+        updatedAt,
+      });
+      setTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      const recipients = buildRecipientList(
+        updated.createdBy,
+        [updated.assignedTo, ...(updated.assignedUsers ?? [])],
+        user.id,
+      );
+      const statusLabel = updated.status.replace('-', ' ');
+      await emitNotificationEventSafe({
+        type: 'task.status_changed',
+        title: 'Task Status Updated',
+        body: `${user.fullName} changed ${updated.title} to ${statusLabel}.`,
+        actorId: user.id,
+        recipients,
+        entityType: 'task',
+        entityId: updated.id,
+        meta: {
+          status: updated.status,
+        },
+      });
+      if (updated.projectId) {
+        await logProjectActivity(
+          updated.projectId,
+          `Task updated: ${updated.title}. Status updated to ${statusLabel}.${updated.status === 'done' ? ' Task completed.' : ''}`,
+        );
+      }
+      if (
+        task.status !== 'done' &&
+        updated.status === 'done' &&
+        updated.quotationRequestId &&
+        updated.quotationRequestTaskId &&
+        updated.leadId &&
+        updated.rfqTag
+      ) {
+        await firebaseQuotationRequestRepository.updateTask(
+          updated.quotationRequestId,
+          updated.quotationRequestTaskId,
+          { status: 'done', updatedAt },
+        );
+        await firebaseLeadRepository.addActivity(updated.leadId, {
+          type: 'note',
+          note: `RFQ task completed: ${updated.rfqTag}.`,
+          date: updatedAt,
+          createdBy: user.id,
+        });
+      }
+    } catch {
+      setError('Unable to update task status. Please try again.');
+    } finally {
+      setStatusBusyId(null);
     }
   };
 
@@ -978,7 +1117,7 @@ export default function Page() {
                       <p className="mt-1 text-lg font-semibold text-text">{task.title}</p>
                       {task.projectId ? (
                         <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-200">
-                          Project: {projectNameMap.get(task.projectId) ?? task.projectId}
+                          Project: {taskProjectNameMap.get(task.projectId) ?? task.projectId}
                         </p>
                       ) : null}
                       {task.leadReference ? (
@@ -1012,15 +1151,24 @@ export default function Page() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                      <select
+                        value={task.status}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          handleQuickStatusChange(task, event.target.value as TaskStatus)
+                        }
+                        disabled={!canTrack || statusBusyId === task.id}
+                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] outline-none ${
                           statusColor[task.status]
-                        }`}
+                        } disabled:cursor-not-allowed disabled:opacity-70`}
                       >
-                        {task.status
-                          .replace('-', ' ')
-                          .replace(/\b\w/g, (value) => value.toUpperCase())}
-                      </span>
+                        {statusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                       <span
                         className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
                           priorityColor[task.priority]
@@ -1218,19 +1366,6 @@ export default function Page() {
                       ))}
                     </select>
                   </div>
-                  <div className="col-span-2">
-                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      Quotation number
-                    </label>
-                    <input
-                      value={formState.quotationNumber}
-                      onChange={(event) =>
-                        setFormState((prev) => ({ ...prev, quotationNumber: event.target.value }))
-                      }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                      placeholder="Q-2026-0012"
-                    />
-                  </div>
                 </div>
 
                 {canEditEstimateDetails ? (
@@ -1268,32 +1403,6 @@ export default function Page() {
                 ) : null}
 
                 <div className="col-span-2 grid gap-4 grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      Start date
-                    </label>
-                    <input
-                      type="date"
-                      value={formState.startDate}
-                      onChange={(event) =>
-                        setFormState((prev) => ({ ...prev, startDate: event.target.value }))
-                      }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      End date
-                    </label>
-                    <input
-                      type="date"
-                      value={formState.endDate}
-                      onChange={(event) =>
-                        setFormState((prev) => ({ ...prev, endDate: event.target.value }))
-                      }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                    />
-                  </div>
                   <div className="col-span-2">
                     <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
                       Due date

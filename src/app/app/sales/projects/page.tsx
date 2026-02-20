@@ -760,7 +760,12 @@ export default function Page() {
   };
 
   const handleOpenTaskModal = (task?: Task) => {
-    if (task && !canEditTasks) {
+    const taskAssignees = task?.assignedUsers ?? (task?.assignedTo ? [task.assignedTo] : []);
+    const canEditEstimateOnly =
+      !!task &&
+      !!user &&
+      (task.assignedTo === user.id || taskAssignees.includes(user.id));
+    if (task && !canEditTasks && !canEditEstimateOnly) {
       return;
     }
     if (!task && !canCreateTasks) {
@@ -799,7 +804,13 @@ export default function Page() {
     if (!user || !selectedProject) {
       return;
     }
-    if (selectedTask && !canEditTasks) {
+    const selectedTaskAssignees =
+      selectedTask?.assignedUsers ?? (selectedTask?.assignedTo ? [selectedTask.assignedTo] : []);
+    const canEditEstimateOnly =
+      !!selectedTask &&
+      !!user &&
+      (selectedTask.assignedTo === user.id || selectedTaskAssignees.includes(user.id));
+    if (selectedTask && !canEditTasks && !canEditEstimateOnly) {
       setTaskError('You do not have permission to edit tasks.');
       return;
     }
@@ -827,11 +838,8 @@ export default function Page() {
         return;
       }
     }
-    const isEstimateTask =
-      selectedTask?.isEstimateTemplateTask === true ||
-      taskFormState.title.trim().toLowerCase() === 'estimate';
     const canEditEstimateDetails =
-      !!user && isEstimateTask && (assignedTo === user.id || assignedUsers.includes(user.id));
+      !!user && (assignedTo === user.id || assignedUsers.includes(user.id));
     const estimateNumber = taskFormState.estimateNumber.trim();
     const estimateAmountRaw = taskFormState.estimateAmount.trim();
     const estimateAmount = estimateAmountRaw.length > 0 ? Number(estimateAmountRaw) : null;
@@ -862,6 +870,16 @@ export default function Page() {
         : {};
     try {
       if (selectedTask) {
+        if (!canEditTasks && canEditEstimateOnly) {
+          const updated = await firebaseTaskRepository.update(selectedTask.id, {
+            ...estimatePayload,
+            updatedAt: new Date().toISOString(),
+          });
+          setProjectTasks((prev) => prev.map((item) => (item.id === selectedTask.id ? updated : item)));
+          await logProjectActivity(selectedProject.id, `Estimate details updated for task: ${updated.title}.`, 'task');
+          setIsTaskModalOpen(false);
+          return;
+        }
         const previous = selectedTask;
         const estimateFlag =
           previous.isEstimateTemplateTask === true ||
@@ -1951,6 +1969,13 @@ export default function Page() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenTaskModal(task)}
+                                className="rounded-full border border-border/60 bg-surface/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
+                              >
+                                Details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTaskModal(task)}
                                 disabled={!canEditTasks}
                                 className="rounded-full border border-border/60 bg-surface/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
                               >
@@ -2183,9 +2208,7 @@ export default function Page() {
                 </div>
               </div>
 
-              {(selectedTask?.isEstimateTemplateTask === true ||
-                taskFormState.title.trim().toLowerCase() === 'estimate') &&
-              user &&
+              {user &&
               ((taskFormState.assignedUsers[0] ?? '') === user.id ||
                 taskFormState.assignedUsers.includes(user.id)) ? (
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
