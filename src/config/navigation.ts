@@ -106,6 +106,17 @@ export const navigation: NavSection[] = [
     ],
   },
   {
+    title: 'Accounts',
+    items: [
+      {
+        label: 'Sales Order',
+        href: '/app/sales-order',
+        permissions: ['sales_order'],
+        icon: 'salesOrder',
+      },
+    ],
+  },
+  {
     title: 'Operations',
     items: [
       { label: 'Store', href: '/app/store', permissions: ['store'], icon: 'store' },
@@ -135,17 +146,6 @@ export const navigation: NavSection[] = [
         icon: 'compliance',
       },
       { label: 'Settings', href: '/app/settings', permissions: ['settings'], icon: 'settings' },
-    ],
-  },
-  {
-    title: 'Accounts',
-    items: [
-      {
-        label: 'Sales Order',
-        href: '/app/sales-order',
-        permissions: ['sales_order'],
-        icon: 'salesOrder',
-      },
     ],
   },
 ];
