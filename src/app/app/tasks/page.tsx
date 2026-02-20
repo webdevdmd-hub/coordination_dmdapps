@@ -431,14 +431,14 @@ export default function Page() {
   useEffect(() => {
     const missingProjectIds = Array.from(
       new Set(
-        tasks
-          .map((task) => task.projectId)
-          .filter(
-            (projectId): projectId is string =>
-              Boolean(projectId) &&
-              !projectNameMap.has(projectId) &&
-              !projectNameOverrides[projectId],
-          ),
+        tasks.reduce<string[]>((acc, task) => {
+          const { projectId } = task;
+          if (!projectId || projectNameMap.has(projectId) || projectNameOverrides[projectId]) {
+            return acc;
+          }
+          acc.push(projectId);
+          return acc;
+        }, []),
       ),
     );
     if (missingProjectIds.length === 0) {
