@@ -41,6 +41,8 @@ type TaskFormState = {
   referenceModelNumber: string;
   estimateNumber: string;
   estimateAmount: string;
+  isRevision: boolean;
+  revisionNumber: string;
 };
 
 const statusOptions: Array<{ value: TaskStatus; label: string }> = [
@@ -166,6 +168,8 @@ export default function Page() {
     referenceModelNumber: '',
     estimateNumber: '',
     estimateAmount: '',
+    isRevision: false,
+    revisionNumber: '',
   });
 
   const [formState, setFormState] = useState<TaskFormState>(() => emptyTask(''));
@@ -527,6 +531,8 @@ export default function Page() {
         typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
           ? String(task.estimateAmount)
           : '',
+      isRevision: task.isRevision === true,
+      revisionNumber: task.revisionNumber ?? '',
     });
     setIsEditOpen(true);
   };
@@ -574,6 +580,15 @@ export default function Page() {
     const estimateNumber = formState.estimateNumber.trim();
     const estimateAmountRaw = formState.estimateAmount.trim();
     const estimateAmount = estimateAmountRaw.length > 0 ? Number(estimateAmountRaw) : null;
+    const revisionNumber = formState.revisionNumber.trim();
+    if (formState.isRevision && !revisionNumber) {
+      setError('Revision number is required when marked as revision.');
+      return;
+    }
+    if (!formState.isRevision && revisionNumber.length > 0) {
+      setError('Enable "Mark as Revision" to set a revision number.');
+      return;
+    }
     if (canEditEstimateDetails) {
       if ((estimateNumber.length > 0 && estimateAmountRaw.length === 0) || (estimateNumber.length === 0 && estimateAmountRaw.length > 0)) {
         setError('Provide both Estimate No and Estimate Amount.');
@@ -602,6 +617,8 @@ export default function Page() {
         parentTaskId: formState.parentTaskId,
         projectId: formState.projectId,
         referenceModelNumber: formState.referenceModelNumber,
+        isRevision: formState.isRevision,
+        revisionNumber: formState.isRevision ? revisionNumber : '',
       };
       const estimatePayload =
         canEditEstimateDetails && estimateNumber.length > 0 && estimateAmount !== null
@@ -1131,6 +1148,9 @@ export default function Page() {
                           Ref: {task.referenceModelNumber}
                         </p>
                       ) : null}
+                      {task.isRevision && task.revisionNumber ? (
+                        <p className="mt-1 text-xs text-amber-200">Revision: {task.revisionNumber}</p>
+                      ) : null}
                       {task.estimateNumber ? (
                         <p className="mt-1 text-xs text-emerald-200">
                           Estimate No: {task.estimateNumber}
@@ -1271,6 +1291,41 @@ export default function Page() {
                       className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                       placeholder="Follow up with Atlas Corp"
                     />
+                    <div className="mt-3">
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                        <input
+                          type="checkbox"
+                          checked={formState.isRevision}
+                          onChange={(event) =>
+                            setFormState((prev) => ({
+                              ...prev,
+                              isRevision: event.target.checked,
+                              revisionNumber: event.target.checked ? prev.revisionNumber : '',
+                            }))
+                          }
+                          className="h-4 w-4"
+                        />
+                        Mark as Revision
+                      </label>
+                      {formState.isRevision ? (
+                        <div className="mt-3">
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            Revision Number
+                          </label>
+                          <input
+                            value={formState.revisionNumber}
+                            onChange={(event) =>
+                              setFormState((prev) => ({
+                                ...prev,
+                                revisionNumber: event.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                            placeholder="REV-01"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">

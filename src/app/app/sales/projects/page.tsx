@@ -105,6 +105,8 @@ type ProjectTaskFormState = {
   referenceModelNumber: string;
   estimateNumber: string;
   estimateAmount: string;
+  isRevision: boolean;
+  revisionNumber: string;
 };
 
 type PoRequestFormState = {
@@ -296,6 +298,8 @@ export default function Page() {
     referenceModelNumber: '',
     estimateNumber: '',
     estimateAmount: '',
+    isRevision: false,
+    revisionNumber: '',
   });
 
   const [taskFormState, setTaskFormState] = useState<ProjectTaskFormState>(() => emptyTask());
@@ -787,6 +791,8 @@ export default function Page() {
           typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
             ? String(task.estimateAmount)
             : '',
+        isRevision: task.isRevision === true,
+        revisionNumber: task.revisionNumber ?? '',
       });
     } else {
       setSelectedTask(null);
@@ -843,6 +849,17 @@ export default function Page() {
     const estimateNumber = taskFormState.estimateNumber.trim();
     const estimateAmountRaw = taskFormState.estimateAmount.trim();
     const estimateAmount = estimateAmountRaw.length > 0 ? Number(estimateAmountRaw) : null;
+    const revisionNumber = taskFormState.revisionNumber.trim();
+    if (taskFormState.isRevision && !revisionNumber) {
+      setTaskError('Revision number is required when marked as revision.');
+      setIsTaskSaving(false);
+      return;
+    }
+    if (!taskFormState.isRevision && revisionNumber.length > 0) {
+      setTaskError('Enable "Mark as Revision" to set a revision number.');
+      setIsTaskSaving(false);
+      return;
+    }
     if (canEditEstimateDetails) {
       if (
         (estimateNumber.length > 0 && estimateAmountRaw.length === 0) ||
@@ -894,6 +911,8 @@ export default function Page() {
           priority: taskFormState.priority,
           dueDate: taskFormState.dueDate,
           referenceModelNumber: taskFormState.referenceModelNumber.trim(),
+          isRevision: taskFormState.isRevision,
+          revisionNumber: taskFormState.isRevision ? revisionNumber : '',
           ...estimatePayload,
           isEstimateTemplateTask: estimateFlag,
           updatedAt: new Date().toISOString(),
@@ -992,6 +1011,8 @@ export default function Page() {
           parentTaskId: '',
           projectId: selectedProject.id,
           referenceModelNumber: taskFormState.referenceModelNumber.trim(),
+          isRevision: taskFormState.isRevision,
+          revisionNumber: taskFormState.isRevision ? revisionNumber : '',
           ...estimatePayload,
           sharedRoles: [],
           createdBy: user.id,
@@ -1920,6 +1941,11 @@ export default function Page() {
                                     Ref: {task.referenceModelNumber}
                                   </p>
                                 ) : null}
+                                {task.isRevision && task.revisionNumber ? (
+                                  <p className="mt-1 text-xs text-amber-200">
+                                    Revision: {task.revisionNumber}
+                                  </p>
+                                ) : null}
                                 {task.estimateNumber ? (
                                   <p className="mt-1 text-xs text-emerald-200">
                                     Estimate No: {task.estimateNumber}
@@ -2084,6 +2110,41 @@ export default function Page() {
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="Install fixtures"
                   />
+                  <div className="mt-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      <input
+                        type="checkbox"
+                        checked={taskFormState.isRevision}
+                        onChange={(event) =>
+                          setTaskFormState((prev) => ({
+                            ...prev,
+                            isRevision: event.target.checked,
+                            revisionNumber: event.target.checked ? prev.revisionNumber : '',
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                      Mark as Revision
+                    </label>
+                    {taskFormState.isRevision ? (
+                      <div className="mt-3">
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Revision Number
+                        </label>
+                        <input
+                          value={taskFormState.revisionNumber}
+                          onChange={(event) =>
+                            setTaskFormState((prev) => ({
+                              ...prev,
+                              revisionNumber: event.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          placeholder="REV-01"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
