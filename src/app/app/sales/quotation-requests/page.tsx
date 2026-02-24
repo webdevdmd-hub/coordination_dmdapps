@@ -502,7 +502,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New</p>
             <p className="mt-4 text-6xl font-semibold text-text">{totals.newCount}</p>

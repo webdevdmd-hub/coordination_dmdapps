@@ -292,7 +292,7 @@ export default function Page() {
             Loading reports...
           </div>
         ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
             <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
                 Total leads

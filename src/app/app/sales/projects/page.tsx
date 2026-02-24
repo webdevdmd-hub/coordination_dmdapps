@@ -1441,7 +1441,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 md:gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80 sm:text-xs sm:tracking-[0.26em]">
               Not started

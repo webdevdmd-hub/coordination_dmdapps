@@ -451,7 +451,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New leads</p>
             <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.new}</p>

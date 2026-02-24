@@ -523,7 +523,7 @@ export default function Page() {
       variant === 'list'
         ? 'rounded-none border-b border-border bg-surface p-6 last:border-b-0'
         : variant === 'cards'
-          ? 'rounded-3xl border border-border bg-surface p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]'
+          ? 'rounded-3xl border border-border bg-surface p-4 shadow-[0_6px_18px_rgba(15,23,42,0.05)]'
           : 'rounded-3xl border border-border bg-surface p-5 shadow-[0_4px_16px_rgba(15,23,42,0.06)]';
 
     return (
@@ -547,7 +547,7 @@ export default function Page() {
             </p>
             <p
               className={`mt-2 font-semibold text-text ${
-                variant === 'kanban' ? 'text-3xl' : 'text-3xl sm:text-4xl'
+                variant === 'cards' ? 'text-sm' : variant === 'kanban' ? 'text-3xl' : 'text-3xl sm:text-4xl'
               }`}
             >
               {task.title}
@@ -1174,7 +1174,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">To do</p>
             <p className="mt-4 text-6xl font-semibold text-text">{totals.todo}</p>
@@ -1262,7 +1262,7 @@ export default function Page() {
             {filteredTasks.map((task) => renderBoardTaskCard(task, 'list'))}
           </div>
         ) : viewMode === 'cards' ? (
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredTasks.map((task) => renderBoardTaskCard(task, 'cards'))}
             {canCreate ? (
               <button
