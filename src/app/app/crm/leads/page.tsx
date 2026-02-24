@@ -9,7 +9,6 @@ import {
 } from '@/adapters/repositories/firebaseLeadSourceRepository';
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { LeadModal } from '@/components/leads/LeadModal';
-import { StatusPill } from '@/components/ui/StatusPill';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Lead, LeadStatus } from '@/core/entities/lead';
@@ -19,11 +18,28 @@ import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
 
+const leadStatusClass: Record<LeadStatus, string> = {
+  new: 'bg-[var(--surface-muted)] text-muted border border-border',
+  contacted: 'bg-sky-500/10 text-sky-600 border border-sky-500/20',
+  proposal: 'bg-amber-500/10 text-amber-700 border border-amber-500/20',
+  negotiation: 'bg-violet-500/10 text-violet-700 border border-violet-500/20',
+  won: 'bg-emerald-500/15 text-emerald-700 border border-emerald-500/20',
+  lost: 'bg-rose-500/10 text-rose-700 border border-rose-500/20',
+};
+
+const createLeadStatusOptions: Array<{ label: string; value: LeadStatus }> = [
+  { label: 'New', value: 'new' },
+  { label: 'Contacted', value: 'contacted' },
+  { label: 'Proposal', value: 'proposal' },
+  { label: 'Negotiation', value: 'negotiation' },
+  { label: 'Won', value: 'won' },
+  { label: 'Lost', value: 'lost' },
+];
+
 export default function Page() {
   const { user } = useAuth();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [view, setView] = useState<'cards' | 'list'>('cards');
-  const [statusFilter, setStatusFilter] = useState<LeadStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
@@ -51,6 +67,7 @@ export default function Page() {
     [],
   );
   const canCreateLead = !!user && hasPermission(user.permissions, ['admin', 'lead_create']);
+  const canViewLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view']);
   const canViewAllLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view_all']);
 
   const ownerOptions = useMemo(() => {
@@ -66,27 +83,26 @@ export default function Page() {
     return [{ id: 'all', name: 'All users' }, ...list];
   }, [user, users, canViewAllLeads]);
 
-  const statusOptions: Array<{ label: string; value: LeadStatus | 'all' }> = [
-    { label: 'All', value: 'all' },
-    { label: 'New', value: 'new' },
-    { label: 'Contacted', value: 'contacted' },
-    { label: 'Proposal', value: 'proposal' },
-    { label: 'Negotiation', value: 'negotiation' },
-    { label: 'Won', value: 'won' },
-    { label: 'Lost', value: 'lost' },
-  ];
-
   const filteredLeads = useMemo(() => {
     const term = search.trim().toLowerCase();
     return leads.filter((lead) => {
-      const matchesStatus = statusFilter === 'all' ? true : lead.status === statusFilter;
       const matchesDate = dateFilter ? lead.createdAt?.startsWith(dateFilter) : true;
       const matchesSearch =
         term.length === 0 ||
         [lead.name, lead.company, lead.email].some((value) => value.toLowerCase().includes(term));
-      return matchesStatus && matchesDate && matchesSearch;
+      return matchesDate && matchesSearch;
     });
-  }, [leads, search, statusFilter, dateFilter]);
+  }, [leads, search, dateFilter]);
+
+  const leadSummary = useMemo(
+    () => ({
+      new: leads.filter((lead) => lead.status === 'new').length,
+      proposal: leads.filter((lead) => lead.status === 'proposal').length,
+      negotiation: leads.filter((lead) => lead.status === 'negotiation').length,
+      won: leads.filter((lead) => lead.status === 'won').length,
+    }),
+    [leads],
+  );
 
   const sourceOptions = useMemo(() => {
     const merged = new Set(defaultLeadSources);
@@ -104,6 +120,14 @@ export default function Page() {
   }, [user, users]);
 
   const getOwnerName = (ownerId: string) => ownerNameMap.get(ownerId) ?? ownerId;
+  const getOwnerInitials = (ownerId: string) =>
+    getOwnerName(ownerId)
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
 
   useEffect(() => {
     const loadLeads = async () => {
@@ -237,7 +261,6 @@ export default function Page() {
       });
       setLeads((prev) => [created, ...prev]);
       setSearch('');
-      setStatusFilter('all');
       setIsCreateOpen(false);
       setIsAddingSource(false);
       setNewSourceName('');
@@ -395,201 +418,254 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">CRM</p>
-              <h2 className="font-display text-2xl text-text">Leads</h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted">
-                <label htmlFor="lead-owner" className="sr-only">
-                  Owner
-                </label>
-                <select
-                  id="lead-owner"
-                  name="lead-owner"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  disabled={!canViewAllLeads}
-                  className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-bg/70 p-1">
-                {(['cards', 'list'] as const).map((layout) => (
-                  <button
-                    key={layout}
-                    type="button"
-                    onClick={() => setView(layout)}
-                    className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition ${
-                      view === layout ? 'bg-accent/80 text-text' : 'text-muted hover:text-text'
-                    }`}
-                  >
-                    {layout}
-                  </button>
-                ))}
-              </div>
-              {canCreateLead ? (
+      <section className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">CRM</p>
+            <h2 className="font-display text-5xl text-text">Leads</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+              {(['list', 'cards'] as const).map((layout) => (
                 <button
+                  key={layout}
                   type="button"
-                  onClick={() => setIsCreateOpen(true)}
-                  className="rounded-full border border-border/60 bg-accent/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80"
+                  onClick={() => setView(layout)}
+                  className={`rounded-xl px-6 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition ${
+                    view === layout ? 'bg-black text-white shadow-soft' : 'text-muted hover:text-text'
+                  }`}
                 >
-                  New lead
+                  {layout}
                 </button>
-              ) : null}
+              ))}
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-muted">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+            {canCreateLead ? (
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(true)}
+                className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong"
               >
-                <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />
-              </svg>
-              <label htmlFor="lead-status" className="sr-only">
-                Status
-              </label>
-              <select
-                id="lead-status"
-                name="lead-status"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as LeadStatus | 'all')}
-                className="w-full bg-transparent text-sm text-text outline-none"
-              >
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-muted">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <rect x="3" y="4" width="18" height="18" rx="2" />
-                <path d="M16 2v4M8 2v4M3 10h18" />
-              </svg>
-              <label htmlFor="lead-date" className="sr-only">
-                Date
-              </label>
-              <input
-                type="date"
-                id="lead-date"
-                name="lead-date"
-                value={dateFilter}
-                onChange={(event) => setDateFilter(event.target.value)}
-                className="w-full bg-transparent text-sm text-text outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <label htmlFor="lead-search" className="sr-only">
-                Search leads
-              </label>
-              <input
-                type="search"
-                id="lead-search"
-                name="lead-search"
-                placeholder="Search by name, company, email"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-56 bg-transparent text-sm text-text outline-none placeholder:text-muted/70"
-              />
-            </div>
+                + New Lead
+              </button>
+            ) : null}
           </div>
         </div>
-        {!user || !hasPermission(user.permissions, ['admin', 'lead_view']) ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New leads</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.new}</p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Proposal</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.proposal}</p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Negotiation</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.negotiation}</p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Won</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.won}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_2fr]">
+          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-muted">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />
+            </svg>
+            <label htmlFor="lead-owner" className="sr-only">
+              Owner
+            </label>
+            <select
+              id="lead-owner"
+              name="lead-owner"
+              value={ownerFilter}
+              onChange={(event) => setOwnerFilter(event.target.value)}
+              disabled={!canViewAllLeads}
+              className="w-full bg-transparent text-lg text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+            >
+              {ownerOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-muted">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <label htmlFor="lead-date" className="sr-only">
+              Date
+            </label>
+            <input
+              type="date"
+              id="lead-date"
+              name="lead-date"
+              value={dateFilter}
+              onChange={(event) => setDateFilter(event.target.value)}
+              className="w-full bg-transparent text-lg text-text outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-muted">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <label htmlFor="lead-search" className="sr-only">
+              Search leads
+            </label>
+            <input
+              type="search"
+              id="lead-search"
+              name="lead-search"
+              placeholder="Search by name, company, email..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-full bg-transparent text-lg text-text outline-none placeholder:text-muted/70"
+            />
+          </div>
+        </div>
+
+        {!canViewLeads ? (
+          <div className="rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
             You do not have permission to view leads.
           </div>
         ) : loading ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
             Loading leads...
           </div>
         ) : (
           <>
-            <div
-              className={`mt-6 grid gap-4 ${
-                view === 'cards' ? 'md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
-              }`}
-            >
-              {filteredLeads.map((lead, index) => (
-                <button
-                  key={lead.id}
-                  type="button"
-                  onClick={() => setSelectedLead(lead)}
-                  className={`lift-hover group relative rounded-2xl border border-border/60 bg-bg/70 p-4 text-left transition ${
-                    view === 'list' ? 'grid items-start gap-3 md:grid-cols-[2fr_1fr_1fr]' : ''
-                  }`}
-                  style={{ animationDelay: `${index * 80}ms` }}
-                >
-                  {view === 'cards' ? (
-                    <div className="absolute right-4 top-4">
-                      <StatusPill status={lead.status} />
+            {view === 'list' ? (
+              <div className="space-y-4">
+                <div className="overflow-hidden rounded-3xl border border-border bg-surface">
+                  {filteredLeads.map((lead) => (
+                    <button
+                      key={lead.id}
+                      type="button"
+                      onClick={() => setSelectedLead(lead)}
+                      className="grid w-full items-center gap-4 border-b border-border px-6 py-5 text-left transition hover:bg-[var(--surface-soft)] md:grid-cols-[2fr_1fr_1fr]"
+                    >
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">
+                          {lead.company}
+                        </p>
+                        <h3 className="mt-2 font-display text-4xl text-text">{lead.name}</h3>
+                        <p className="mt-1 text-lg text-muted">{lead.email}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+                            leadStatusClass[lead.status]
+                          }`}
+                        >
+                          {lead.status}
+                        </span>
+                        <p className="text-xl font-semibold text-text">{formatCurrency(lead.value)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Owner</p>
+                        <div className="mt-2 flex items-center gap-3">
+                          <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-xs font-semibold text-text">
+                            {getOwnerInitials(lead.ownerId)}
+                          </span>
+                          <p className="text-lg text-text">{getOwnerName(lead.ownerId)}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xl text-muted">
+                  Showing {filteredLeads.length} of {leads.length} leads
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {filteredLeads.map((lead) => (
+                  <button
+                    key={lead.id}
+                    type="button"
+                    onClick={() => setSelectedLead(lead)}
+                    className="group relative rounded-3xl border border-border bg-surface p-6 text-left transition hover:-translate-y-[1px] hover:shadow-soft"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">{lead.company}</p>
+                    <h3 className="mt-2 font-display text-5xl text-text">{lead.name}</h3>
+                    <p className="mt-1 text-xl text-muted">{lead.email}</p>
+                    <div className="mt-5 flex items-center gap-3">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+                          leadStatusClass[lead.status]
+                        }`}
+                      >
+                        {lead.status}
+                      </span>
+                      <p className="text-2xl font-semibold text-text">{formatCurrency(lead.value)}</p>
                     </div>
-                  ) : null}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      {lead.company}
-                    </p>
-                    <h3 className="mt-2 font-display text-xl text-text">{lead.name}</h3>
-                    <p className="mt-1 text-sm text-muted">{lead.email}</p>
-                  </div>
-                  <div className={view === 'list' ? 'flex flex-col gap-2' : 'mt-4'}>
-                    {view === 'list' ? <StatusPill status={lead.status} /> : null}
-                    <p className="text-sm font-semibold text-text">{formatCurrency(lead.value)}</p>
-                  </div>
-                  <div className={view === 'list' ? 'text-sm text-muted' : 'mt-4'}>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">
-                      Owner
-                    </p>
-                    <p className="mt-1 text-sm text-text">{getOwnerName(lead.ownerId)}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+                    <div className="mt-6 border-t border-border pt-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Owner</p>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-xs font-semibold text-text">
+                            {getOwnerInitials(lead.ownerId)}
+                          </span>
+                          <p className="text-lg text-text">{getOwnerName(lead.ownerId)}</p>
+                        </div>
+                        <span className="rounded-xl bg-accent/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+                          View lead
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {canCreateLead ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateOpen(true)}
+                    className="rounded-3xl border-2 border-dashed border-border bg-[var(--surface-soft)] p-8 text-center transition hover:bg-[var(--surface-muted)]"
+                  >
+                    <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[var(--surface-muted)] text-4xl text-muted">
+                      +
+                    </div>
+                    <p className="mt-6 font-display text-4xl text-text">Add New Lead</p>
+                    <p className="mt-2 text-lg text-muted">Click to expand your pipeline</p>
+                  </button>
+                ) : null}
+              </div>
+            )}
 
             {filteredLeads.length === 0 ? (
-              <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+              <div className="rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
                 No leads match your current filters.
               </div>
             ) : null}
@@ -748,13 +824,11 @@ export default function Page() {
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                   >
-                    {statusOptions
-                      .filter((option) => option.value !== 'all')
-                      .map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
+                    {createLeadStatusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

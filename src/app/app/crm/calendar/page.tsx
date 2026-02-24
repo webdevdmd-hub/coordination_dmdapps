@@ -45,6 +45,11 @@ const monthNames = [
   'November',
   'December',
 ];
+const primaryViewModes: Array<{ value: 'month' | 'week' | 'day'; label: string }> = [
+  { value: 'month', label: 'Month' },
+  { value: 'week', label: 'Week' },
+  { value: 'day', label: 'Day' },
+];
 
 const categoryOptions: Array<{
   value: CalendarCategory;
@@ -651,14 +656,14 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="rounded-[28px] border border-border bg-surface p-8 shadow-soft">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               CRM Calendar
             </p>
-            <h1 className="font-display text-3xl text-text">Lead calendar</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted">
+            <h1 className="font-display text-6xl text-text">Lead calendar</h1>
+            <p className="mt-2 max-w-2xl text-2xl text-muted">
               Schedule tasks and appointments, drag items to reschedule, and keep every lead
               touchpoint aligned.
             </p>
@@ -668,18 +673,18 @@ export default function Page() {
               type="button"
               onClick={() => openCreateModal()}
               disabled={!canCreate}
-              className="rounded-full border border-border/60 bg-accent/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Add event
+              + Add event
             </button>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-muted">
+            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
               <svg
                 viewBox="0 0 24 24"
                 className="h-5 w-5"
@@ -702,7 +707,7 @@ export default function Page() {
                 onChange={(event) =>
                   setCategoryFilter(event.target.value as CalendarCategory | 'all')
                 }
-                className="w-full bg-transparent text-sm text-text outline-none"
+                className="w-full bg-transparent text-lg text-text outline-none"
               >
                 <option value="all">All categories</option>
                 {categoryOptions.map((option) => (
@@ -712,7 +717,7 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-muted">
+            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
               <svg
                 viewBox="0 0 24 24"
                 className="h-5 w-5"
@@ -735,7 +740,7 @@ export default function Page() {
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
                 disabled={!canViewAllCalendar}
-                className="w-full bg-transparent text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                className="w-full bg-transparent text-lg text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -744,7 +749,7 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-muted">
+            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
               <svg
                 viewBox="0 0 24 24"
                 className="h-5 w-5"
@@ -773,38 +778,117 @@ export default function Page() {
                   }
                   setCurrentMonth(new Date(year, month - 1, 1));
                 }}
-                className="w-full bg-transparent text-sm text-text outline-none"
+                className="w-full bg-transparent text-lg text-text outline-none"
               />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                {viewMode === 'day'
-                  ? 'Day view'
-                  : viewMode === 'week'
-                    ? 'Week view'
-                    : viewMode === 'four_days'
-                      ? '4 days view'
-                      : viewMode === 'year'
-                        ? 'Year view'
-                        : 'Month view'}
-              </p>
-              <h2 className="mt-1 font-display text-2xl text-text">
-                {viewMode === 'day'
-                  ? selectedDateLabel
-                  : viewMode === 'week'
-                    ? weekLabel
-                    : viewMode === 'four_days'
-                      ? fourDayLabel
-                      : viewMode === 'year'
-                        ? yearLabel
-                        : monthLabel(currentMonth)}
-              </h2>
-            </div>
+          <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
+              <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+                {primaryViewModes.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setViewMode(option.value)}
+                    className={`rounded-xl px-6 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition ${
+                      viewMode === option.value
+                        ? 'bg-black text-white shadow-soft'
+                        : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-2 py-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (viewMode === 'day') {
+                      const next = addDays(fromDateKey(selectedDate), -1);
+                      setSelectedDate(toDateKey(next));
+                      return;
+                    }
+                    if (viewMode === 'week') {
+                      const next = addDays(fromDateKey(selectedDate), -7);
+                      setSelectedDate(toDateKey(next));
+                      return;
+                    }
+                    if (viewMode === 'four_days') {
+                      const next = addDays(fromDateKey(selectedDate), -4);
+                      setSelectedDate(toDateKey(next));
+                      return;
+                    }
+                    if (viewMode === 'year') {
+                      setCurrentMonth(
+                        new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1),
+                      );
+                      return;
+                    }
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+                  }}
+                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)]"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (viewMode === 'day') {
+                      setSelectedDate(toDateKey(new Date()));
+                      return;
+                    }
+                    if (viewMode === 'week') {
+                      setSelectedDate(toDateKey(new Date()));
+                      return;
+                    }
+                    if (viewMode === 'four_days') {
+                      setSelectedDate(toDateKey(new Date()));
+                      return;
+                    }
+                    if (viewMode === 'year') {
+                      setCurrentMonth(new Date(new Date().getFullYear(), currentMonth.getMonth(), 1));
+                      return;
+                    }
+                    setCurrentMonth(startOfMonth(new Date()));
+                  }}
+                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)]"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (viewMode === 'day') {
+                      const next = addDays(fromDateKey(selectedDate), 1);
+                      setSelectedDate(toDateKey(next));
+                      return;
+                    }
+                    if (viewMode === 'week') {
+                      const next = addDays(fromDateKey(selectedDate), 7);
+                      setSelectedDate(toDateKey(next));
+                      return;
+                    }
+                    if (viewMode === 'four_days') {
+                      const next = addDays(fromDateKey(selectedDate), 4);
+                      setSelectedDate(toDateKey(next));
+                      return;
+                    }
+                    if (viewMode === 'year') {
+                      setCurrentMonth(
+                        new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1),
+                      );
+                      return;
+                    }
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+                  }}
+                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)]"
+                >
+                  Next
+                </button>
+              </div>
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">
                 <label htmlFor="calendar-view" className="sr-only">
                   Calendar view
                 </label>
@@ -834,7 +918,7 @@ export default function Page() {
                 </select>
               </div>
               {viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days' ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
+                <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">
                   <label htmlFor="calendar-day" className="sr-only">
                     Day
                   </label>
@@ -848,105 +932,41 @@ export default function Page() {
                   />
                 </div>
               ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  if (viewMode === 'day') {
-                    const next = addDays(fromDateKey(selectedDate), -1);
-                    setSelectedDate(toDateKey(next));
-                    return;
-                  }
-                  if (viewMode === 'week') {
-                    const next = addDays(fromDateKey(selectedDate), -7);
-                    setSelectedDate(toDateKey(next));
-                    return;
-                  }
-                  if (viewMode === 'four_days') {
-                    const next = addDays(fromDateKey(selectedDate), -4);
-                    setSelectedDate(toDateKey(next));
-                    return;
-                  }
-                  if (viewMode === 'year') {
-                    setCurrentMonth(
-                      new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1),
-                    );
-                    return;
-                  }
-                  setCurrentMonth(
-                    new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1),
-                  );
-                }}
-                className="rounded-full border border-border/60 bg-bg/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
-              >
-                Prev
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (viewMode === 'day') {
-                    setSelectedDate(toDateKey(new Date()));
-                    return;
-                  }
-                  if (viewMode === 'week') {
-                    setSelectedDate(toDateKey(new Date()));
-                    return;
-                  }
-                  if (viewMode === 'four_days') {
-                    setSelectedDate(toDateKey(new Date()));
-                    return;
-                  }
-                  if (viewMode === 'year') {
-                    setCurrentMonth(new Date(new Date().getFullYear(), currentMonth.getMonth(), 1));
-                    return;
-                  }
-                  setCurrentMonth(startOfMonth(new Date()));
-                }}
-                className="rounded-full border border-border/60 bg-bg/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (viewMode === 'day') {
-                    const next = addDays(fromDateKey(selectedDate), 1);
-                    setSelectedDate(toDateKey(next));
-                    return;
-                  }
-                  if (viewMode === 'week') {
-                    const next = addDays(fromDateKey(selectedDate), 7);
-                    setSelectedDate(toDateKey(next));
-                    return;
-                  }
-                  if (viewMode === 'four_days') {
-                    const next = addDays(fromDateKey(selectedDate), 4);
-                    setSelectedDate(toDateKey(next));
-                    return;
-                  }
-                  if (viewMode === 'year') {
-                    setCurrentMonth(
-                      new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1),
-                    );
-                    return;
-                  }
-                  setCurrentMonth(
-                    new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1),
-                  );
-                }}
-                className="rounded-full border border-border/60 bg-bg/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
-              >
-                Next
-              </button>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+                {viewMode === 'day'
+                  ? 'Day view'
+                  : viewMode === 'week'
+                    ? 'Week view'
+                    : viewMode === 'four_days'
+                      ? '4 days view'
+                      : viewMode === 'year'
+                        ? 'Year view'
+                        : 'Month view'}
+              </p>
+              <h2 className="mt-1 font-display text-5xl text-text">
+                {viewMode === 'day'
+                  ? selectedDateLabel
+                  : viewMode === 'week'
+                    ? weekLabel
+                    : viewMode === 'four_days'
+                      ? fourDayLabel
+                      : viewMode === 'year'
+                        ? yearLabel
+                        : monthLabel(currentMonth)}
+              </h2>
             </div>
           </div>
         </div>
 
         {!canView ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
             You do not have permission to view calendar events.
           </div>
         ) : loading ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
             Loading calendar events...
           </div>
         ) : viewMode === 'day' ? (
@@ -994,11 +1014,12 @@ export default function Page() {
                         </p>
                       </div>
                       <span
-                        className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
-                        style={{
-                          backgroundColor: style?.bg ?? '#E5E7EB',
-                          color: style?.text ?? '#111827',
-                        }}
+                      className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
+                      style={{
+                        backgroundColor: style?.bg ?? '#E5E7EB',
+                        color: style?.text ?? '#111827',
+                        borderColor: style?.text ?? '#111827',
+                      }}
                       >
                         {eventItem.category.replace('_', ' ')}
                       </span>
@@ -1049,10 +1070,11 @@ export default function Page() {
                               event.stopPropagation();
                               openEditModal(eventItem);
                             }}
-                            className="w-full rounded-xl px-3 py-2 text-left text-xs font-semibold"
+                            className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
                             style={{
                               backgroundColor: style?.bg ?? '#E5E7EB',
                               color: style?.text ?? '#111827',
+                              borderLeftColor: style?.text ?? '#111827',
                             }}
                           >
                             <div className="flex items-center justify-between">
@@ -1115,10 +1137,11 @@ export default function Page() {
                               event.stopPropagation();
                               openEditModal(eventItem);
                             }}
-                            className="w-full rounded-xl px-3 py-2 text-left text-xs font-semibold"
+                            className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
                             style={{
                               backgroundColor: style?.bg ?? '#E5E7EB',
                               color: style?.text ?? '#111827',
+                              borderLeftColor: style?.text ?? '#111827',
                             }}
                           >
                             <div className="flex items-center justify-between">
@@ -1189,10 +1212,11 @@ export default function Page() {
                               </p>
                             </div>
                             <span
-                              className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
+                              className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
                               style={{
                                 backgroundColor: style?.bg ?? '#E5E7EB',
                                 color: style?.text ?? '#111827',
+                                borderColor: style?.text ?? '#111827',
                               }}
                             >
                               {eventItem.category.replace('_', ' ')}
@@ -1249,8 +1273,8 @@ export default function Page() {
             })}
           </div>
         ) : (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-border/60">
-            <div className="grid grid-cols-7 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
+            <div className="grid grid-cols-7 border-b border-border bg-[var(--surface-soft)] text-xs font-semibold uppercase tracking-[0.2em] text-muted/80">
               {weekDays.map((day) => (
                 <div key={day} className="px-3 py-3">
                   {day}
@@ -1268,12 +1292,12 @@ export default function Page() {
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => handleDrop(dateKey, event)}
                     onClick={() => (canCreate ? openCreateModal(dateKey) : null)}
-                    className={`min-h-[140px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3 transition ${
-                      isCurrentMonth ? '' : 'bg-bg/60 text-muted'
+                    className={`min-h-[220px] border-b border-border border-r border-border bg-surface p-3 transition ${
+                      isCurrentMonth ? '' : 'bg-[var(--surface-soft)] text-muted'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted">{date.getDate()}</span>
+                      <span className="text-sm font-semibold text-muted">{date.getDate()}</span>
                     </div>
                     <div className="mt-2 space-y-2">
                       {dayEvents.slice(0, 3).map((eventItem) => {
@@ -1292,10 +1316,11 @@ export default function Page() {
                               event.stopPropagation();
                               openEditModal(eventItem);
                             }}
-                            className="w-full rounded-xl px-3 py-2 text-left text-xs font-semibold"
+                            className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
                             style={{
                               backgroundColor: style?.bg ?? '#E5E7EB',
                               color: style?.text ?? '#111827',
+                              borderLeftColor: style?.text ?? '#111827',
                             }}
                           >
                             <div className="flex items-center justify-between">

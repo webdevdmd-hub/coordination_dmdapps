@@ -22,14 +22,14 @@ export function ThemeToggle() {
       type="button"
       onClick={toggleTheme}
       aria-label={nextLabel}
-      className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-surface/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:-translate-y-[1px] hover:bg-hover/80"
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-[var(--surface-muted)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-text transition hover:bg-[var(--surface-soft)]"
     >
-      <span className="grid h-7 w-7 place-items-center rounded-full bg-accent/70 text-text">
+      <span className="grid h-5 w-5 place-items-center text-text">
         {theme === 'dark' ? (
           <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
-            className="h-4 w-4"
+            className="h-3.5 w-3.5"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.6"
@@ -50,7 +50,7 @@ export function ThemeToggle() {
           <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
-            className="h-4 w-4"
+            className="h-3.5 w-3.5"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.6"
@@ -65,3 +65,4 @@ export function ThemeToggle() {
     </button>
   );
 }
+

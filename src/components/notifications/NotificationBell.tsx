@@ -28,7 +28,7 @@ export function NotificationBell() {
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="relative rounded-full border border-border/60 bg-surface/70 p-2 text-muted transition hover:-translate-y-[1px] hover:bg-hover/80 hover:text-text"
+        className="relative rounded-xl p-2 text-muted transition hover:bg-[var(--surface-muted)] hover:text-text"
         aria-label="Notifications"
       >
         <svg
@@ -114,3 +114,4 @@ export function NotificationBell() {
     </div>
   );
 }
+

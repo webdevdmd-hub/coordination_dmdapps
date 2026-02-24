@@ -45,6 +45,14 @@ type TaskFormState = {
   revisionNumber: string;
 };
 
+type TaskViewMode = 'list' | 'cards' | 'kanban';
+
+const taskViewOptions: Array<{ value: TaskViewMode; label: string }> = [
+  { value: 'list', label: 'List' },
+  { value: 'cards', label: 'Cards' },
+  { value: 'kanban', label: 'Kanban' },
+];
+
 const statusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: 'todo', label: 'To Do' },
   { value: 'in-progress', label: 'In Progress' },
@@ -59,18 +67,11 @@ const priorityOptions: Array<{ value: TaskPriority; label: string }> = [
   { value: 'urgent', label: 'Urgent' },
 ];
 
-const statusColor: Record<TaskStatus, string> = {
-  todo: 'bg-surface-strong/80 text-text',
-  'in-progress': 'bg-accent/70 text-text',
-  review: 'bg-indigo-500/20 text-indigo-200',
-  done: 'bg-emerald-200 text-emerald-900',
-};
-
-const priorityColor: Record<TaskPriority, string> = {
-  low: 'bg-emerald-500/20 text-black',
-  medium: 'bg-amber-500/20 text-black',
-  high: 'bg-rose-500/20 text-black',
-  urgent: 'bg-rose-500 text-black',
+const boardPriorityColor: Record<TaskPriority, string> = {
+  low: 'bg-[var(--surface-muted)] text-muted border border-border',
+  medium: 'bg-orange-50 text-orange-600 border border-orange-200',
+  high: 'bg-rose-50 text-rose-600 border border-rose-200',
+  urgent: 'bg-red-100 text-red-700 border border-red-200',
 };
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -128,6 +129,7 @@ export default function Page() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectNameOverrides, setProjectNameOverrides] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const [viewMode, setViewMode] = useState<TaskViewMode>('list');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -497,6 +499,141 @@ export default function Page() {
     const done = tasks.filter((task) => task.status === 'done').length;
     return { todo, inProgress, review, done };
   }, [tasks]);
+
+  const tasksByStatus = useMemo(
+    () => ({
+      todo: filteredTasks.filter((task) => task.status === 'todo'),
+      'in-progress': filteredTasks.filter((task) => task.status === 'in-progress'),
+      review: filteredTasks.filter((task) => task.status === 'review'),
+      done: filteredTasks.filter((task) => task.status === 'done'),
+    }),
+    [filteredTasks],
+  );
+
+  const renderBoardTaskCard = (
+    task: Task,
+    variant: 'list' | 'cards' | 'kanban' = 'list',
+  ) => {
+    const isRunning = !!task.timerStartedAt;
+    const sessionSeconds = getSessionDuration(task);
+    const totalSeconds = getLiveDuration(task);
+    const canTrack = canTrackTask(task);
+    const showDetails = variant !== 'kanban';
+    const cardClass =
+      variant === 'list'
+        ? 'rounded-none border-b border-border bg-surface p-6 last:border-b-0'
+        : variant === 'cards'
+          ? 'rounded-3xl border border-border bg-surface p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]'
+          : 'rounded-3xl border border-border bg-surface p-5 shadow-[0_4px_16px_rgba(15,23,42,0.06)]';
+
+    return (
+      <div
+        key={task.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => handleOpenEdit(task)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handleOpenEdit(task);
+          }
+        }}
+        className={`${cardClass} cursor-pointer transition hover:-translate-y-[1px]`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+              {task.assignedTo ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo) : 'Unassigned'}
+            </p>
+            <p
+              className={`mt-2 font-semibold text-text ${
+                variant === 'kanban' ? 'text-3xl' : 'text-3xl sm:text-4xl'
+              }`}
+            >
+              {task.title}
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
+              boardPriorityColor[task.priority]
+            }`}
+          >
+            {task.priority}
+          </span>
+        </div>
+
+        <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted/80">
+          {task.projectId
+            ? `Project: ${taskProjectNameMap.get(task.projectId) ?? task.projectId}`
+            : task.leadReference
+              ? `Lead: ${task.leadReference}`
+              : 'No linked record'}
+        </div>
+
+        {showDetails ? (
+          <div className="mt-4 grid gap-2 text-sm text-muted sm:grid-cols-2">
+            <p>Due {formatDate(task.dueDate)}</p>
+            <p className="sm:text-right">Total {formatDuration(totalSeconds)}</p>
+            {isRunning ? (
+              <p className="sm:col-span-2 text-emerald-700">Running {formatDuration(sessionSeconds)}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <select
+            value={task.status}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onChange={(event) => handleQuickStatusChange(task, event.target.value as TaskStatus)}
+            disabled={!canTrack || statusBusyId === task.id}
+            className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleStopTaskTimer(task);
+              }}
+              disabled={!canTrack || timerBusyId === task.id}
+              className="rounded-full border border-emerald-600 bg-emerald-500 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {timerBusyId === task.id ? 'Stopping...' : 'Running'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleStartTaskTimer(task);
+              }}
+              disabled={!canTrack || timerBusyId === task.id}
+              className="rounded-full border border-emerald-500 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {timerBusyId === task.id ? 'Starting...' : variant === 'kanban' ? 'Timer' : 'Start timer'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleOpenEdit(task);
+            }}
+            className="rounded-full border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-text"
+          >
+            Update
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const handleOpenCreate = () => {
     if (!user) {
@@ -997,17 +1134,17 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-4 shadow-soft sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <section className="p-2 sm:p-4">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Tasks</p>
-            <h1 className="font-display text-3xl text-text">Team task board</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Tasks</p>
+            <h1 className="mt-2 font-display text-5xl font-semibold text-text">Team task board</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
               Track tasks across modules with role-based shared visibility and due-date focus.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex w-full items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted sm:w-auto">
+          <div className="flex w-full flex-wrap items-center justify-end gap-3 lg:w-auto">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-xs text-muted">
               <label htmlFor="task-owner" className="sr-only">
                 Owner
               </label>
@@ -1017,7 +1154,7 @@ export default function Page() {
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
                 disabled={!canViewAllTasks}
-                className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/80"
               >
                 {ownerOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -1030,58 +1167,58 @@ export default function Page() {
               type="button"
               onClick={handleOpenCreate}
               disabled={!canCreate}
-              className="w-full rounded-full border border-border/60 bg-accent/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="rounded-2xl border border-emerald-500 bg-emerald-500 px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(16,185,129,0.22)] transition hover:-translate-y-[1px] hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              New task
+              + New task
             </button>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">To do</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.todo}</p>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">To do</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.todo}</p>
+            <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
-              In progress
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.inProgress}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">In progress</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.inProgress}</p>
+            <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Review</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.review}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Review</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.review}</p>
+            <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
-              Completed
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.done}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Completed</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.done}</p>
+            <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-4 shadow-soft sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="flex w-full items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted sm:w-auto sm:rounded-full">
+      <section className="rounded-[30px] border border-border bg-surface p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+            <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted sm:w-auto sm:min-w-[250px]">
               <input
                 type="search"
-                placeholder="Search tasks"
+                placeholder="Search tasks..."
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70 sm:w-48"
+                className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/80"
               />
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border/60 bg-bg/70 p-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:rounded-full sm:p-1">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
               {(['all', 'todo', 'in-progress', 'review', 'done'] as const).map((status) => (
                 <button
                   key={status}
                   type="button"
                   onClick={() => setStatusFilter(status)}
-                  className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition sm:w-auto sm:rounded-full ${
+                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
                     statusFilter === status
-                      ? 'bg-accent/80 text-text'
+                      ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
                       : 'text-muted hover:text-text'
                   }`}
                 >
@@ -1092,147 +1229,80 @@ export default function Page() {
               ))}
             </div>
           </div>
-          <div className="text-xs text-muted">{filteredTasks.length} tasks visible</div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1 rounded-2xl border border-border bg-surface p-1">
+              {taskViewOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setViewMode(option.value)}
+                  className={`rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                    viewMode === option.value ? 'bg-text text-bg' : 'text-muted'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-sm text-muted/80">{filteredTasks.length} tasks visible</p>
+          </div>
         </div>
 
         {!canView ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-3xl border border-border bg-surface p-6 text-sm text-muted">
             You do not have permission to view tasks.
           </div>
         ) : loading ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-3xl border border-border bg-surface p-6 text-sm text-muted">
             Loading tasks...
           </div>
+        ) : viewMode === 'list' ? (
+          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
+            {filteredTasks.map((task) => renderBoardTaskCard(task, 'list'))}
+          </div>
+        ) : viewMode === 'cards' ? (
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {filteredTasks.map((task) => renderBoardTaskCard(task, 'cards'))}
+            {canCreate ? (
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="rounded-3xl border-2 border-dashed border-border/70 bg-[var(--surface-soft)] p-6 text-center"
+              >
+                <p className="text-lg font-semibold text-text">Add New Task</p>
+                <p className="mt-2 text-sm text-muted/80">Click to create a new task in this view</p>
+              </button>
+            ) : null}
+          </div>
         ) : (
-          <div className="mt-6 space-y-3">
-            {filteredTasks.map((task) => {
-              const isRunning = !!task.timerStartedAt;
-              const sessionSeconds = getSessionDuration(task);
-              const totalSeconds = getLiveDuration(task);
-              const canTrack = canTrackTask(task);
-              return (
-                <div
-                  key={task.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleOpenEdit(task)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleOpenEdit(task);
-                    }
-                  }}
-                  className="lift-hover cursor-pointer rounded-2xl border border-border/60 bg-bg/70 p-4 transition"
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        {task.assignedTo
-                          ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo)
-                          : 'Unassigned'}
-                      </p>
-                      <p className="mt-1 text-lg font-semibold text-text">{task.title}</p>
-                      {task.projectId ? (
-                        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-200">
-                          Project: {taskProjectNameMap.get(task.projectId) ?? task.projectId}
-                        </p>
-                      ) : null}
-                      {task.leadReference ? (
-                        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
-                          Lead: {task.leadReference}
-                        </p>
-                      ) : null}
-                      <p className="mt-1 text-sm text-muted">Due {formatDate(task.dueDate)}</p>
-                      {task.referenceModelNumber ? (
-                        <p className="mt-1 text-xs text-sky-200">
-                          Ref: {task.referenceModelNumber}
-                        </p>
-                      ) : null}
-                      {task.isRevision && task.revisionNumber ? (
-                        <p className="mt-1 text-xs text-amber-200">Revision: {task.revisionNumber}</p>
-                      ) : null}
-                      {task.estimateNumber ? (
-                        <p className="mt-1 text-xs text-emerald-200">
-                          Estimate No: {task.estimateNumber}
-                        </p>
-                      ) : null}
-                      {typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount) ? (
-                        <p className="mt-1 text-xs text-emerald-200">
-                          Estimate Amount: {task.estimateAmount.toLocaleString()}
-                        </p>
-                      ) : null}
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
-                        {isRunning ? (
-                          <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-100">
-                            Running {formatDuration(sessionSeconds)}
-                          </span>
-                        ) : null}
-                        <span>Total {formatDuration(totalSeconds)}</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={task.status}
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                        onChange={(event) =>
-                          handleQuickStatusChange(task, event.target.value as TaskStatus)
-                        }
-                        disabled={!canTrack || statusBusyId === task.id}
-                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] outline-none ${
-                          statusColor[task.status]
-                        } disabled:cursor-not-allowed disabled:opacity-70`}
-                      >
-                        {statusOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <span
-                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                          priorityColor[task.priority]
-                        }`}
-                      >
-                        {task.priority}
-                      </span>
-                      {isRunning ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleStopTaskTimer(task);
-                          }}
-                          disabled={!canTrack || timerBusyId === task.id}
-                          className="rounded-full border border-rose-200/40 bg-rose-500/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {timerBusyId === task.id ? 'Stopping...' : 'Stop timer'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleStartTaskTimer(task);
-                          }}
-                          disabled={!canTrack || timerBusyId === task.id}
-                          className="rounded-full border border-border/60 bg-surface/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {timerBusyId === task.id ? 'Starting...' : 'Start timer'}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(task)}
-                        className="w-full rounded-full border border-border/60 bg-surface/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-hover/80 sm:w-auto"
-                      >
-                        Update
-                      </button>
-                    </div>
-                  </div>
+          <div className="mt-6 grid gap-4 xl:grid-cols-4">
+            {([
+              { key: 'todo', label: 'To Do' },
+              { key: 'in-progress', label: 'In Progress' },
+              { key: 'review', label: 'Review' },
+              { key: 'done', label: 'Completed' },
+            ] as const).map((column) => (
+              <div key={column.key} className="rounded-3xl border border-border bg-surface p-3">
+                <div className="mb-3 flex items-center justify-between px-2">
+                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">
+                    {column.label}
+                  </p>
+                  <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs font-semibold text-muted">
+                    {tasksByStatus[column.key].length}
+                  </span>
                 </div>
-              );
-            })}
+                <div className="space-y-3">
+                  {tasksByStatus[column.key].length === 0 ? (
+                    <div className="rounded-2xl border-2 border-dashed border-border/70 bg-surface p-8 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted/80">
+                      No tasks
+                    </div>
+                  ) : (
+                    tasksByStatus[column.key].map((task) => renderBoardTaskCard(task, 'kanban'))
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -1586,3 +1656,4 @@ export default function Page() {
     </div>
   );
 }
+

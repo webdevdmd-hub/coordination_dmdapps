@@ -9,6 +9,8 @@
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-strong: #ffffff;
+  --surface-soft: #f8fafc;
+  --surface-muted: #f1f5f9;
   --hover: #06976b;
   --text: #0f172a;
   --muted: #475569;
@@ -32,6 +34,8 @@
   --bg: #0f172a;
   --surface: #1e293b;
   --surface-strong: #334155;
+  --surface-soft: #1f2937;
+  --surface-muted: #334155;
   --hover: #334155;
   --text: #f8fafc;
   --muted: #cbd5e1;
@@ -50,6 +54,8 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-strong: var(--surface-strong);
+  --color-surface-soft: var(--surface-soft);
+  --color-surface-muted: var(--surface-muted);
   --color-hover: var(--hover);
   --color-text: var(--text);
   --color-muted: var(--muted);

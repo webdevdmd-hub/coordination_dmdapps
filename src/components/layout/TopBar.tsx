@@ -408,13 +408,13 @@ export function TopBar({
   ]);
 
   return (
-    <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 border-b border-border/60 bg-bg/80 px-6 py-4 backdrop-blur">
+    <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 border-b border-border bg-bg px-6 py-3">
       <div className="flex items-center gap-4">
         <button
           type="button"
           ref={menuButtonRef}
           onClick={onMenuClick}
-          className="rounded-full border border-border/60 bg-surface/70 p-2 text-muted transition hover:-translate-y-[1px] hover:bg-hover/80 hover:text-text"
+          className="rounded-xl p-2 text-muted transition hover:bg-[var(--surface-muted)] hover:text-text"
           aria-label={isMenuOpen ? 'Close navigation' : 'Open navigation'}
           aria-expanded={isMenuOpen}
           aria-controls="primary-navigation"
@@ -433,10 +433,10 @@ export function TopBar({
           </svg>
         </button>
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted/80">
             CRM Operations
           </p>
-          <h2 className="font-display text-xs text-text sm:text-sm">
+          <h2 className="font-display text-sm text-text">
             {greeting}, {userName}
           </h2>
         </div>
@@ -445,9 +445,21 @@ export function TopBar({
       <div className="flex flex-1 items-center justify-end gap-4">
         <div
           ref={searchRef}
-          className="relative hidden min-w-[240px] flex-1 rounded-full border border-border/60 bg-surface/80 px-4 py-2 text-sm text-muted shadow-soft transition focus-within:border-accent/70 focus-within:text-text lg:flex"
+          className="relative hidden min-w-[240px] flex-1 rounded-full border border-border bg-[var(--surface-muted)] px-5 py-2.5 text-sm text-muted transition focus-within:border-border focus-within:bg-bg lg:flex"
         >
-          <span className="mr-2">?</span>
+          <svg
+            viewBox="0 0 24 24"
+            className="mr-2 h-4 w-4 text-muted/80"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
           <label htmlFor="global-search" className="sr-only">
             Global search
           </label>
@@ -464,12 +476,12 @@ export function TopBar({
                 setShowDropdown(false);
               }
             }}
-            className="w-full bg-transparent outline-none placeholder:text-muted/70"
+            className="w-full bg-transparent outline-none placeholder:text-muted/80"
           />
           {showDropdown ? (
-            <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-full min-w-[360px] rounded-2xl border border-border/60 bg-surface/95 p-3 text-sm text-text shadow-floating backdrop-blur">
+            <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-full min-w-[360px] rounded-2xl border border-border bg-bg p-3 text-sm text-text shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
               {isSearching ? (
-                <div className="rounded-xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
+                <div className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">
                   Searching...
                 </div>
               ) : error ? (
@@ -477,14 +489,14 @@ export function TopBar({
                   {error}
                 </div>
               ) : results.length === 0 ? (
-                <div className="rounded-xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
+                <div className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">
                   No results found.
                 </div>
               ) : (
                 <div className="max-h-[360px] space-y-3 overflow-y-auto">
                   {resultsByModule.map((group) => (
                     <div key={group.module}>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted/80">
                         {group.module}
                       </p>
                       <div className="mt-2 space-y-2">
@@ -492,7 +504,7 @@ export function TopBar({
                           <a
                             key={`${item.module}-${item.id}`}
                             href={item.href}
-                            className="block rounded-xl border border-border/60 bg-bg/70 px-3 py-2 transition hover:bg-hover/80"
+                            className="block rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2 transition hover:bg-[var(--surface-muted)]"
                           >
                             <p className="text-sm font-semibold text-text">{item.title}</p>
                             <p className="text-xs text-muted">{item.subtitle}</p>
@@ -509,22 +521,25 @@ export function TopBar({
         <div className="flex items-center gap-3">
           <NotificationBell />
           <ThemeToggle />
-          {canViewProfile ? (
-            <a
-              href="/app/profile"
-              className="rounded-2xl border border-border/60 bg-surface/70 px-4 py-2 text-left text-xs text-muted transition hover:bg-hover/70"
-            >
-              <p className="text-[10px] uppercase tracking-[0.26em]">{roleLabel}</p>
-              <p className="text-sm font-semibold text-text">{userName}</p>
-            </a>
-          ) : (
-            <div className="rounded-2xl border border-border/60 bg-surface/70 px-4 py-2 text-xs text-muted">
-              <p className="text-[10px] uppercase tracking-[0.26em]">{roleLabel}</p>
-              <p className="text-sm font-semibold text-text">{userName}</p>
+          <div className="flex items-center gap-3 border-l border-border pl-3">
+            {canViewProfile ? (
+              <a href="/app/profile" className="text-left text-xs text-muted transition hover:text-text">
+                <p className="text-[10px] uppercase tracking-[0.24em]">{roleLabel}</p>
+                <p className="text-sm font-semibold text-text">{userName}</p>
+              </a>
+            ) : (
+              <div className="text-xs text-muted">
+                <p className="text-[10px] uppercase tracking-[0.24em]">{roleLabel}</p>
+                <p className="text-sm font-semibold text-text">{userName}</p>
+              </div>
+            )}
+            <div className="grid h-11 w-11 place-items-center rounded-full border border-accent/40 bg-accent/20 text-sm font-semibold uppercase text-accent">
+              {userName.slice(0, 1)}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </header>
   );
 }
+

@@ -1382,21 +1382,21 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-4 shadow-soft md:p-6">
+      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted sm:text-xs sm:tracking-[0.28em]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted/80 sm:text-xs sm:tracking-[0.28em]">
               Sales Projects
             </p>
-            <h1 className="font-display text-2xl leading-tight text-text sm:text-3xl">
+            <h1 className="font-display text-6xl leading-tight text-text">
               Delivery runway
             </h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted sm:text-base">
+            <p className="mt-2 max-w-2xl text-2xl text-muted">
               Track project milestones and keep delivery details aligned with customer ownership.
             </p>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:items-center">
-            <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted md:w-auto">
+            <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted md:w-auto">
               <label htmlFor="project-owner" className="sr-only">
                 Owner
               </label>
@@ -1406,7 +1406,7 @@ export default function Page() {
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
                 disabled={!canViewAllProjects}
-                className="bg-transparent text-[11px] font-semibold uppercase tracking-[0.18em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70 sm:text-xs sm:tracking-[0.2em]"
+                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -1415,7 +1415,7 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted md:w-auto">
+            <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted md:w-auto">
               <label htmlFor="project-view" className="sr-only">
                 View
               </label>
@@ -1424,55 +1424,68 @@ export default function Page() {
                 name="project-view"
                 value={viewMode}
                 onChange={(event) => setViewMode(event.target.value as 'list' | 'card')}
-                className="bg-transparent text-[11px] font-semibold uppercase tracking-[0.18em] text-text outline-none sm:text-xs sm:tracking-[0.2em]"
+                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none"
               >
                 <option value="list">List</option>
-                <option value="card">Card</option>
+                <option value="card">Grid</option>
               </select>
             </div>
             <button
               type="button"
               onClick={handleOpenCreate}
               disabled={!canCreate}
-              className="col-span-2 w-full rounded-full border border-border/60 bg-accent/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+              className="col-span-2 w-full rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
-              New project
+              + New project
             </button>
           </div>
         </div>
 
         <div className="mt-6 grid gap-3 md:gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted sm:text-xs sm:tracking-[0.26em]">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80 sm:text-xs sm:tracking-[0.26em]">
               Not started
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.notStarted}</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.notStarted}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted sm:text-xs sm:tracking-[0.26em]">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80 sm:text-xs sm:tracking-[0.26em]">
               In progress
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.inProgress}</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.inProgress}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted sm:text-xs sm:tracking-[0.26em]">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80 sm:text-xs sm:tracking-[0.26em]">
               Hold on
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.onHold}</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.onHold}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted sm:text-xs sm:tracking-[0.26em]">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80 sm:text-xs sm:tracking-[0.26em]">
               Completed
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.completed}</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.completed}</p>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-4 shadow-soft md:p-6">
+      <section className="rounded-[28px] border border-border bg-surface p-4 shadow-soft md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
-            <div className="flex w-full items-center gap-2 rounded-full border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted md:w-auto">
+            <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-2 text-xs text-muted md:w-auto md:min-w-[240px]">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
               <input
                 type="search"
                 placeholder="Search projects"
@@ -1481,7 +1494,7 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70 md:w-48"
               />
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border/60 bg-bg/70 p-2 md:w-auto md:flex md:flex-wrap md:items-center md:rounded-full md:p-1">
+            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-2 md:w-auto md:flex md:flex-wrap md:items-center md:rounded-full md:p-1">
               {(['all', ...statusOptions.map((status) => status.value)] as const).map((status) => (
                 <button
                   key={status}
@@ -1489,7 +1502,7 @@ export default function Page() {
                   onClick={() => setStatusFilter(status)}
                   className={`w-full shrink-0 whitespace-nowrap rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
                     statusFilter === status
-                      ? 'bg-accent/80 text-text'
+                      ? 'bg-accent text-white'
                       : 'text-muted hover:text-text'
                   }`}
                 >
@@ -1502,15 +1515,15 @@ export default function Page() {
         </div>
 
         {!canView ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
             You do not have permission to view projects.
           </div>
         ) : loading ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
             Loading projects...
           </div>
         ) : viewMode === 'card' ? (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {filteredProjects.map((project) => (
               <div
                 key={project.id}
@@ -1519,21 +1532,18 @@ export default function Page() {
                 onClick={() => handleEntryOpen(project)}
                 onKeyDown={(event) => handleEntryKeyDown(event, project)}
                 aria-disabled={!canOpenDetails}
-                className={`lift-hover rounded-2xl border border-border/60 bg-bg/70 p-4 ${
-                  canOpenDetails ? 'cursor-pointer' : ''
+                className={`rounded-3xl border border-border bg-surface p-6 ${
+                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:shadow-soft' : ''
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                       {project.customerName}
                     </p>
-                    <h2 className="mt-2 font-display text-xl text-text sm:text-2xl">
+                    <h2 className="mt-2 font-display text-5xl text-text">
                       {project.name}
                     </h2>
-                    <p className="mt-2 text-sm text-muted">
-                      Owner: {ownerNameMap.get(project.assignedTo) ?? project.assignedTo}
-                    </p>
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
@@ -1543,24 +1553,20 @@ export default function Page() {
                     {formatStatusLabel(project.status)}
                   </span>
                 </div>
-                <div className="mt-4 grid gap-2 text-xs text-muted md:grid-cols-3 md:text-sm">
-                  <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2">
+                <div className="mt-4 border-t border-border pt-4">
+                  <div className="grid gap-3 text-xs text-muted md:grid-cols-2 md:text-sm">
+                  <div className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      Start
+                      Project value
                     </p>
-                    <p className="mt-1 text-sm text-text">{formatDate(project.startDate)}</p>
+                    <p className="mt-1 text-3xl font-semibold text-text">AED {project.value.toLocaleString()}</p>
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2">
+                  <div className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      Due
+                      Owner
                     </p>
-                    <p className="mt-1 text-sm text-text">{formatDate(project.dueDate)}</p>
+                    <p className="mt-1 text-lg text-text">{ownerNameMap.get(project.assignedTo) ?? project.assignedTo}</p>
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2 md:col-span-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      Value
-                    </p>
-                    <p className="mt-1 text-sm text-text">AED {project.value.toLocaleString()}</p>
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -1568,7 +1574,7 @@ export default function Page() {
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(project)}
-                      className="w-full rounded-full border border-border/60 bg-surface/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-hover/80 md:w-auto"
+                      className="w-full rounded-full border border-border bg-[var(--surface-soft)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-[var(--surface-muted)] md:w-auto"
                     >
                       Update
                     </button>
@@ -1578,7 +1584,7 @@ export default function Page() {
             ))}
           </div>
         ) : (
-          <div className="mt-6 grid gap-4">
+          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
             {filteredProjects.map((project, index) => (
               <button
                 key={project.id}
@@ -1586,16 +1592,16 @@ export default function Page() {
                 onClick={() => handleEntryOpen(project)}
                 onKeyDown={(event) => handleEntryKeyDown(event, project)}
                 aria-disabled={!canOpenDetails}
-                className={`lift-hover group relative rounded-2xl border border-border/60 bg-bg/70 p-4 text-left transition ${
+                className={`group relative border-b border-border bg-surface p-6 text-left transition hover:bg-[var(--surface-soft)] ${
                   canOpenDetails ? 'cursor-pointer' : ''
                 } md:grid md:grid-cols-[2fr_1fr_1fr] md:items-start md:gap-3`}
                 style={{ animationDelay: `${index * 80}ms` }}
               >
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                     {project.customerName}
                   </p>
-                  <h3 className="mt-2 font-display text-xl text-text">{project.name}</h3>
+                  <h3 className="mt-2 font-display text-4xl text-text">{project.name}</h3>
                 </div>
                 <div className="mt-4 flex flex-col gap-2 md:mt-0">
                   <span
@@ -1619,13 +1625,13 @@ export default function Page() {
                 </div>
               </button>
             ))}
-            {filteredProjects.length === 0 ? (
-              <div className="rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
-                No projects found yet.
-              </div>
-            ) : null}
           </div>
         )}
+        {filteredProjects.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
+            No projects found yet.
+          </div>
+        ) : null}
       </section>
 
       {error ? (

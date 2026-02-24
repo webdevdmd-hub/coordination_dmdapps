@@ -47,6 +47,7 @@ const statusStyles: Record<CustomerStatus, string> = {
 
 export default function Page() {
   const { user } = useAuth();
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
@@ -214,6 +215,17 @@ export default function Page() {
     });
   }, [customers, statusFilter, search]);
 
+  const getOwnerInitials = (ownerId: string) => {
+    const name = ownerNameMap.get(ownerId) ?? ownerId;
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
   const handleOpenCreate = () => {
     if (!user) {
       return;
@@ -351,19 +363,19 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               Customers
             </p>
-            <h1 className="font-display text-3xl text-text">Post-win records</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted">
+            <h1 className="font-display text-6xl text-text">Post-win records</h1>
+            <p className="mt-2 max-w-2xl text-2xl text-muted">
               Won leads live here. Quotation requests and invoices attach to customer accounts.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
               <label htmlFor="customer-owner" className="sr-only">
                 Owner
               </label>
@@ -373,7 +385,7 @@ export default function Page() {
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
                 disabled={!canViewAllCustomers}
-                className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -382,17 +394,31 @@ export default function Page() {
                 ))}
               </select>
             </div>
+            <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+              {(['list', 'cards'] as const).map((layout) => (
+                <button
+                  key={layout}
+                  type="button"
+                  onClick={() => setViewMode(layout)}
+                  className={`rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                    viewMode === layout ? 'bg-black text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  {layout}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={handleOpenCreate}
               disabled={!canCreate}
-              className="rounded-full border border-border/60 bg-accent/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
             >
               New customer
             </button>
             <button
               type="button"
-              className="rounded-full border border-border/60 bg-surface/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:-translate-y-[1px] hover:bg-hover/80"
+              className="rounded-2xl border border-border bg-surface px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-text transition hover:-translate-y-[1px] hover:bg-[var(--surface-soft)]"
             >
               Import
             </button>
@@ -400,35 +426,47 @@ export default function Page() {
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Active</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.active}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Active</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.active}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">New</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.fresh}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.fresh}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Won</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.won}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Won</p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.won}</p>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="flex w-full items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted sm:w-auto sm:rounded-full">
-              <span>?</span>
+            <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-2 text-xs text-muted sm:w-auto sm:min-w-[260px]">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
               <input
                 type="search"
                 placeholder="Search customers"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70 sm:w-48"
+                className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70"
               />
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border/60 bg-bg/70 p-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:rounded-full sm:p-1">
+            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:p-1">
               {(['all', ...statusOptions.map((option) => option.value)] as const).map((status) => (
                 <button
                   key={status}
@@ -436,7 +474,7 @@ export default function Page() {
                   onClick={() => setStatusFilter(status)}
                   className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition sm:w-auto sm:rounded-full ${
                     statusFilter === status
-                      ? 'bg-accent/80 text-text'
+                      ? 'bg-accent text-white'
                       : 'text-muted hover:text-text'
                   }`}
                 >
@@ -449,22 +487,22 @@ export default function Page() {
           </div>
           <button
             type="button"
-            className="rounded-full border border-border/60 bg-surface/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:-translate-y-[1px] hover:bg-hover/80"
+            className="rounded-2xl border border-border bg-surface px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:-translate-y-[1px] hover:bg-[var(--surface-soft)]"
           >
             Export list
           </button>
         </div>
 
         {!canView ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
             You do not have permission to view customers.
           </div>
         ) : loading ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
             Loading customers...
           </div>
-        ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+        ) : viewMode === 'list' ? (
+          <div className="mt-6 space-y-4">
             {filtered.map((customer) => (
               <div
                 key={customer.id}
@@ -473,22 +511,69 @@ export default function Page() {
                 onClick={() => handleEntryOpen(customer)}
                 onKeyDown={(event) => handleEntryKeyDown(event, customer)}
                 aria-disabled={!canOpenDetails}
-                className={`lift-hover rounded-2xl border border-border/60 bg-bg/70 p-4 ${
-                  canOpenDetails ? 'cursor-pointer' : ''
+                className={`rounded-3xl border border-border bg-surface p-6 ${
+                  canOpenDetails ? 'cursor-pointer transition hover:bg-[var(--surface-soft)]' : ''
                 }`}
               >
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+                        {customer.companyName}
+                      </p>
+                      <span
+                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                          statusStyles[customer.status]
+                        }`}
+                      >
+                        {statusOptions.find((option) => option.value === customer.status)?.label ??
+                          customer.status}
+                      </span>
+                    </div>
+                    <h2 className="mt-2 font-display text-4xl text-text">{customer.contactPerson}</h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-4 text-lg text-muted">
+                      <p>Owner: {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}</p>
+                      <p>{customer.email}</p>
+                    </div>
+                  </div>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleOpenEdit(customer);
+                      }}
+                      className="rounded-full border border-border px-6 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-[var(--surface-soft)]"
+                    >
+                      Update
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {filtered.map((customer) => (
+              <div
+                key={customer.id}
+                role={canOpenDetails ? 'button' : undefined}
+                tabIndex={canOpenDetails ? 0 : -1}
+                onClick={() => handleEntryOpen(customer)}
+                onKeyDown={(event) => handleEntryKeyDown(event, customer)}
+                aria-disabled={!canOpenDetails}
+                className={`rounded-3xl border border-border bg-surface p-6 ${
+                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:shadow-soft' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                       {customer.companyName}
                     </p>
-                    <h2 className="mt-2 font-display text-2xl text-text">
+                    <h2 className="mt-2 font-display text-4xl text-text">
                       {customer.contactPerson}
                     </h2>
-                    <p className="mt-2 text-sm text-muted">
-                      Owner: {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}
-                    </p>
-                    <p className="mt-1 text-sm text-muted">{customer.email}</p>
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
@@ -499,12 +584,22 @@ export default function Page() {
                       customer.status}
                   </span>
                 </div>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="mt-4 space-y-2 text-lg text-muted">
+                  <p>Owner: {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}</p>
+                  <p>{customer.email}</p>
+                </div>
+                <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
+                  <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-xs font-semibold text-text">
+                    {getOwnerInitials(customer.assignedTo)}
+                  </span>
                   {canEdit ? (
                     <button
                       type="button"
-                      onClick={() => handleOpenEdit(customer)}
-                      className="rounded-full border border-border/60 bg-surface/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-hover/80"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleOpenEdit(customer);
+                      }}
+                      className="rounded-full border border-border px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-[var(--surface-soft)]"
                     >
                       Update
                     </button>
@@ -512,13 +607,27 @@ export default function Page() {
                 </div>
               </div>
             ))}
-            {filtered.length === 0 ? (
-              <div className="rounded-2xl border border-border/60 bg-bg/70 p-6 text-sm text-muted">
-                No customers found yet.
-              </div>
+            {canCreate ? (
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="rounded-3xl border-2 border-dashed border-border bg-[var(--surface-soft)] p-8 text-center transition hover:bg-[var(--surface-muted)]"
+              >
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[var(--surface-muted)] text-4xl text-muted">
+                  +
+                </div>
+                <p className="mt-6 text-sm font-semibold uppercase tracking-[0.24em] text-muted/80">
+                  New contact
+                </p>
+              </button>
             ) : null}
           </div>
         )}
+        {filtered.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-border bg-[var(--surface-soft)] p-6 text-sm text-muted">
+            No customers found yet.
+          </div>
+        ) : null}
       </section>
       {error ? (
         <div className="rounded-2xl border border-border/60 bg-rose-500/10 p-4 text-sm text-rose-100">
