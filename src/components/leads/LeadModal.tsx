@@ -831,6 +831,182 @@ export function LeadModal({
     </Modal>
   );
 
+  const convertModal = (
+    <Modal
+      open
+      onClose={() => setIsConvertOpen(false)}
+      ariaLabel="Convert to customer"
+      size="lg"
+      panelClassName="animate-fade-up"
+    >
+      <ModalHeader
+        title="Convert to Customer"
+        description="Review and complete customer details before finalizing this conversion."
+        actions={
+          <button
+            type="button"
+            onClick={() => setIsConvertOpen(false)}
+            className="grid h-9 w-9 place-items-center rounded-full border border-border/60 text-muted transition hover:bg-hover/80"
+            aria-label="Close convert modal"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        }
+        className="border-b border-border/60 pb-[var(--modal-section-gap)]"
+      />
+
+      <form className="mt-[var(--modal-section-gap)] space-y-5" onSubmit={handleSubmitConvert}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Company name
+            <input
+              value={convertForm.companyName}
+              onChange={(event) =>
+                setConvertForm((prev) => ({ ...prev, companyName: event.target.value }))
+              }
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+              required
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Contact person
+            <input
+              value={convertForm.contactPerson}
+              onChange={(event) =>
+                setConvertForm((prev) => ({ ...prev, contactPerson: event.target.value }))
+              }
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+              required
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Email
+            <input
+              type="email"
+              value={convertForm.email}
+              onChange={(event) =>
+                setConvertForm((prev) => ({ ...prev, email: event.target.value }))
+              }
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+              required
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Phone
+            <input
+              value={convertForm.phone}
+              onChange={(event) =>
+                setConvertForm((prev) => ({ ...prev, phone: event.target.value }))
+              }
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Source
+            <input
+              value={convertForm.source}
+              onChange={(event) =>
+                setConvertForm((prev) => ({ ...prev, source: event.target.value }))
+              }
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+            />
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Status
+            <select
+              value={convertForm.status}
+              onChange={(event) =>
+                setConvertForm((prev) => ({
+                  ...prev,
+                  status: event.target.value as CustomerStatus,
+                }))
+              }
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+            >
+              {[
+                'active',
+                'inactive',
+                'new',
+                'contacted',
+                'proposal',
+                'negotiation',
+                'won',
+                'lost',
+              ].map((status) => (
+                <option key={status} value={status}>
+                  {status.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Assigned to
+            <select
+              value={convertForm.assignedTo}
+              onChange={(event) =>
+                setConvertForm((prev) => ({ ...prev, assignedTo: event.target.value }))
+              }
+              disabled={!canAssignCustomers}
+              className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted"
+            >
+              {!canAssignCustomers ? (
+                <option value={lead.ownerId}>{ownerName}</option>
+              ) : customerAssignees.length === 0 ? (
+                <option value="" disabled>
+                  No eligible assignees
+                </option>
+              ) : (
+                customerAssignees.map((assignee) => (
+                  <option key={assignee.id} value={assignee.id}>
+                    {assignee.fullName}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        </div>
+
+        {conversionError ? (
+          <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {conversionError}
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setIsConvertOpen(false)}
+            className="text-sm font-semibold text-muted transition hover:text-text"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isConverting}
+            className="rounded-full border border-[#407056]/30 bg-[#407056] px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white transition hover:-translate-y-[1px] hover:bg-[#355e49] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isConverting ? 'Converting...' : 'Convert'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+
+  if (isConvertOpen) {
+    return convertModal;
+  }
+
   return (
     <Modal
       open
@@ -1287,177 +1463,6 @@ export function LeadModal({
         </div>
       ) : null}
       {rfqModal}
-
-      {conversionError ? (
-        <div className="mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-100">
-          {conversionError}
-        </div>
-      ) : null}
-
-      {isConvertOpen ? (
-        <div
-          data-modal-overlay="true"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-6"
-          onClick={() => setIsConvertOpen(false)}
-        >
-          <DraggablePanel
-            className="w-full max-w-2xl overflow-hidden rounded-[28px] bg-white bg-clip-padding p-6 shadow-[0_20px_50px_rgba(15,23,42,0.2)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-4">
-              <h3 className="text-2xl font-semibold text-[#2f6b4f]">Convert to Customer</h3>
-              <button
-                type="button"
-                onClick={() => setIsConvertOpen(false)}
-                className="grid h-9 w-9 place-items-center rounded-full text-[#94a3b8] transition hover:bg-[#f1f5f9]"
-                aria-label="Close convert modal"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="mt-4 h-px w-full bg-[#d1e7dc]" />
-
-            <form className="mt-5 space-y-4" onSubmit={handleSubmitConvert}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Company name
-                  <input
-                    value={convertForm.companyName}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({ ...prev, companyName: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none"
-                    required
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Contact person
-                  <input
-                    value={convertForm.contactPerson}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({ ...prev, contactPerson: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none"
-                    required
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Email
-                  <input
-                    type="email"
-                    value={convertForm.email}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({ ...prev, email: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none"
-                    required
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Phone
-                  <input
-                    value={convertForm.phone}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({ ...prev, phone: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none"
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Source
-                  <input
-                    value={convertForm.source}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({ ...prev, source: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none"
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Status
-                  <select
-                    value={convertForm.status}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({
-                        ...prev,
-                        status: event.target.value as CustomerStatus,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none"
-                  >
-                    {[
-                      'active',
-                      'inactive',
-                      'new',
-                      'contacted',
-                      'proposal',
-                      'negotiation',
-                      'won',
-                      'lost',
-                    ].map((status) => (
-                      <option key={status} value={status}>
-                        {status.replace(/_/g, ' ')}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[#334155]">
-                  Assigned to
-                  <select
-                    value={convertForm.assignedTo}
-                    onChange={(event) =>
-                      setConvertForm((prev) => ({ ...prev, assignedTo: event.target.value }))
-                    }
-                    disabled={!canAssignCustomers}
-                    className="mt-2 w-full rounded-xl border border-[#dbe2ea] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155] outline-none disabled:cursor-not-allowed disabled:text-muted"
-                  >
-                    {!canAssignCustomers ? (
-                      <option value={lead.ownerId}>{ownerName}</option>
-                    ) : customerAssignees.length === 0 ? (
-                      <option value="" disabled>
-                        No eligible assignees
-                      </option>
-                    ) : (
-                      customerAssignees.map((assignee) => (
-                        <option key={assignee.id} value={assignee.id}>
-                          {assignee.fullName}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-              </div>
-              <div className="flex items-center justify-end gap-4">
-                <button
-                  type="button"
-                  onClick={() => setIsConvertOpen(false)}
-                  className="text-sm font-semibold text-[#64748b] transition hover:text-[#334155]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isConverting}
-                  className="rounded-2xl bg-[#8bc6a2] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#79b692] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isConverting ? 'Converting...' : 'Convert'}
-                </button>
-              </div>
-            </form>
-          </DraggablePanel>
-        </div>
-      ) : null}
       <div className="absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center">
         {isFabOpen ? (
           <div className="mb-3 w-[320px] overflow-hidden rounded-3xl border border-[#e5eef6] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.18)]">

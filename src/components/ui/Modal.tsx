@@ -78,7 +78,7 @@ export function ModalHeader({ title, description, actions, className = '' }: Mod
     <div
       className={`flex flex-wrap items-start justify-between gap-[var(--modal-section-gap)] ${className}`}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 cursor-move select-none" data-drag-handle="true">
         {typeof title === 'string' ? <ModalTitle>{title}</ModalTitle> : title}
         {description ? (
           typeof description === 'string' ? (
