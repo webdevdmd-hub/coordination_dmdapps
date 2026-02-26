@@ -519,10 +519,116 @@ export default function Page() {
     const totalSeconds = getLiveDuration(task);
     const canTrack = canTrackTask(task);
     const showDetails = variant !== 'kanban';
+    const assigneeName = task.assignedTo
+      ? ownerNameMap.get(task.assignedTo) ?? task.assignedTo
+      : 'Unassigned';
+    const assigneeInitial = assigneeName
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+
+    if (variant === 'list') {
+      return (
+        <div
+          key={task.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenEdit(task)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleOpenEdit(task);
+            }
+          }}
+          className="grid cursor-pointer gap-3 border-b border-border px-3 py-3 transition hover:bg-[var(--surface-soft)] last:border-b-0 md:grid-cols-[1.25fr_1.3fr_1.1fr_0.9fr_1fr_0.8fr_0.8fr_auto_auto] md:items-center md:gap-2 md:px-4"
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[#407056]">
+              {assigneeInitial || 'NA'}
+            </span>
+            <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+              {assigneeName}
+            </p>
+          </div>
+
+          <p className="truncate text-base font-semibold text-text">{task.title}</p>
+
+          <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+            {task.projectId
+              ? taskProjectNameMap.get(task.projectId) ?? task.projectId
+              : task.leadReference || 'No linked record'}
+          </p>
+
+          <p className="text-sm text-text">{formatDate(task.dueDate)}</p>
+
+          <div>
+            <select
+              value={task.status}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              onChange={(event) => handleQuickStatusChange(task, event.target.value as TaskStatus)}
+              disabled={!canTrack || statusBusyId === task.id}
+              className="w-full rounded-xl border border-[#407056]/30 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {statusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <span className="inline-flex w-fit rounded-full border border-[#407056]/25 bg-[#407056]/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]">
+            {task.priority}
+          </span>
+
+          <p className="text-sm text-text">Total {formatDuration(totalSeconds)}</p>
+
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleStopTaskTimer(task);
+              }}
+              disabled={!canTrack || timerBusyId === task.id}
+              className="rounded-xl border border-[#407056] bg-[#407056] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {timerBusyId === task.id ? 'Stopping...' : 'Running'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleStartTaskTimer(task);
+              }}
+              disabled={!canTrack || timerBusyId === task.id}
+              className="rounded-xl border border-[#407056]/40 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {timerBusyId === task.id ? 'Starting...' : 'Start timer'}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleOpenEdit(task);
+            }}
+            className="rounded-xl border border-[#407056]/30 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]"
+          >
+            Update
+          </button>
+        </div>
+      );
+    }
+
     const cardClass =
-      variant === 'list'
-        ? 'rounded-none border-b border-border bg-surface p-6 last:border-b-0'
-        : variant === 'cards'
+      variant === 'cards'
           ? 'rounded-3xl border border-border bg-surface p-4 shadow-[0_6px_18px_rgba(15,23,42,0.05)]'
           : 'rounded-3xl border border-border bg-surface p-5 shadow-[0_4px_16px_rgba(15,23,42,0.06)]';
 
