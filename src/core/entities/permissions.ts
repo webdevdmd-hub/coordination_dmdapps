@@ -55,9 +55,6 @@ export type PermissionKey =
   | 'sales_order_request_create'
   | 'sales_order_request_view'
   | 'sales_order_request_approve'
-  | 'po_request_create'
-  | 'po_request_view'
-  | 'po_request_approve'
   | 'calendar_assign'
   | 'invoices_view'
   | 'sales'
@@ -128,9 +125,6 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'sales_order_request_create',
   'sales_order_request_view',
   'sales_order_request_approve',
-  'po_request_create',
-  'po_request_view',
-  'po_request_approve',
   'calendar_assign',
   'invoices_view',
   'sales',

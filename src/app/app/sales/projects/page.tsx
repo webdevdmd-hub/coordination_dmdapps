@@ -109,12 +109,12 @@ type ProjectTaskFormState = {
   revisionNumber: string;
 };
 
-type PoRequestFormState = {
+type SalesOrderRequestFormState = {
   estimateNumber: string;
   estimateAmount: string;
-  poNumber: string;
-  poAmount: string;
-  poDate: string;
+  salesOrderNumber: string;
+  salesOrderAmount: string;
+  salesOrderDate: string;
 };
 
 type ProjectActivity = {
@@ -128,12 +128,12 @@ type ProjectActivity = {
 const TIMELINE_PAGE_SIZE = 12;
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
-const emptyPoForm = (): PoRequestFormState => ({
+const emptySalesOrderForm = (): SalesOrderRequestFormState => ({
   estimateNumber: '',
   estimateAmount: '',
-  poNumber: '',
-  poAmount: '',
-  poDate: todayKey(),
+  salesOrderNumber: '',
+  salesOrderAmount: '',
+  salesOrderDate: todayKey(),
 });
 
 const formatDate = (value: string) => {
@@ -173,6 +173,15 @@ const taskTemplates = [
   { title: 'Material Submittal', description: 'Prepare material submittal.' },
   { title: 'Compliance Sheet', description: 'Complete compliance sheet.' },
   { title: 'Catalog', description: 'Assemble catalog package.' },
+];
+
+const SOR_TASK_TAGS = [
+  'Estimate',
+  'Lux Calculation',
+  'Lighting Layout',
+  'Technical Data Sheet',
+  'Material Submittal',
+  'Compliance Sheet',
 ];
 
 const formatStatusLabel = (value: string) =>
@@ -246,11 +255,12 @@ export default function Page() {
   const [timelineReady, setTimelineReady] = useState(false);
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(true);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(true);
-  const [isPoModalOpen, setIsPoModalOpen] = useState(false);
-  const [isPoSubmitting, setIsPoSubmitting] = useState(false);
-  const [poError, setPoError] = useState<string | null>(null);
-  const [poSuccess, setPoSuccess] = useState<string | null>(null);
-  const [poFormState, setPoFormState] = useState<PoRequestFormState>(() => emptyPoForm());
+  const [isSalesOrderModalOpen, setIsSalesOrderModalOpen] = useState(false);
+  const [isSalesOrderSubmitting, setIsSalesOrderSubmitting] = useState(false);
+  const [salesOrderError, setSalesOrderError] = useState<string | null>(null);
+  const [salesOrderSuccess, setSalesOrderSuccess] = useState<string | null>(null);
+  const [salesOrderTaskTags, setSalesOrderTaskTags] = useState<string[]>([]);
+  const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() => emptySalesOrderForm());
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
@@ -264,11 +274,10 @@ export default function Page() {
   const canEditTasks = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canAssignTasks = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
   const canReassignProjectTasks = isAdmin;
-  const canRequestPo = !!user &&
+  const canRequestSalesOrder = !!user &&
     hasPermission(user.permissions, [
       'admin',
       'sales_order_request_create',
-      'po_request_create',
     ]);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
@@ -634,93 +643,188 @@ export default function Page() {
     setIsViewOpen(false);
     setProjectDetailsView('general');
     setIsTaskModalOpen(false);
-    setIsPoModalOpen(false);
+    setIsSalesOrderModalOpen(false);
     setSelectedTask(null);
-    setPoError(null);
-    setPoSuccess(null);
+    setSalesOrderError(null);
+    setSalesOrderSuccess(null);
   };
 
-  const handleOpenPoModal = () => {
-    if (!selectedProject || !canRequestPo) {
+  const handleOpenSalesOrderModal = (sourceTask?: Task) => {
+    if (!selectedProject || !canRequestSalesOrder) {
       return;
     }
-    setPoFormState(emptyPoForm());
-    setPoError(null);
-    setPoSuccess(null);
-    setIsPoModalOpen(true);
+    const isEstimateTask = (task: Task) =>
+      task.isEstimateTemplateTask === true || task.title.trim().toLowerCase() === 'estimate';
+    const hasEstimateDetails = (task: Task) =>
+      !!task.estimateNumber &&
+      typeof task.estimateAmount === 'number' &&
+      Number.isFinite(task.estimateAmount) &&
+      task.estimateAmount > 0;
+
+    const fallbackEstimateTask = projectTasks.find(
+      (task) => isEstimateTask(task) && hasEstimateDetails(task),
+    );
+    const prefillTask =
+      sourceTask && hasEstimateDetails(sourceTask) ? sourceTask : fallbackEstimateTask;
+
+    const baseForm = emptySalesOrderForm();
+    setSalesOrderFormState({
+      ...baseForm,
+      estimateNumber: prefillTask?.estimateNumber ?? '',
+      estimateAmount:
+        typeof prefillTask?.estimateAmount === 'number' && Number.isFinite(prefillTask.estimateAmount)
+          ? String(prefillTask.estimateAmount)
+          : '',
+    });
+    setSalesOrderTaskTags([]);
+    setSalesOrderError(null);
+    setSalesOrderSuccess(null);
+    setIsSalesOrderModalOpen(true);
   };
 
-  const handleSubmitPoRequest = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitSalesOrderRequest = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!user || !selectedProject || !canRequestPo) {
+    if (!user || !selectedProject || !canRequestSalesOrder) {
       return;
     }
-    const estimateNumber = poFormState.estimateNumber.trim();
-    const poNumber = poFormState.poNumber.trim();
-    const poDate = poFormState.poDate.trim();
-    const estimateAmount = Number(poFormState.estimateAmount);
-    const poAmount = Number(poFormState.poAmount);
+    const estimateNumber = salesOrderFormState.estimateNumber.trim();
+    const salesOrderNumber = salesOrderFormState.salesOrderNumber.trim();
+    const salesOrderDate = salesOrderFormState.salesOrderDate.trim();
+    const estimateAmount = Number(salesOrderFormState.estimateAmount);
+    const salesOrderAmount = Number(salesOrderFormState.salesOrderAmount);
 
     if (!estimateNumber) {
-      setPoError('Estimate number is required.');
+      setSalesOrderError('Estimate number is required.');
       return;
     }
     if (!Number.isFinite(estimateAmount) || estimateAmount <= 0) {
-      setPoError('Estimate amount must be greater than 0.');
+      setSalesOrderError('Estimate amount must be greater than 0.');
       return;
     }
-    if (!poNumber) {
-      setPoError('PO number is required.');
+    if (!salesOrderNumber) {
+      setSalesOrderError('Sales Order number is required.');
       return;
     }
-    if (!Number.isFinite(poAmount) || poAmount <= 0) {
-      setPoError('PO amount must be greater than 0.');
+    if (!Number.isFinite(salesOrderAmount) || salesOrderAmount <= 0) {
+      setSalesOrderError('Sales Order amount must be greater than 0.');
       return;
     }
-    if (!poDate) {
-      setPoError('Date of the PO is required.');
+    if (!salesOrderDate) {
+      setSalesOrderError('Sales Order date is required.');
+      return;
+    }
+    if (salesOrderTaskTags.length === 0) {
+      setSalesOrderError('Select at least one predefined task tag.');
       return;
     }
 
-    setIsPoSubmitting(true);
-    setPoError(null);
-    setPoSuccess(null);
+    setIsSalesOrderSubmitting(true);
+    setSalesOrderError(null);
+    setSalesOrderSuccess(null);
     try {
       const auth = getFirebaseAuth();
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        setPoError('You must be signed in to submit Sales Order Reqs.');
+        setSalesOrderError('You must be signed in to submit Sales Order Reqs.');
         return;
       }
       const idToken = await currentUser.getIdToken();
-      const response = await fetch('/api/sales-order/sales-order-requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          projectId: selectedProject.id,
-          estimateNumber,
-          estimateAmount,
-          poNumber,
-          poAmount,
-          poDate,
-        }),
+      const payload = JSON.stringify({
+        projectId: selectedProject.id,
+        estimateNumber,
+        estimateAmount,
+        salesOrderNumber,
+        salesOrderAmount,
+        salesOrderDate,
+        taskTags: salesOrderTaskTags,
       });
-      const data = (await response.json()) as { error?: string; requestNo?: string };
+      const endpoints = [
+        '/api/sales-order/sales-order-requests',
+        '/api/sales-order/requests',
+        '/api/sales-order-requests',
+      ];
+      let response: Response | null = null;
+      for (const endpoint of endpoints) {
+        const candidate = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: payload,
+        });
+        response = candidate;
+        if (candidate.status !== 404) {
+          break;
+        }
+      }
+      if (!response) {
+        setSalesOrderError('Unable to submit Sales Order Req (no response).');
+        return;
+      }
+      let data: { id?: string; error?: string; requestNo?: string } = {};
+      try {
+        data = (await response.json()) as { id?: string; error?: string; requestNo?: string };
+      } catch {
+        data = {};
+      }
       if (!response.ok) {
-        setPoError(data.error ?? 'Unable to submit Sales Order Req.');
+        setSalesOrderError(
+          data.error ?? `Unable to submit Sales Order Req (HTTP ${response.status}).`,
+        );
         return;
       }
 
       const requestNo = data.requestNo ?? 'Sales Order Req';
-      setPoSuccess(`${requestNo} submitted for approval.`);
-      setPoFormState(emptyPoForm());
+      const createdRequestId = data.id ?? '';
+      if (createdRequestId) {
+        const dueDate = salesOrderDate;
+        const taskResults = await Promise.allSettled(
+          salesOrderTaskTags.map((tag) =>
+            firebaseTaskRepository.create({
+              title: `${tag} · ${selectedProject.name}`,
+              description: `Sales Order Req task for ${selectedProject.name}`,
+              assignedTo: selectedProject.assignedTo || user.id,
+              assignedUsers: selectedProject.assignedTo ? [selectedProject.assignedTo] : [user.id],
+              status: 'todo',
+              priority: 'medium',
+              recurrence: 'none',
+              startDate: dueDate,
+              endDate: dueDate,
+              dueDate,
+              parentTaskId: '',
+              projectId: selectedProject.id,
+              sharedRoles: selectedProject.sharedRoles ?? [],
+              createdBy: user.id,
+              salesOrderRequestId: createdRequestId,
+              salesOrderRequestTag: tag,
+            }),
+          ),
+        );
+        if (taskResults.some((result) => result.status === 'rejected')) {
+          await logProjectActivity(
+            selectedProject.id,
+            `Sales Order Req ${requestNo} submitted, but one or more predefined tasks failed to create.`,
+            'task',
+          );
+          setSalesOrderError(
+            'Request submitted, but one or more predefined tasks could not be created.',
+          );
+        } else {
+          await logProjectActivity(
+            selectedProject.id,
+            `Sales Order Req ${requestNo} submitted with predefined tasks: ${salesOrderTaskTags.join(', ')}.`,
+            'task',
+          );
+        }
+      }
+      setSalesOrderSuccess(`${requestNo} submitted for approval.`);
+      setSalesOrderFormState(emptySalesOrderForm());
+      setSalesOrderTaskTags([]);
     } catch {
-      setPoError('Unable to submit Sales Order Req. Please try again.');
+      setSalesOrderError('Unable to submit Sales Order Req. Please try again.');
     } finally {
-      setIsPoSubmitting(false);
+      setIsSalesOrderSubmitting(false);
     }
   };
 
@@ -1927,9 +2031,9 @@ export default function Page() {
                         const isEstimateTask =
                           task.isEstimateTemplateTask === true ||
                           task.title.trim().toLowerCase() === 'estimate';
-                        const canOpenPoFromEstimate =
+                        const canOpenSalesOrderFromEstimate =
                           isEstimateTask &&
-                          canRequestPo &&
+                          canRequestSalesOrder &&
                           (isAdmin || selectedProject.assignedTo === user?.id);
                         return (
                           <div
@@ -1989,10 +2093,10 @@ export default function Page() {
                               </div>
                             </div>
                             <div className="mt-3 flex flex-wrap items-center gap-2">
-                              {canOpenPoFromEstimate ? (
+                              {canOpenSalesOrderFromEstimate ? (
                                 <button
                                   type="button"
-                                  onClick={handleOpenPoModal}
+                                  onClick={() => handleOpenSalesOrderModal(task)}
                                   className="rounded-full border border-border/60 bg-surface/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
                                 >
                                   Sales Order Req
@@ -2337,13 +2441,13 @@ export default function Page() {
         </div>
       ) : null}
 
-      {isPoModalOpen && selectedProject ? (
+      {isSalesOrderModalOpen && selectedProject ? (
         <div
           data-modal-overlay="true"
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4 py-6"
           onClick={() => {
-            setIsPoModalOpen(false);
-            setPoError(null);
+            setIsSalesOrderModalOpen(false);
+            setSalesOrderError(null);
           }}
         >
           <DraggablePanel
@@ -2359,14 +2463,14 @@ export default function Page() {
                   Request for {selectedProject.name}
                 </h3>
                 <p className="mt-2 text-xs text-muted sm:text-sm">
-                  Submit estimate and PO details to Sales Order for approval.
+                  Submit estimate and Sales Order details for approval.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  setIsPoModalOpen(false);
-                  setPoError(null);
+                  setIsSalesOrderModalOpen(false);
+                  setSalesOrderError(null);
                 }}
                 className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
               >
@@ -2374,7 +2478,7 @@ export default function Page() {
               </button>
             </div>
 
-            <form className="mt-6 space-y-4" onSubmit={handleSubmitPoRequest}>
+            <form className="mt-6 space-y-4" onSubmit={handleSubmitSalesOrderRequest}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
@@ -2382,9 +2486,9 @@ export default function Page() {
                   </label>
                   <input
                     required
-                    value={poFormState.estimateNumber}
+                    value={salesOrderFormState.estimateNumber}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, estimateNumber: event.target.value }))
+                      setSalesOrderFormState((prev) => ({ ...prev, estimateNumber: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="EST-2026-001"
@@ -2399,9 +2503,9 @@ export default function Page() {
                     min="0.01"
                     step="0.01"
                     required
-                    value={poFormState.estimateAmount}
+                    value={salesOrderFormState.estimateAmount}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, estimateAmount: event.target.value }))
+                      setSalesOrderFormState((prev) => ({ ...prev, estimateAmount: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="15000"
@@ -2412,30 +2516,30 @@ export default function Page() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    PO number
+                    Sales Order number
                   </label>
                   <input
                     required
-                    value={poFormState.poNumber}
+                    value={salesOrderFormState.salesOrderNumber}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, poNumber: event.target.value }))
+                      setSalesOrderFormState((prev) => ({ ...prev, salesOrderNumber: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                    placeholder="PO-2026-015"
+                    placeholder="SOR-2026-015"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    PO amount
+                    Sales Order amount
                   </label>
                   <input
                     type="number"
                     min="0.01"
                     step="0.01"
                     required
-                    value={poFormState.poAmount}
+                    value={salesOrderFormState.salesOrderAmount}
                     onChange={(event) =>
-                      setPoFormState((prev) => ({ ...prev, poAmount: event.target.value }))
+                      setSalesOrderFormState((prev) => ({ ...prev, salesOrderAmount: event.target.value }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="17500"
@@ -2445,37 +2549,68 @@ export default function Page() {
 
               <div>
                 <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Date of the PO
+                  Sales Order date
                 </label>
                 <input
                   type="date"
                   required
-                  value={poFormState.poDate}
+                  value={salesOrderFormState.salesOrderDate}
                   onChange={(event) =>
-                    setPoFormState((prev) => ({ ...prev, poDate: event.target.value }))
+                    setSalesOrderFormState((prev) => ({ ...prev, salesOrderDate: event.target.value }))
                   }
                   className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                 />
               </div>
 
-              {poError ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  Predefined Task Tags
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {SOR_TASK_TAGS.map((tag) => {
+                    const isSelected = salesOrderTaskTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() =>
+                          setSalesOrderTaskTags((prev) =>
+                            prev.includes(tag)
+                              ? prev.filter((item) => item !== tag)
+                              : [...prev, tag],
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+                          isSelected
+                            ? 'border-accent/60 bg-accent/15 text-text'
+                            : 'border-border/60 bg-bg/70 text-muted hover:text-text'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {salesOrderError ? (
                 <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
-                  {poError}
+                  {salesOrderError}
                 </div>
               ) : null}
-              {poSuccess ? (
+              {salesOrderSuccess ? (
                 <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
-                  {poSuccess}
+                  {salesOrderSuccess}
                 </div>
               ) : null}
 
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  disabled={isPoSubmitting}
+                  disabled={isSalesOrderSubmitting}
                   className="rounded-full border border-border/60 bg-accent/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isPoSubmitting ? 'Submitting...' : 'Submit for approval'}
+                  {isSalesOrderSubmitting ? 'Submitting...' : 'Submit for approval'}
                 </button>
               </div>
             </form>

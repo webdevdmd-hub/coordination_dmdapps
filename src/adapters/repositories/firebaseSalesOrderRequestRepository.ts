@@ -1,42 +1,42 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
 
-import { PurchaseOrderRequest } from '@/core/entities/purchaseOrderRequest';
+import { SalesOrderRequest } from '@/core/entities/salesOrderRequest';
 import {
-  CreatePurchaseOrderRequestInput,
-  PurchaseOrderRequestRepository,
-} from '@/core/ports/PurchaseOrderRequestRepository';
+  CreateSalesOrderRequestInput,
+  SalesOrderRequestRepository,
+} from '@/core/ports/SalesOrderRequestRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 
-type PurchaseOrderRequestFirestore = Omit<PurchaseOrderRequest, 'id'>;
+type SalesOrderRequestFirestore = Omit<SalesOrderRequest, 'id'>;
 
-const toPurchaseOrderRequest = (
+const toSalesOrderRequest = (
   id: string,
-  data: PurchaseOrderRequestFirestore,
-): PurchaseOrderRequest => ({
+  data: SalesOrderRequestFirestore,
+): SalesOrderRequest => ({
   id,
   ...data,
 });
 
 const SALES_ORDER_NAMESPACE_ID = 'main';
 const poRequestsCollection = () =>
-  collection(getFirebaseDb(), 'sales_order', SALES_ORDER_NAMESPACE_ID, 'po_requests');
+  collection(getFirebaseDb(), 'sales_order', SALES_ORDER_NAMESPACE_ID, 'sales_order_requests');
 
-export const firebasePurchaseOrderRequestRepository: PurchaseOrderRequestRepository = {
+export const firebaseSalesOrderRequestRepository: SalesOrderRequestRepository = {
   async listAll() {
     const result = await getDocs(poRequestsCollection());
     return result.docs.map((snap) =>
-      toPurchaseOrderRequest(snap.id, snap.data() as PurchaseOrderRequestFirestore),
+      toSalesOrderRequest(snap.id, snap.data() as SalesOrderRequestFirestore),
     );
   },
-  async create(input: CreatePurchaseOrderRequestInput) {
+  async create(input: CreateSalesOrderRequestInput) {
     const now = new Date().toISOString();
-    const payload: PurchaseOrderRequestFirestore = {
+    const payload: SalesOrderRequestFirestore = {
       ...input,
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
     };
     const docRef = await addDoc(poRequestsCollection(), payload);
-    return toPurchaseOrderRequest(docRef.id, payload);
+    return toSalesOrderRequest(docRef.id, payload);
   },
   async update(id, updates) {
     const rest = { ...updates };
@@ -47,7 +47,7 @@ export const firebasePurchaseOrderRequestRepository: PurchaseOrderRequestReposit
     if (!snap.exists()) {
       throw new Error('Purchase order request not found after update.');
     }
-    return toPurchaseOrderRequest(snap.id, snap.data() as PurchaseOrderRequestFirestore);
+    return toSalesOrderRequest(snap.id, snap.data() as SalesOrderRequestFirestore);
   },
   async delete(id) {
     await deleteDoc(doc(poRequestsCollection(), id));

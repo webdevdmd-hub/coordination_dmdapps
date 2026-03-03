@@ -68,9 +68,6 @@ export const toPermissions = (value: unknown): PermissionKey[] => {
         'sales_order_request_create',
         'sales_order_request_view',
         'sales_order_request_approve',
-        'po_request_create',
-        'po_request_view',
-        'po_request_approve',
         'calendar_assign',
         'invoices_view',
         'sales',
@@ -90,18 +87,17 @@ export const toPermissions = (value: unknown): PermissionKey[] => {
     if (typeof item !== 'string') {
       return acc;
     }
-    const normalized =
-      item === 'accounts'
-        ? 'sales_order'
-        : item === 'po_request_create'
-          ? 'sales_order_request_create'
-          : item === 'po_request_view'
-            ? 'sales_order_request_view'
-            : item === 'po_request_approve'
-              ? 'sales_order_request_approve'
-              : item;
-    if (permissionSet.has(normalized as PermissionKey)) {
-      acc.push(normalized as PermissionKey);
+    const normalized = item === 'accounts' ? 'sales_order' : item;
+    const resolved =
+      normalized === 'po_request_create'
+        ? 'sales_order_request_create'
+        : normalized === 'po_request_view'
+          ? 'sales_order_request_view'
+          : normalized === 'po_request_approve'
+            ? 'sales_order_request_approve'
+            : normalized;
+    if (permissionSet.has(resolved as PermissionKey)) {
+      acc.push(resolved as PermissionKey);
     }
     return acc;
   }, []);

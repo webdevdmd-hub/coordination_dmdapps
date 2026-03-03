@@ -1,25 +1,28 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, getDocs } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 
-import { firebasePurchaseOrderRequestRepository } from '@/adapters/repositories/firebasePurchaseOrderRequestRepository';
+import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { ModuleShell } from '@/components/ui/ModuleShell';
-import { PurchaseOrderRequest, PurchaseOrderRequestStatus } from '@/core/entities/purchaseOrderRequest';
+import { SalesOrderRequest, SalesOrderRequestStatus } from '@/core/entities/salesOrderRequest';
+import { Task } from '@/core/entities/task';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { emitNotificationEventSafe } from '@/lib/notifications';
 import { hasPermission } from '@/lib/permissions';
+import { addSalesOrderTimelineEvent, listSalesOrderTimelineEvents } from '@/lib/salesOrderTimeline';
 
 type SalesOrderActivity = {
   id: string;
   note: string;
   date: string;
-  createdBy: string;
+  actorName?: string;
+  createdBy?: string;
   type?: string;
 };
 
-const statusChipStyles: Record<PurchaseOrderRequestStatus, string> = {
+const statusChipStyles: Record<SalesOrderRequestStatus, string> = {
   draft: 'bg-surface-strong text-text',
   pending_approval: 'bg-amber-100 text-amber-800',
   approved: 'bg-emerald-200 text-emerald-900',
@@ -27,7 +30,7 @@ const statusChipStyles: Record<PurchaseOrderRequestStatus, string> = {
   cancelled: 'bg-slate-300 text-slate-800',
 };
 
-const formatStatusLabel = (value: PurchaseOrderRequestStatus) =>
+const formatStatusLabel = (value: SalesOrderRequestStatus) =>
   value
     .split('_')
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
@@ -72,7 +75,16 @@ const formatDate = (value?: string) => {
 const formatAmount = (value?: number) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '-';
 
+const formatStoreHandoffStatus = (request: SalesOrderRequest) =>
+  request.sentToStore ? 'Sent' : 'Not sent';
+
 const activityDotClass = (activity: SalesOrderActivity) => {
+  if (activity.type === 'sent_to_store') {
+    return 'bg-blue-500';
+  }
+  if (activity.type === 'store_received') {
+    return 'bg-emerald-500';
+  }
   const note = (activity.note || '').toLowerCase();
   if (note.includes('rfq')) {
     return 'bg-emerald-500';
@@ -102,7 +114,7 @@ const activityDotClass = (activity: SalesOrderActivity) => {
 };
 
 const logPoDecisionActivity = async (
-  request: PurchaseOrderRequest,
+  request: SalesOrderRequest,
   actorId: string,
   status: 'approved' | 'rejected',
   rejectionReason?: string,
@@ -124,8 +136,41 @@ const logPoDecisionActivity = async (
   );
 };
 
+const taskStatusChipStyles: Record<string, string> = {
+  todo: 'bg-slate-100 text-slate-700',
+  'in-progress': 'bg-blue-100 text-blue-700',
+  review: 'bg-amber-100 text-amber-700',
+  done: 'bg-emerald-100 text-emerald-700',
+};
+
+const logStoreHandoffActivity = async (
+  request: SalesOrderRequest,
+  actorId: string,
+  actorName: string,
+) => {
+  const now = new Date().toISOString();
+  await Promise.all([
+    addDoc(collection(getFirebaseDb(), 'sales', 'main', 'projects', request.projectId, 'activities'), {
+      type: 'note',
+      note: `Sales Order Req ${request.requestNo} sent to Store by ${actorName}.`,
+      date: now,
+      createdBy: actorId,
+    }),
+    addSalesOrderTimelineEvent({
+      requestId: request.id,
+      requestNo: request.requestNo,
+      projectId: request.projectId,
+      type: 'sent_to_store',
+      note: `Sales Order Req ${request.requestNo} sent to Store by ${actorName}.`,
+      actorId,
+      actorName,
+      date: now,
+    }),
+  ]);
+};
+
 const notifyRequester = async (
-  request: PurchaseOrderRequest,
+  request: SalesOrderRequest,
   actorId: string,
   actorName: string,
   status: 'approved' | 'rejected',
@@ -139,12 +184,12 @@ const notifyRequester = async (
       ? `${actorName} approved ${request.requestNo} for ${request.projectName}.`
       : `${actorName} rejected ${request.requestNo} for ${request.projectName}.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`;
   await emitNotificationEventSafe({
-    type: status === 'approved' ? 'po_request.approved' : 'po_request.rejected',
+    type: status === 'approved' ? 'sales_order_request.approved' : 'sales_order_request.rejected',
     title: status === 'approved' ? 'Sales Order Req Approved' : 'Sales Order Req Rejected',
     body,
     actorId,
     recipients: [request.requestedBy],
-    entityType: 'purchaseOrderRequest',
+    entityType: 'salesOrderRequest',
     entityId: request.id,
     meta: {
       requestNo: request.requestNo,
@@ -157,14 +202,17 @@ const notifyRequester = async (
 
 export default function Page() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<PurchaseOrderRequest[]>([]);
-  const [statusFilter, setStatusFilter] = useState<PurchaseOrderRequestStatus | 'all'>(
+  const [requests, setRequests] = useState<SalesOrderRequest[]>([]);
+  const [statusFilter, setStatusFilter] = useState<SalesOrderRequestStatus | 'all'>(
     'pending_approval',
   );
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
-  const [selectedRequest, setSelectedRequest] = useState<PurchaseOrderRequest | null>(null);
-  const [detailsTab, setDetailsTab] = useState<'details' | 'timeline'>('details');
+  const [selectedRequest, setSelectedRequest] = useState<SalesOrderRequest | null>(null);
+  const [detailsTab, setDetailsTab] = useState<'details' | 'timeline' | 'tasks'>('details');
   const [timelineActivities, setTimelineActivities] = useState<SalesOrderActivity[]>([]);
+  const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
+  const [isLoadingLinkedTasks, setIsLoadingLinkedTasks] = useState(false);
+  const [linkedTasksError, setLinkedTasksError] = useState<string | null>(null);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -172,12 +220,12 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
 
   const canView = !!user &&
-    hasPermission(user.permissions, ['admin', 'sales_order_request_view', 'po_request_view']);
+    hasPermission(user.permissions, ['admin', 'sales_order_request_view', 'sales_order_request_view']);
   const canApprove = !!user &&
     hasPermission(user.permissions, [
       'admin',
       'sales_order_request_approve',
-      'po_request_approve',
+      'sales_order_request_approve',
     ]);
 
   useEffect(() => {
@@ -191,7 +239,7 @@ export default function Page() {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await firebasePurchaseOrderRequestRepository.listAll();
+        const result = await firebaseSalesOrderRequestRepository.listAll();
         if (!active) {
           return;
         }
@@ -225,25 +273,49 @@ export default function Page() {
     const loadTimeline = async () => {
       setIsLoadingTimeline(true);
       try {
-        const snapshot = await getDocs(
-          collection(
-            getFirebaseDb(),
-            'sales',
-            'main',
-            'projects',
-            selectedRequest.projectId,
-            'activities',
-          ),
-        );
         if (!active) {
           return;
         }
-        const items = snapshot.docs
-          .map((docItem) => ({
-            id: docItem.id,
-            ...(docItem.data() as Omit<SalesOrderActivity, 'id'>),
-          }))
-          .sort((a, b) => b.date.localeCompare(a.date));
+        const timelineEvents = await listSalesOrderTimelineEvents(selectedRequest.id);
+        if (!active) {
+          return;
+        }
+        const items: SalesOrderActivity[] =
+          timelineEvents.length > 0
+            ? timelineEvents.map((event) => ({
+                id: event.id,
+                note: event.note,
+                date: event.date,
+                actorName: event.actorName,
+                createdBy: event.actorId,
+                type: event.type,
+              }))
+            : [
+                ...(selectedRequest.sentToStore && selectedRequest.sentToStoreAt
+                  ? [
+                      {
+                        id: `fallback-sent-${selectedRequest.id}`,
+                        note: `Sales Order Req ${selectedRequest.requestNo} sent to Store by ${selectedRequest.sentToStoreByName || 'Unknown'}.`,
+                        date: selectedRequest.sentToStoreAt,
+                        actorName: selectedRequest.sentToStoreByName || 'Unknown',
+                        createdBy: selectedRequest.sentToStoreBy || '',
+                        type: 'sent_to_store',
+                      },
+                    ]
+                  : []),
+                ...(selectedRequest.storeReceived && selectedRequest.storeReceivedAt
+                  ? [
+                      {
+                        id: `fallback-received-${selectedRequest.id}`,
+                        note: `Sales Order Req ${selectedRequest.requestNo} marked as received by Store (${selectedRequest.storeReceivedByName || 'Unknown'}).`,
+                        date: selectedRequest.storeReceivedAt,
+                        actorName: selectedRequest.storeReceivedByName || 'Unknown',
+                        createdBy: selectedRequest.storeReceivedBy || '',
+                        type: 'store_received',
+                      },
+                    ]
+                  : []),
+              ].sort((a, b) => b.date.localeCompare(a.date));
         setTimelineActivities(items);
       } catch {
         if (active) {
@@ -262,6 +334,40 @@ export default function Page() {
     };
   }, [selectedRequest]);
 
+  useEffect(() => {
+    if (!selectedRequest) {
+      setLinkedTasks([]);
+      setIsLoadingLinkedTasks(false);
+      setLinkedTasksError(null);
+      return;
+    }
+    setIsLoadingLinkedTasks(true);
+    setLinkedTasksError(null);
+    const tasksQuery = query(
+      collection(getFirebaseDb(), 'tasks'),
+      where('salesOrderRequestId', '==', selectedRequest.id),
+    );
+    const unsubscribe = onSnapshot(
+      tasksQuery,
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((docItem) => ({
+            id: docItem.id,
+            ...(docItem.data() as Omit<Task, 'id'>),
+          }))
+          .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+        setLinkedTasks(items);
+        setIsLoadingLinkedTasks(false);
+      },
+      () => {
+        setLinkedTasks([]);
+        setIsLoadingLinkedTasks(false);
+        setLinkedTasksError('Unable to load linked tasks.');
+      },
+    );
+    return () => unsubscribe();
+  }, [selectedRequest]);
+
   const filteredRequests = useMemo(
     () =>
       requests.filter((item) => (statusFilter === 'all' ? true : item.status === statusFilter)),
@@ -278,7 +384,7 @@ export default function Page() {
   );
 
   const applyStatusUpdate = async (
-    request: PurchaseOrderRequest,
+    request: SalesOrderRequest,
     status: 'approved' | 'rejected',
     rejectionReason?: string,
   ) => {
@@ -309,7 +415,7 @@ export default function Page() {
           };
 
     try {
-      const updated = await firebasePurchaseOrderRequestRepository.update(request.id, {
+      const updated = await firebaseSalesOrderRequestRepository.update(request.id, {
         status,
         approval,
         updatedAt: now,
@@ -327,11 +433,11 @@ export default function Page() {
     }
   };
 
-  const handleApprove = async (request: PurchaseOrderRequest) => {
+  const handleApprove = async (request: SalesOrderRequest) => {
     await applyStatusUpdate(request, 'approved');
   };
 
-  const handleReject = async (request: PurchaseOrderRequest) => {
+  const handleReject = async (request: SalesOrderRequest) => {
     const reason = window.prompt('Enter rejection reason');
     if (reason === null) {
       return;
@@ -343,7 +449,39 @@ export default function Page() {
     await applyStatusUpdate(request, 'rejected', reason.trim());
   };
 
-  const openRequestDetails = (request: PurchaseOrderRequest, tab: 'details' | 'timeline') => {
+  const handleSendToStore = async (request: SalesOrderRequest) => {
+    if (!user || !canApprove || request.status !== 'approved' || request.sentToStore) {
+      return;
+    }
+    setIsSaving(request.id);
+    setError(null);
+    const now = new Date().toISOString();
+    try {
+      const updated = await firebaseSalesOrderRequestRepository.update(request.id, {
+        sentToStore: true,
+        sentToStoreAt: now,
+        sentToStoreBy: user.id,
+        sentToStoreByName: user.fullName,
+        storeReceived: false,
+        storeReceivedAt: '',
+        storeReceivedBy: '',
+        storeReceivedByName: '',
+        updatedAt: now,
+      });
+      setRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
+      setSelectedRequest((prev) => (prev?.id === request.id ? updated : prev));
+      await Promise.allSettled([logStoreHandoffActivity(request, user.id, user.fullName)]);
+    } catch {
+      setError('Unable to send Sales Order Req to Store.');
+    } finally {
+      setIsSaving(null);
+    }
+  };
+
+  const openRequestDetails = (
+    request: SalesOrderRequest,
+    tab: 'details' | 'timeline' | 'tasks',
+  ) => {
     setSelectedRequest(request);
     setDetailsTab(tab);
     setIsTimelineOpen(false);
@@ -501,6 +639,16 @@ export default function Page() {
                       >
                         Details
                       </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openRequestDetails(request, 'tasks');
+                        }}
+                        className="h-8 rounded-lg border border-border/60 bg-bg/70 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted transition hover:text-text"
+                      >
+                        Tasks
+                      </button>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -529,6 +677,19 @@ export default function Page() {
                             Reject
                           </button>
                         </>
+                      ) : null}
+                      {request.status === 'approved' && canApprove && !request.sentToStore ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleSendToStore(request);
+                          }}
+                          disabled={isSaving === request.id}
+                          className="h-8 rounded-lg border border-border/60 bg-blue-500/80 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSaving === request.id ? 'Sending...' : 'Send to Store'}
+                        </button>
                       ) : null}
                     </div>
                   </div>
@@ -584,6 +745,15 @@ export default function Page() {
                 >
                   Timeline
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailsTab('tasks')}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] ${
+                    detailsTab === 'tasks' ? 'bg-accent/80 text-text' : 'text-muted'
+                  }`}
+                >
+                  Tasks
+                </button>
               </div>
 
               {detailsTab === 'details' ? (
@@ -616,17 +786,23 @@ export default function Page() {
                     <span className="font-semibold text-text">Estimate Amount:</span>{' '}
                     {formatAmount(selectedRequest.estimateAmount)}
                   </p>
-                  <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                    <span className="font-semibold text-text">PO Number:</span>{' '}
-                    {selectedRequest.poNumber || '-'}
+                  <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted sm:col-span-2">
+                    <span className="font-semibold text-text">Predefined Task Tags:</span>{' '}
+                    {selectedRequest.taskTags && selectedRequest.taskTags.length > 0
+                      ? selectedRequest.taskTags.join(', ')
+                      : '-'}
                   </p>
                   <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                    <span className="font-semibold text-text">PO Amount:</span>{' '}
-                    {formatAmount(selectedRequest.poAmount)}
+                    <span className="font-semibold text-text">Sales Order Number:</span>{' '}
+                    {selectedRequest.salesOrderNumber || '-'}
                   </p>
                   <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                    <span className="font-semibold text-text">Date of the PO:</span>{' '}
-                    {formatDate(selectedRequest.poDate)}
+                    <span className="font-semibold text-text">Sales Order Amount:</span>{' '}
+                    {formatAmount(selectedRequest.salesOrderAmount)}
+                  </p>
+                  <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
+                    <span className="font-semibold text-text">Sales Order date:</span>{' '}
+                    {formatDate(selectedRequest.salesOrderDate)}
                   </p>
                   <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
                     <span className="font-semibold text-text">Approved By:</span>{' '}
@@ -636,6 +812,88 @@ export default function Page() {
                     <span className="font-semibold text-text">Rejection Reason:</span>{' '}
                     {selectedRequest.approval?.rejectionReason || '-'}
                   </p>
+                  <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
+                    <span className="font-semibold text-text">Store Handoff:</span>{' '}
+                    {formatStoreHandoffStatus(selectedRequest)}
+                  </p>
+                  <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
+                    <span className="font-semibold text-text">Sent to Store At:</span>{' '}
+                    {formatDateTime(selectedRequest.sentToStoreAt)}
+                  </p>
+                  <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
+                    <span className="font-semibold text-text">Sent to Store By:</span>{' '}
+                    {selectedRequest.sentToStoreByName || '-'}
+                  </p>
+                </div>
+              ) : detailsTab === 'tasks' ? (
+                <div className="mt-4 rounded-2xl border border-border/60 bg-bg/70 p-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                        Total
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-text">{linkedTasks.length}</p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        Todo
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-text">
+                        {linkedTasks.filter((task) => task.status === 'todo').length}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600">
+                        In Progress
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-text">
+                        {linkedTasks.filter((task) => task.status === 'in-progress').length}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
+                        Done
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-text">
+                        {linkedTasks.filter((task) => task.status === 'done').length}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                    {isLoadingLinkedTasks ? (
+                      <p className="text-sm text-muted">Loading linked tasks...</p>
+                    ) : linkedTasksError ? (
+                      <p className="text-sm text-rose-200">{linkedTasksError}</p>
+                    ) : linkedTasks.length === 0 ? (
+                      <p className="text-sm text-muted">No tasks linked to this Sales Order Req yet.</p>
+                    ) : (
+                      linkedTasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-text">
+                                {task.salesOrderRequestTag || task.title}
+                              </p>
+                              <p className="text-xs text-muted">
+                                Updated: {formatDateTime(task.updatedAt)}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                                taskStatusChipStyles[task.status] ?? taskStatusChipStyles.todo
+                              }`}
+                            >
+                              {task.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-border/60 bg-bg/70 p-4">
@@ -657,7 +915,9 @@ export default function Page() {
                     {isLoadingTimeline ? (
                       <p className="text-sm text-muted">Loading activity...</p>
                     ) : timelineActivities.length === 0 ? (
-                      <p className="text-sm text-muted">No activity logged yet.</p>
+                      <p className="text-sm text-muted">
+                        No Store interaction logged yet for this Sales Order.
+                      </p>
                     ) : (
                       timelineActivities.map((activity, index) => (
                         <div key={`${activity.id}-${index}`} className="flex gap-4">
@@ -670,7 +930,8 @@ export default function Page() {
                           <div>
                             <p className="font-semibold text-text">{activity.note || 'Activity update'}</p>
                             <p className="mt-1 text-sm text-muted">
-                              {formatTimelineDate(activity.date)} - {activity.createdBy || 'System'}
+                              {formatTimelineDate(activity.date)} -{' '}
+                              {activity.actorName || activity.createdBy || 'System'}
                             </p>
                           </div>
                         </div>
@@ -697,6 +958,18 @@ export default function Page() {
                     className="rounded-full border border-border/60 bg-emerald-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSaving === selectedRequest.id ? 'Saving...' : 'Approve'}
+                  </button>
+                </div>
+              ) : null}
+              {selectedRequest.status === 'approved' && canApprove && !selectedRequest.sentToStore ? (
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSendToStore(selectedRequest)}
+                    disabled={isSaving === selectedRequest.id}
+                    className="rounded-full border border-border/60 bg-blue-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving === selectedRequest.id ? 'Sending...' : 'Send to Store'}
                   </button>
                 </div>
               ) : null}

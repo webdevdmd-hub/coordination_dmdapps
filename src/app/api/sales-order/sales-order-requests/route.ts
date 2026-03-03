@@ -6,13 +6,14 @@ import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
 
 export const runtime = 'nodejs';
 
-type CreatePoRequestPayload = {
+type CreateSalesOrderRequestPayload = {
   projectId?: string;
   estimateNumber?: string;
   estimateAmount?: number;
-  poNumber?: string;
-  poAmount?: number;
-  poDate?: string;
+  salesOrderNumber?: string;
+  salesOrderAmount?: number;
+  salesOrderDate?: string;
+  taskTags?: string[];
 };
 
 const SALES_NAMESPACE_ID = 'main';
@@ -71,13 +72,13 @@ const resolveRolePermissions = async (
 
 const buildRequestNo = (id: string, nowIso: string) => {
   const ymd = nowIso.slice(0, 10).replace(/-/g, '');
-  return `POR-${ymd}-${id.slice(0, 6).toUpperCase()}`;
+  return `SOR-${ymd}-${id.slice(0, 6).toUpperCase()}`;
 };
 
 export async function POST(request: Request) {
-  let payload: CreatePoRequestPayload;
+  let payload: CreateSalesOrderRequestPayload;
   try {
-    payload = (await request.json()) as CreatePoRequestPayload;
+    payload = (await request.json()) as CreateSalesOrderRequestPayload;
   } catch {
     return toErrorResponse('Invalid JSON payload.');
   }
@@ -95,17 +96,24 @@ export async function POST(request: Request) {
   const canCreate =
     requesterPermissions.includes('admin') ||
     requesterPermissions.includes('sales_order_request_create') ||
-    requesterPermissions.includes('po_request_create');
+    requesterPermissions.includes('sales_order_request_create');
   if (!canCreate) {
     return toErrorResponse('You do not have permission to create Sales Order Reqs.', 403);
   }
 
   const projectId = payload.projectId?.trim();
   const estimateNumber = payload.estimateNumber?.trim();
-  const poNumber = payload.poNumber?.trim();
-  const poDate = payload.poDate?.trim();
+  const salesOrderNumber = payload.salesOrderNumber?.trim();
+  const salesOrderDate = payload.salesOrderDate?.trim();
   const estimateAmount = toFiniteNumber(payload.estimateAmount);
-  const poAmount = toFiniteNumber(payload.poAmount);
+  const salesOrderAmount = toFiniteNumber(payload.salesOrderAmount);
+  const taskTags = Array.from(
+    new Set(
+      (Array.isArray(payload.taskTags) ? payload.taskTags : [])
+        .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+        .filter((tag) => tag.length > 0),
+    ),
+  );
   if (!projectId) {
     return toErrorResponse('Project id is required.');
   }
@@ -115,14 +123,14 @@ export async function POST(request: Request) {
   if (estimateAmount === null || estimateAmount <= 0) {
     return toErrorResponse('Estimate amount must be greater than 0.');
   }
-  if (!poNumber) {
-    return toErrorResponse('PO number is required.');
+  if (!salesOrderNumber) {
+    return toErrorResponse('Sales Order number is required.');
   }
-  if (poAmount === null || poAmount <= 0) {
-    return toErrorResponse('PO amount must be greater than 0.');
+  if (salesOrderAmount === null || salesOrderAmount <= 0) {
+    return toErrorResponse('Sales Order amount must be greater than 0.');
   }
-  if (!poDate) {
-    return toErrorResponse('Date of the PO is required.');
+  if (!salesOrderDate) {
+    return toErrorResponse('Sales Order date is required.');
   }
 
   const db = getFirebaseAdminDb();
@@ -137,16 +145,16 @@ export async function POST(request: Request) {
     requesterPermissions.includes('admin') || requesterPermissions.includes('project_view_all');
   const isOwner = String(projectData.assignedTo ?? '') === authedUser.id;
   if (!canViewAllProjects && !isOwner) {
-    return toErrorResponse('You can only request PO for your assigned projects.', 403);
+    return toErrorResponse('You can only submit Sales Order Reqs for your assigned projects.', 403);
   }
 
   const now = new Date().toISOString();
-  const poRef = db
+  const salesOrderRef = db
     .collection('sales_order')
     .doc(SALES_ORDER_NAMESPACE_ID)
-    .collection('po_requests')
+    .collection('sales_order_requests')
     .doc();
-  const requestNo = buildRequestNo(poRef.id, now);
+  const requestNo = buildRequestNo(salesOrderRef.id, now);
 
   const usersSnap = await db.collection('users').where('active', '==', true).get();
   const approverIds: string[] = [];
@@ -163,13 +171,13 @@ export async function POST(request: Request) {
     if (
       perms.includes('admin') ||
       perms.includes('sales_order_request_approve') ||
-      perms.includes('po_request_approve')
+      perms.includes('sales_order_request_approve')
     ) {
       approverIds.push(userDoc.id);
     }
   }
 
-  const poPayload = {
+  const salesOrderPayload = {
     requestNo,
     projectId,
     projectName: String(projectData.name ?? 'Project'),
@@ -179,23 +187,32 @@ export async function POST(request: Request) {
     requestedByName: authedUser.fullName,
     estimateNumber,
     estimateAmount: roundAmount(estimateAmount),
-    poNumber,
-    poAmount: roundAmount(poAmount),
-    poDate,
+    salesOrderNumber,
+    salesOrderAmount: roundAmount(salesOrderAmount),
+    salesOrderDate,
+    taskTags,
     status: 'pending_approval',
     approval: {},
     salesOrderEntryId: '',
+    sentToStore: false,
+    sentToStoreAt: '',
+    sentToStoreBy: '',
+    sentToStoreByName: '',
+    storeReceived: false,
+    storeReceivedAt: '',
+    storeReceivedBy: '',
+    storeReceivedByName: '',
     createdAt: now,
     updatedAt: now,
   };
 
   const batch = db.batch();
-  batch.set(poRef, poPayload);
+  batch.set(salesOrderRef, salesOrderPayload);
 
   const activityRef = projectRef.collection('activities').doc();
   batch.set(activityRef, {
     type: 'note',
-    note: `Sales Order Req ${requestNo} submitted for approval (PO ${roundAmount(poAmount).toLocaleString()}).`,
+    note: `Sales Order Req ${requestNo} submitted for approval (Amount ${roundAmount(salesOrderAmount).toLocaleString()}).`,
     date: now,
     createdBy: authedUser.id,
   });
@@ -203,11 +220,11 @@ export async function POST(request: Request) {
   if (approverIds.length > 0) {
     const eventRef = db.collection('notificationEvents').doc();
     batch.set(eventRef, {
-      type: 'po_request.submitted',
+      type: 'sales_order_request.submitted',
       title: 'New Sales Order Req',
       body: `${authedUser.fullName} submitted ${requestNo} for ${String(projectData.name ?? 'a project')}.`,
-      entityType: 'purchaseOrderRequest',
-      entityId: poRef.id,
+      entityType: 'salesOrderRequest',
+      entityId: salesOrderRef.id,
       actorId: authedUser.id,
       recipients: approverIds,
       broadcast: false,
@@ -217,16 +234,17 @@ export async function POST(request: Request) {
         projectId,
         estimateNumber,
         estimateAmount: roundAmount(estimateAmount),
-        poNumber,
-        poAmount: roundAmount(poAmount),
-        poDate,
+        salesOrderNumber,
+        salesOrderAmount: roundAmount(salesOrderAmount),
+        salesOrderDate,
+        taskTags,
       },
     });
   }
 
   try {
     await batch.commit();
-    return NextResponse.json({ id: poRef.id, ...poPayload }, { status: 201 });
+    return NextResponse.json({ id: salesOrderRef.id, ...salesOrderPayload }, { status: 201 });
   } catch {
     return toErrorResponse('Unable to create Sales Order Req.', 500);
   }
