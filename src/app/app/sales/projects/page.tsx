@@ -175,15 +175,6 @@ const taskTemplates = [
   { title: 'Catalog', description: 'Assemble catalog package.' },
 ];
 
-const SOR_TASK_TAGS = [
-  'Estimate',
-  'Lux Calculation',
-  'Lighting Layout',
-  'Technical Data Sheet',
-  'Material Submittal',
-  'Compliance Sheet',
-];
-
 const formatStatusLabel = (value: string) =>
   value
     .split('-')
@@ -259,7 +250,6 @@ export default function Page() {
   const [isSalesOrderSubmitting, setIsSalesOrderSubmitting] = useState(false);
   const [salesOrderError, setSalesOrderError] = useState<string | null>(null);
   const [salesOrderSuccess, setSalesOrderSuccess] = useState<string | null>(null);
-  const [salesOrderTaskTags, setSalesOrderTaskTags] = useState<string[]>([]);
   const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() => emptySalesOrderForm());
 
   const isAdmin = !!user?.permissions.includes('admin');
@@ -676,7 +666,6 @@ export default function Page() {
           ? String(prefillTask.estimateAmount)
           : '',
     });
-    setSalesOrderTaskTags([]);
     setSalesOrderError(null);
     setSalesOrderSuccess(null);
     setIsSalesOrderModalOpen(true);
@@ -713,11 +702,6 @@ export default function Page() {
       setSalesOrderError('Sales Order date is required.');
       return;
     }
-    if (salesOrderTaskTags.length === 0) {
-      setSalesOrderError('Select at least one predefined task tag.');
-      return;
-    }
-
     setIsSalesOrderSubmitting(true);
     setSalesOrderError(null);
     setSalesOrderSuccess(null);
@@ -736,7 +720,6 @@ export default function Page() {
         salesOrderNumber,
         salesOrderAmount,
         salesOrderDate,
-        taskTags: salesOrderTaskTags,
       });
       const endpoints = [
         '/api/sales-order/sales-order-requests',
@@ -776,51 +759,8 @@ export default function Page() {
       }
 
       const requestNo = data.requestNo ?? 'Sales Order Req';
-      const createdRequestId = data.id ?? '';
-      if (createdRequestId) {
-        const dueDate = salesOrderDate;
-        const taskResults = await Promise.allSettled(
-          salesOrderTaskTags.map((tag) =>
-            firebaseTaskRepository.create({
-              title: `${tag} · ${selectedProject.name}`,
-              description: `Sales Order Req task for ${selectedProject.name}`,
-              assignedTo: selectedProject.assignedTo || user.id,
-              assignedUsers: selectedProject.assignedTo ? [selectedProject.assignedTo] : [user.id],
-              status: 'todo',
-              priority: 'medium',
-              recurrence: 'none',
-              startDate: dueDate,
-              endDate: dueDate,
-              dueDate,
-              parentTaskId: '',
-              projectId: selectedProject.id,
-              sharedRoles: selectedProject.sharedRoles ?? [],
-              createdBy: user.id,
-              salesOrderRequestId: createdRequestId,
-              salesOrderRequestTag: tag,
-            }),
-          ),
-        );
-        if (taskResults.some((result) => result.status === 'rejected')) {
-          await logProjectActivity(
-            selectedProject.id,
-            `Sales Order Req ${requestNo} submitted, but one or more predefined tasks failed to create.`,
-            'task',
-          );
-          setSalesOrderError(
-            'Request submitted, but one or more predefined tasks could not be created.',
-          );
-        } else {
-          await logProjectActivity(
-            selectedProject.id,
-            `Sales Order Req ${requestNo} submitted with predefined tasks: ${salesOrderTaskTags.join(', ')}.`,
-            'task',
-          );
-        }
-      }
       setSalesOrderSuccess(`${requestNo} submitted for approval.`);
       setSalesOrderFormState(emptySalesOrderForm());
-      setSalesOrderTaskTags([]);
     } catch {
       setSalesOrderError('Unable to submit Sales Order Req. Please try again.');
     } finally {
@@ -2560,37 +2500,6 @@ export default function Page() {
                   }
                   className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                 />
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                  Predefined Task Tags
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {SOR_TASK_TAGS.map((tag) => {
-                    const isSelected = salesOrderTaskTags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() =>
-                          setSalesOrderTaskTags((prev) =>
-                            prev.includes(tag)
-                              ? prev.filter((item) => item !== tag)
-                              : [...prev, tag],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition ${
-                          isSelected
-                            ? 'border-accent/60 bg-accent/15 text-text'
-                            : 'border-border/60 bg-bg/70 text-muted hover:text-text'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
               {salesOrderError ? (

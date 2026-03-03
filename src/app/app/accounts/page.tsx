@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
+import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { ModuleShell } from '@/components/ui/ModuleShell';
 import {
@@ -13,6 +14,7 @@ import {
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { emitNotificationEventSafe } from '@/lib/notifications';
 import { hasPermission } from '@/lib/permissions';
+import { fetchRoleSummaries } from '@/lib/roles';
 import { addSalesOrderTimelineEvent } from '@/lib/salesOrderTimeline';
 
 const statusStyles: Record<SalesOrderRequestStatus, string> = {
@@ -50,8 +52,15 @@ const formatDate = (value?: string) => {
 const formatAmount = (value?: number) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '-';
 
-const formatStoreHandoffStatus = (request: SalesOrderRequest) =>
-  request.sentToStore ? 'Sent' : 'Not sent';
+const formatStoreHandoffStatus = (request: SalesOrderRequest) => {
+  if (request.handoffToStore === 'received') {
+    return 'Received';
+  }
+  if (request.handoffToStore === 'queued') {
+    return 'Queued';
+  }
+  return 'Not queued';
+};
 
 const logPoDecisionActivity = async (
   request: SalesOrderRequest,
@@ -129,6 +138,42 @@ const notifyRequester = async (
       projectId: request.projectId,
       status,
       rejectionReason: rejectionReason ?? '',
+    },
+  });
+};
+
+const notifyStoreUsers = async (request: SalesOrderRequest, actorId: string, actorName: string) => {
+  const [roleSummaries, users] = await Promise.all([
+    fetchRoleSummaries(),
+    firebaseUserRepository.listAll(),
+  ]);
+  const rolePermissions = new Map(
+    roleSummaries.map((role) => [role.key.trim().toLowerCase(), role.permissions]),
+  );
+  const recipients = users
+    .filter((item) => item.active && item.id !== actorId)
+    .filter((item) => {
+      const permissions = rolePermissions.get(item.role.trim().toLowerCase()) ?? [];
+      return permissions.includes('admin') || permissions.includes('store');
+    })
+    .map((item) => item.id);
+
+  if (recipients.length === 0) {
+    return;
+  }
+
+  await emitNotificationEventSafe({
+    type: 'sales_order_request.handoff_queued',
+    title: 'Sales Order Req Queued for Store',
+    body: `${actorName} queued ${request.requestNo} for Store (${request.projectName}).`,
+    actorId,
+    recipients,
+    entityType: 'salesOrderRequest',
+    entityId: request.id,
+    meta: {
+      requestNo: request.requestNo,
+      projectId: request.projectId,
+      handoffToStore: 'queued',
     },
   });
 };
@@ -224,17 +269,37 @@ export default function Page() {
             rejectedAt: now,
             rejectionReason: rejectionReason ?? '',
           };
+    const handoff =
+      status === 'approved'
+        ? {
+            handoffToStore: 'queued' as const,
+            handedOffAt: now,
+            handedOffBy: user.id,
+            handedOffByName: user.fullName,
+            storeReceived: false,
+            storeReceivedAt: '',
+            storeReceivedBy: '',
+            storeReceivedByName: '',
+          }
+        : {};
 
     try {
       const updated = await firebaseSalesOrderRequestRepository.update(request.id, {
         status,
         approval,
+        ...handoff,
         updatedAt: now,
       });
       setRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
       await Promise.allSettled([
         logPoDecisionActivity(request, user.id, status, rejectionReason),
         notifyRequester(request, user.id, user.fullName, status, rejectionReason),
+        ...(status === 'approved'
+          ? [
+              logStoreHandoffActivity(request, user.id, user.fullName),
+              notifyStoreUsers(request, user.id, user.fullName),
+            ]
+          : []),
       ]);
     } catch {
       setError('Unable to update Sales Order Req status.');
@@ -257,34 +322,6 @@ export default function Page() {
       return;
     }
     await applyStatusUpdate(request, 'rejected', reason.trim());
-  };
-
-  const handleSendToStore = async (request: SalesOrderRequest) => {
-    if (!user || !canApprove || request.status !== 'approved' || request.sentToStore) {
-      return;
-    }
-    setIsSaving(request.id);
-    setError(null);
-    const now = new Date().toISOString();
-    try {
-      const updated = await firebaseSalesOrderRequestRepository.update(request.id, {
-        sentToStore: true,
-        sentToStoreAt: now,
-        sentToStoreBy: user.id,
-        sentToStoreByName: user.fullName,
-        storeReceived: false,
-        storeReceivedAt: '',
-        storeReceivedBy: '',
-        storeReceivedByName: '',
-        updatedAt: now,
-      });
-      setRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
-      await Promise.allSettled([logStoreHandoffActivity(request, user.id, user.fullName)]);
-    } catch {
-      setError('Unable to send Sales Order Req to Store.');
-    } finally {
-      setIsSaving(null);
-    }
   };
 
   return (
@@ -422,16 +459,16 @@ export default function Page() {
                   {formatStoreHandoffStatus(request)}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                  <span className="font-semibold text-text">Sent to Store At:</span>{' '}
-                  {formatDateTime(request.sentToStoreAt)}
+                  <span className="font-semibold text-text">Handed Off At:</span>{' '}
+                  {formatDateTime(request.handedOffAt)}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                  <span className="font-semibold text-text">Sent to Store By:</span>{' '}
-                  {request.sentToStoreByName || '-'}
+                  <span className="font-semibold text-text">Handed Off By:</span>{' '}
+                  {request.handedOffByName || '-'}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
                   <span className="font-semibold text-text">Store Received:</span>{' '}
-                  {request.storeReceived ? 'Yes' : 'No'}
+                  {request.handoffToStore === 'received' ? 'Yes' : 'No'}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
                   <span className="font-semibold text-text">Store Received At:</span>{' '}
@@ -464,18 +501,6 @@ export default function Page() {
                 </div>
               ) : null}
 
-              {request.status === 'approved' && canApprove && !request.sentToStore ? (
-                <div className="mt-4 flex flex-wrap justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSendToStore(request)}
-                    disabled={isSaving === request.id}
-                    className="rounded-full border border-border/60 bg-blue-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isSaving === request.id ? 'Sending...' : 'Send to Store'}
-                  </button>
-                </div>
-              ) : null}
             </section>
           ))
         )}

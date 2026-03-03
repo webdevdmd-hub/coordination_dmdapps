@@ -29,14 +29,13 @@ export type SalesOrderRequest = {
   salesOrderNumber: string;
   salesOrderAmount: number;
   salesOrderDate: string;
-  taskTags?: string[];
   status: SalesOrderRequestStatus;
   approval?: SalesOrderRequestApproval;
+  handoffToStore?: 'none' | 'queued' | 'received';
+  handedOffAt?: string;
+  handedOffBy?: string;
+  handedOffByName?: string;
   salesOrderEntryId?: string;
-  sentToStore?: boolean;
-  sentToStoreAt?: string;
-  sentToStoreBy?: string;
-  sentToStoreByName?: string;
   storeReceived?: boolean;
   storeReceivedAt?: string;
   storeReceivedBy?: string;

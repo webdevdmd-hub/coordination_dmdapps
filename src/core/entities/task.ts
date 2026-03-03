@@ -21,8 +21,6 @@ export type Task = {
   quotationRequestId?: string;
   quotationRequestTaskId?: string;
   rfqTag?: string;
-  salesOrderRequestId?: string;
-  salesOrderRequestTag?: string;
   quotationNumber?: string;
   recurrence_type?: TaskRecurrence;
   is_all_day?: boolean;

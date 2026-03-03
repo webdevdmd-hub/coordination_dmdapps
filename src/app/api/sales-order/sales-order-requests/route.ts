@@ -13,7 +13,6 @@ type CreateSalesOrderRequestPayload = {
   salesOrderNumber?: string;
   salesOrderAmount?: number;
   salesOrderDate?: string;
-  taskTags?: string[];
 };
 
 const SALES_NAMESPACE_ID = 'main';
@@ -107,13 +106,6 @@ export async function POST(request: Request) {
   const salesOrderDate = payload.salesOrderDate?.trim();
   const estimateAmount = toFiniteNumber(payload.estimateAmount);
   const salesOrderAmount = toFiniteNumber(payload.salesOrderAmount);
-  const taskTags = Array.from(
-    new Set(
-      (Array.isArray(payload.taskTags) ? payload.taskTags : [])
-        .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
-        .filter((tag) => tag.length > 0),
-    ),
-  );
   if (!projectId) {
     return toErrorResponse('Project id is required.');
   }
@@ -190,14 +182,13 @@ export async function POST(request: Request) {
     salesOrderNumber,
     salesOrderAmount: roundAmount(salesOrderAmount),
     salesOrderDate,
-    taskTags,
     status: 'pending_approval',
     approval: {},
+    handoffToStore: 'none',
+    handedOffAt: '',
+    handedOffBy: '',
+    handedOffByName: '',
     salesOrderEntryId: '',
-    sentToStore: false,
-    sentToStoreAt: '',
-    sentToStoreBy: '',
-    sentToStoreByName: '',
     storeReceived: false,
     storeReceivedAt: '',
     storeReceivedBy: '',
@@ -237,7 +228,6 @@ export async function POST(request: Request) {
         salesOrderNumber,
         salesOrderAmount: roundAmount(salesOrderAmount),
         salesOrderDate,
-        taskTags,
       },
     });
   }

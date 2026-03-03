@@ -77,10 +77,14 @@ export default function Page() {
           return;
         }
         const sent = all
-          .filter((item) => item.status === 'approved' && !!item.sentToStore)
+          .filter(
+            (item) =>
+              item.status === 'approved' &&
+              (item.handoffToStore === 'queued' || item.handoffToStore === 'received'),
+          )
           .sort((a, b) => {
-            const aTime = a.sentToStoreAt || a.updatedAt;
-            const bTime = b.sentToStoreAt || b.updatedAt;
+            const aTime = itemTime(a);
+            const bTime = itemTime(b);
             return bTime.localeCompare(aTime);
           });
         setRequests(sent);
@@ -100,8 +104,13 @@ export default function Page() {
     };
   }, [canView]);
 
+  const itemTime = (item: SalesOrderRequest) => item.handedOffAt || item.updatedAt;
+
+  const isReceived = (item: SalesOrderRequest) =>
+    item.handoffToStore === 'received' || !!item.storeReceived;
+
   const handleMarkAsReceived = async (request: SalesOrderRequest) => {
-    if (!user || !canView || request.storeReceived) {
+    if (!user || !canView || isReceived(request)) {
       return;
     }
     setIsSaving(request.id);
@@ -109,6 +118,7 @@ export default function Page() {
     const now = new Date().toISOString();
     try {
       const updated = await firebaseSalesOrderRequestRepository.update(request.id, {
+        handoffToStore: 'received',
         storeReceived: true,
         storeReceivedAt: now,
         storeReceivedBy: user.id,
@@ -128,8 +138,8 @@ export default function Page() {
     () => ({
       count: requests.length,
       amount: requests.reduce((sum, item) => sum + (item.salesOrderAmount || 0), 0),
-      pending: requests.filter((item) => !item.storeReceived).length,
-      received: requests.filter((item) => !!item.storeReceived).length,
+      pending: requests.filter((item) => !isReceived(item)).length,
+      received: requests.filter((item) => isReceived(item)).length,
     }),
     [requests],
   );
@@ -139,9 +149,9 @@ export default function Page() {
       return requests;
     }
     if (statusFilter === 'pending') {
-      return requests.filter((item) => !item.storeReceived);
+      return requests.filter((item) => !isReceived(item));
     }
-    return requests.filter((item) => !!item.storeReceived);
+    return requests.filter((item) => isReceived(item));
   }, [requests, statusFilter]);
 
   return (
@@ -224,12 +234,12 @@ export default function Page() {
                 </div>
                 <span
                   className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
-                    request.storeReceived
+                    isReceived(request)
                       ? 'bg-emerald-500/15 text-emerald-200'
                       : 'bg-blue-500/15 text-blue-200'
                   }`}
                 >
-                  {request.storeReceived ? 'Received' : 'Sent to Store'}
+                  {isReceived(request) ? 'Received' : 'Queued'}
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
@@ -241,12 +251,12 @@ export default function Page() {
                   {formatAmount(request.salesOrderAmount)}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                  <span className="font-semibold text-text">Sent to Store At:</span>{' '}
-                  {formatDateTime(request.sentToStoreAt)}
+                  <span className="font-semibold text-text">Handed Off At:</span>{' '}
+                  {formatDateTime(request.handedOffAt)}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
-                  <span className="font-semibold text-text">Sent to Store By:</span>{' '}
-                  {request.sentToStoreByName || '-'}
+                  <span className="font-semibold text-text">Handed Off By:</span>{' '}
+                  {request.handedOffByName || '-'}
                 </p>
                 <p className="rounded-xl border border-border/50 bg-bg/60 px-3 py-2 text-muted">
                   <span className="font-semibold text-text">Received At:</span>{' '}
@@ -257,7 +267,7 @@ export default function Page() {
                   {request.storeReceivedByName || '-'}
                 </p>
               </div>
-              {!request.storeReceived ? (
+              {!isReceived(request) ? (
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
@@ -265,7 +275,7 @@ export default function Page() {
                     disabled={isSaving === request.id}
                     className="rounded-full border border-border/60 bg-emerald-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSaving === request.id ? 'Saving...' : 'Mark as Received'}
+                    {isSaving === request.id ? 'Saving...' : 'Receive'}
                   </button>
                 </div>
               ) : null}
