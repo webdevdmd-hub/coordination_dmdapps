@@ -1,15 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseCustomerRepository } from '@/adapters/repositories/firebaseCustomerRepository';
+import { firebaseProjectRepository } from '@/adapters/repositories/firebaseProjectRepository';
 import { firebaseQuotationRepository } from '@/adapters/repositories/firebaseQuotationRepository';
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { Customer } from '@/core/entities/customer';
+import { Project } from '@/core/entities/project';
 import { Quotation, QuotationLineItem, QuotationStatus } from '@/core/entities/quotation';
 import { User } from '@/core/entities/user';
+import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 
@@ -21,8 +25,8 @@ const statusOptions: Array<{ value: QuotationStatus; label: string }> = [
 
 const statusStyles: Record<QuotationStatus, string> = {
   draft: 'bg-surface-strong text-text',
-  sent: 'bg-accent/70 text-text',
-  approved: 'bg-emerald-200 text-emerald-900',
+  sent: 'bg-[#00B67A]/16 text-[#00B67A]',
+  approved: 'bg-[#00B67A]/22 text-[#00B67A]',
 };
 
 type QuotationFormState = {
@@ -30,12 +34,20 @@ type QuotationFormState = {
   validUntil: string;
   customerId: string;
   customerName: string;
+  projectId: string;
+  projectName: string;
   status: QuotationStatus;
   lineItems: QuotationLineItem[];
   notes: string;
   taxRate: number;
   assignedTo: string;
   sharedRoles: string[];
+};
+
+type ProjectQuickAddState = {
+  name: string;
+  dueDate: string;
+  description: string;
 };
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -77,6 +89,7 @@ export default function Page() {
   const { user } = useAuth();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list');
   const [statusFilter, setStatusFilter] = useState<QuotationStatus | 'all'>('all');
@@ -88,6 +101,9 @@ export default function Page() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isQuickAddProjectOpen, setIsQuickAddProjectOpen] = useState(false);
+  const [quickAddProjectError, setQuickAddProjectError] = useState<string | null>(null);
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
 
   const isAdmin = !!user?.permissions.includes('admin');
@@ -97,6 +113,9 @@ export default function Page() {
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'quotation_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'quotation_delete']);
+  const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
+  const canViewAllProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
+  const canCreateProject = !!user && hasPermission(user.permissions, ['admin', 'project_create']);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
 
@@ -105,6 +124,8 @@ export default function Page() {
     validUntil: todayKey(),
     customerId: '',
     customerName: '',
+    projectId: '',
+    projectName: '',
     status: 'draft',
     lineItems: [createLineItem()],
     notes: '',
@@ -116,6 +137,11 @@ export default function Page() {
   const [formState, setFormState] = useState<QuotationFormState>(() =>
     emptyQuotation(user?.id ?? ''),
   );
+  const [quickAddProjectState, setQuickAddProjectState] = useState<ProjectQuickAddState>({
+    name: '',
+    dueDate: todayKey(),
+    description: '',
+  });
 
   const totals = useMemo(
     () => calculateTotals(formState.lineItems, formState.taxRate),
@@ -129,6 +155,14 @@ export default function Page() {
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     return map;
   }, [user, users]);
+  const getOwnerInitials = (ownerId: string) =>
+    (ownerNameMap.get(ownerId) ?? ownerId)
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
 
   const userRoleMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -200,6 +234,24 @@ export default function Page() {
   }, [user, isAdmin, canViewAllCustomers]);
 
   useEffect(() => {
+    const loadProjects = async () => {
+      if (!user || !canViewProjects) {
+        setProjects([]);
+        return;
+      }
+      try {
+        const result = canViewAllProjects
+          ? await firebaseProjectRepository.listAll()
+          : await firebaseProjectRepository.listForUser(user.id, user.role);
+        setProjects(result);
+      } catch {
+        setProjects([]);
+      }
+    };
+    loadProjects();
+  }, [user, canViewProjects, canViewAllProjects]);
+
+  useEffect(() => {
     const loadQuotations = async () => {
       if (!user) {
         setQuotations([]);
@@ -246,7 +298,9 @@ export default function Page() {
       const matchesStatus = statusFilter === 'all' ? true : quote.status === statusFilter;
       const matchesSearch =
         term.length === 0 ||
-        [quote.customerName, quote.quoteNumber].some((value) => value.toLowerCase().includes(term));
+        [quote.customerName, quote.quoteNumber, quote.projectName ?? ''].some((value) =>
+          value.toLowerCase().includes(term),
+        );
       return matchesStatus && matchesSearch;
     });
   }, [quotations, search, statusFilter]);
@@ -264,6 +318,9 @@ export default function Page() {
     }
     setSelectedQuotation(null);
     setFormState(emptyQuotation(user.id));
+    setIsQuickAddProjectOpen(false);
+    setQuickAddProjectError(null);
+    setQuickAddProjectState({ name: '', dueDate: todayKey(), description: '' });
     setIsCreateOpen(true);
   };
 
@@ -274,6 +331,8 @@ export default function Page() {
       validUntil: quote.validUntil,
       customerId: quote.customerId,
       customerName: quote.customerName,
+      projectId: quote.projectId ?? '',
+      projectName: quote.projectName ?? '',
       status: quote.status,
       lineItems: quote.lineItems.length ? quote.lineItems : [createLineItem()],
       notes: quote.notes,
@@ -281,12 +340,17 @@ export default function Page() {
       assignedTo: quote.assignedTo,
       sharedRoles: quote.sharedRoles ?? [],
     });
+    setIsQuickAddProjectOpen(false);
+    setQuickAddProjectError(null);
+    setQuickAddProjectState({ name: '', dueDate: todayKey(), description: '' });
     setIsEditOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsCreateOpen(false);
     setIsEditOpen(false);
+    setIsQuickAddProjectOpen(false);
+    setQuickAddProjectError(null);
   };
 
   const handleSelectCustomer = (customerId: string) => {
@@ -294,13 +358,146 @@ export default function Page() {
     if (!customer) {
       return;
     }
+    const projectForCustomer = projects.find(
+      (item) => item.id === formState.projectId && item.customerId === customer.id,
+    );
     setFormState((prev) => ({
       ...prev,
       customerId: customer.id,
       customerName: customer.companyName,
+      projectId: projectForCustomer ? prev.projectId : '',
+      projectName: projectForCustomer ? prev.projectName : '',
       assignedTo: customer.assignedTo,
       sharedRoles: customer.sharedRoles ?? [],
     }));
+    setQuickAddProjectState((prev) => ({
+      ...prev,
+      name: prev.name || `${customer.companyName} Project`,
+    }));
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    if (!projectId) {
+      setFormState((prev) => ({ ...prev, projectId: '', projectName: '' }));
+      return;
+    }
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) {
+      return;
+    }
+    setFormState((prev) => ({
+      ...prev,
+      projectId: project.id,
+      projectName: project.name,
+    }));
+  };
+
+  const handleQuickAddProject = async () => {
+    if (!user || !canCreateProject) {
+      return;
+    }
+    if (!formState.customerId || !formState.customerName) {
+      setQuickAddProjectError('Select a customer before creating a project.');
+      return;
+    }
+    const name = quickAddProjectState.name.trim();
+    if (!name) {
+      setQuickAddProjectError('Project name is required.');
+      return;
+    }
+    setIsCreatingProject(true);
+    setQuickAddProjectError(null);
+    try {
+      const created = await firebaseProjectRepository.create({
+        name,
+        customerId: formState.customerId,
+        customerName: formState.customerName,
+        assignedTo: formState.assignedTo || user.id,
+        sharedRoles: formState.sharedRoles ?? [],
+        startDate: todayKey(),
+        dueDate: quickAddProjectState.dueDate || todayKey(),
+        value: 0,
+        status: 'not-started',
+        description: quickAddProjectState.description.trim(),
+        createdBy: user.id,
+      });
+      setProjects((prev) => [created, ...prev]);
+      setFormState((prev) => ({
+        ...prev,
+        projectId: created.id,
+        projectName: created.name,
+      }));
+      setQuickAddProjectState({ name: '', dueDate: todayKey(), description: '' });
+      setIsQuickAddProjectOpen(false);
+    } catch {
+      setQuickAddProjectError('Unable to create project. Please try again.');
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const syncProjectTimelineForQuotation = async (
+    quote: Pick<
+      Quotation,
+      'quoteNumber' | 'customerName' | 'projectId' | 'projectName' | 'status' | 'validUntil' | 'total'
+    >,
+    previousStatus?: QuotationStatus,
+  ) => {
+    if (!user || !quote.projectId) {
+      return;
+    }
+    const activitiesRef = collection(
+      getFirebaseDb(),
+      'sales',
+      'main',
+      'projects',
+      quote.projectId,
+      'activities',
+    );
+    const now = new Date().toISOString();
+    const entries: Array<{ type: string; note: string }> = [];
+
+    if (previousStatus && previousStatus !== quote.status) {
+      entries.push({
+        type: 'quotation_status',
+        note: `Quotation ${quote.quoteNumber} status changed from ${previousStatus} to ${quote.status}.`,
+      });
+    } else if (!previousStatus) {
+      entries.push({
+        type: 'quotation_status',
+        note: `Quotation ${quote.quoteNumber} linked to this project with status ${quote.status}.`,
+      });
+    }
+
+    if (quote.status === 'approved' && previousStatus !== 'approved') {
+      entries.push({
+        type: 'quotation_finalized',
+        note: `Quotation ${quote.quoteNumber} finalized for ${quote.customerName}. Total ${formatCurrency(
+          quote.total,
+        )}.`,
+      });
+      entries.push({
+        type: 'quotation_deadline',
+        note: `Quotation deadline: valid until ${formatDate(quote.validUntil)} (quotation ${
+          quote.quoteNumber
+        }).`,
+      });
+    }
+
+    if (entries.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      entries.map((entry) =>
+        addDoc(activitiesRef, {
+          type: entry.type,
+          note: entry.note,
+          date: now,
+          createdBy: user.id,
+        }),
+      ),
+    );
   };
 
   const handleAddLineItem = () => {
@@ -371,6 +568,8 @@ export default function Page() {
     const updates = {
       ...formState,
       notes: formState.notes.trim(),
+      projectId: formState.projectId || '',
+      projectName: formState.projectName || '',
       lineItems: formState.lineItems.map((item) => ({
         ...item,
         description: item.description.trim(),
@@ -385,17 +584,20 @@ export default function Page() {
     setError(null);
     try {
       if (isEditing && selectedQuotation) {
+        const previousStatus = selectedQuotation.status;
         const updated = await firebaseQuotationRepository.update(selectedQuotation.id, {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
         setQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        await syncProjectTimelineForQuotation(updated, previousStatus);
       } else {
         const created = await firebaseQuotationRepository.create({
           ...updates,
           createdBy: user.id,
         });
         setQuotations((prev) => [created, ...prev]);
+        await syncProjectTimelineForQuotation(created);
       }
       handleCloseModal();
     } catch {
@@ -434,6 +636,25 @@ export default function Page() {
       setError('Unable to delete quotation. Please try again.');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleQuickStatusChange = async (quote: Quotation, nextStatus: QuotationStatus) => {
+    if (!user || !canEdit) {
+      return;
+    }
+    if (!isAdmin && quote.assignedTo !== user.id) {
+      return;
+    }
+    try {
+      const updated = await firebaseQuotationRepository.update(quote.id, {
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      });
+      setQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      await syncProjectTimelineForQuotation(updated, quote.status);
+    } catch {
+      setError('Unable to update quotation status.');
     }
   };
 
@@ -489,7 +710,7 @@ export default function Page() {
               type="button"
               onClick={handleOpenCreate}
               disabled={!canCreate}
-              className="rounded-full border border-border/60 bg-accent/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-full border border-[#00B67A]/30 bg-[#00B67A] px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white transition hover:-translate-y-[1px] hover:bg-[#009f6b] disabled:cursor-not-allowed disabled:opacity-60"
             >
               New quotation
             </button>
@@ -530,11 +751,11 @@ export default function Page() {
                   key={status}
                   type="button"
                   onClick={() => setStatusFilter(status)}
-                  className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
-                    statusFilter === status
-                      ? 'bg-accent/80 text-text'
+                    className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
+                      statusFilter === status
+                      ? 'bg-[#00B67A] text-white'
                       : 'text-muted hover:text-text'
-                  }`}
+                    }`}
                 >
                   {status === 'all'
                     ? 'All'
@@ -556,35 +777,58 @@ export default function Page() {
         ) : viewMode === 'card' ? (
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {filteredQuotations.map((quote) => (
-              <div key={quote.id} className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+              <div key={quote.id} className="rounded-3xl border border-border bg-surface p-4 shadow-soft">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
                       {quote.quoteNumber}
                     </p>
-                    <h2 className="mt-2 font-display text-2xl text-text">{quote.customerName}</h2>
-                    <p className="mt-2 text-sm text-muted">
-                      Owner: {ownerNameMap.get(quote.assignedTo) ?? quote.assignedTo}
-                    </p>
-                    <p className="mt-1 text-sm text-muted">
-                      Valid until: {formatDate(quote.validUntil)}
+                    <h2 className="mt-1 font-display text-lg text-text">{quote.customerName}</h2>
+                    <div className="mt-1 space-y-1 text-[11px] text-muted">
+                      <p>Project: {quote.projectName || '-'}</p>
+                      <p>
+                        Owner <span className="font-semibold text-text">{ownerNameMap.get(quote.assignedTo) ?? quote.assignedTo}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-start gap-2 md:items-end">
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                        statusStyles[quote.status]
+                      }`}
+                    >
+                      {statusOptions.find((option) => option.value === quote.status)?.label}
+                    </span>
+                    <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                      {formatDate(quote.validUntil)}
+                    </span>
+                    <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                      {formatCurrency(quote.total)}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{getOwnerInitials(quote.assignedTo)}</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Status</p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {statusOptions.find((option) => option.value === quote.status)?.label}
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                      statusStyles[quote.status]
-                    }`}
-                  >
-                    {statusOptions.find((option) => option.value === quote.status)?.label}
-                  </span>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Total</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{formatCurrency(quote.total)}</p>
+                  </div>
                 </div>
-                <div className="mt-4 text-sm text-muted">Total: {formatCurrency(quote.total)}</div>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex items-center justify-end gap-2">
                   {canEdit ? (
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(quote)}
-                      className="rounded-full border border-border/60 bg-surface/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-hover/80"
+                      className="rounded-xl bg-[#00B67A]/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#00B67A]"
                     >
                       Update
                     </button>
@@ -594,70 +838,80 @@ export default function Page() {
             ))}
           </div>
         ) : (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-border/60">
-            <div className="hidden md:grid md:grid-cols-[1.1fr_1.4fr_1fr_1fr_0.8fr_0.8fr] gap-4 bg-surface-strong/60 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-              <span>Quote #</span>
-              <span>Customer</span>
-              <span>Valid until</span>
-              <span>Total</span>
-              <span>Status</span>
-              <span className="text-right">Actions</span>
-            </div>
-            <div className="divide-y divide-border/60 bg-bg/60">
-              {filteredQuotations.map((quote) => (
-                <div
-                  key={quote.id}
-                  className="grid gap-3 px-5 py-4 text-sm text-text md:grid-cols-[1.1fr_1.4fr_1fr_1fr_0.8fr_0.8fr] md:gap-4"
-                >
-                  <div>
-                    <p className="font-semibold">{quote.quoteNumber}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      Owner: {ownerNameMap.get(quote.assignedTo) ?? quote.assignedTo}
-                    </p>
-                  </div>
-                  <div>{quote.customerName}</div>
-                  <div className="text-muted">{formatDate(quote.validUntil)}</div>
-                  <div className="text-muted">{formatCurrency(quote.total)}</div>
-                  <div>
-                    <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
-                        statusStyles[quote.status]
-                      }`}
-                    >
-                      {statusOptions.find((option) => option.value === quote.status)?.label}
-                    </span>
-                  </div>
-                  <div className="flex md:justify-end">
-                    <div className="flex items-center gap-2">
-                      {canEdit ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(quote)}
-                          className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                      {canDelete ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedQuotation(quote);
-                            setIsEditOpen(true);
-                          }}
-                          className="rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-rose-200 transition hover:bg-rose-500/20"
-                        >
-                          Delete
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
+          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
+            {filteredQuotations.map((quote) => (
+              <div
+                key={quote.id}
+                className="grid gap-3 border-b border-border px-3 py-3 last:border-b-0 md:grid-cols-[1.1fr_1.2fr_1fr_1fr_1fr_auto] md:items-center md:gap-2 md:px-4"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
+                    {getOwnerInitials(quote.assignedTo)}
+                  </span>
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+                    {ownerNameMap.get(quote.assignedTo) ?? quote.assignedTo}
+                  </p>
                 </div>
-              ))}
-              {filteredQuotations.length === 0 ? (
-                <div className="px-5 py-6 text-sm text-muted">No quotations found yet.</div>
-              ) : null}
-            </div>
+
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-text">{quote.quoteNumber}</p>
+                  <p className="truncate text-xs text-muted">{quote.customerName}</p>
+                </div>
+
+                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                  {quote.projectName || '-'}
+                </p>
+
+                <p className="text-sm text-text">{formatDate(quote.validUntil)}</p>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={quote.status}
+                    onChange={(event) =>
+                      handleQuickStatusChange(quote, event.target.value as QuotationStatus)
+                    }
+                    className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none"
+                    disabled={!canEdit || (!isAdmin && quote.assignedTo !== user?.id)}
+                  >
+                    {statusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="inline-flex rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text">
+                    {formatCurrency(quote.total)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-end gap-2">
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(quote)}
+                      className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                  {canDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedQuotation(quote);
+                        setIsEditOpen(true);
+                      }}
+                      className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-rose-200 transition hover:bg-rose-500/20"
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            {filteredQuotations.length === 0 ? (
+              <div className="px-5 py-6 text-sm text-muted">No quotations found yet.</div>
+            ) : null}
           </div>
         )}
       </section>
@@ -766,6 +1020,44 @@ export default function Page() {
               </div>
 
               <div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Project
+                  </label>
+                  {canCreateProject ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsQuickAddProjectOpen(true);
+                        setQuickAddProjectError(null);
+                      }}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-bg/70 text-sm font-semibold text-muted transition hover:bg-hover/80 hover:text-text"
+                      aria-label="Quick add project"
+                      title="Quick add project"
+                    >
+                      +
+                    </button>
+                  ) : null}
+                </div>
+                <select
+                  value={formState.projectId}
+                  onChange={(event) => handleSelectProject(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                >
+                  <option value="">Select project</option>
+                  {projects
+                    .filter((project) =>
+                      formState.customerId ? project.customerId === formState.customerId : true,
+                    )
+                    .map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
                     Line items
@@ -773,7 +1065,7 @@ export default function Page() {
                   <button
                     type="button"
                     onClick={handleAddLineItem}
-                    className="text-xs font-semibold uppercase tracking-[0.24em] text-accent hover:text-accent-strong"
+                    className="text-xs font-semibold uppercase tracking-[0.24em] text-[#00B67A] hover:text-[#009f6b]"
                   >
                     + Add line item
                   </button>
@@ -877,7 +1169,7 @@ export default function Page() {
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="rounded-full border border-border/60 bg-accent/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-full border border-border/60 bg-[#00B67A]/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white transition hover:-translate-y-[1px] hover:bg-[#009f6b]/80 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSaving
                     ? 'Saving...'
@@ -890,6 +1182,103 @@ export default function Page() {
           </DraggablePanel>
         </div>
       )}
+
+      {isQuickAddProjectOpen && (isCreateOpen || isEditOpen) ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm"
+          onClick={() => setIsQuickAddProjectOpen(false)}
+        >
+          <DraggablePanel
+            className="w-full max-w-xl rounded-3xl border border-border/60 bg-surface/95 p-5 shadow-floating"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-xl text-text">Create project</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Add a project and continue quotation without leaving this screen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickAddProjectOpen(false)}
+                className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+                    Project name
+                  </label>
+                  <input
+                    value={quickAddProjectState.name}
+                    onChange={(event) =>
+                      setQuickAddProjectState((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="New project"
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+                    Due date
+                  </label>
+                  <input
+                    type="date"
+                    value={quickAddProjectState.dueDate}
+                    onChange={(event) =>
+                      setQuickAddProjectState((prev) => ({
+                        ...prev,
+                        dueDate: event.target.value,
+                      }))
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">
+                  Description
+                </label>
+                <textarea
+                  value={quickAddProjectState.description}
+                  onChange={(event) =>
+                    setQuickAddProjectState((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))
+                  }
+                  className="mt-2 min-h-[100px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                  placeholder="Project summary..."
+                />
+              </div>
+              {quickAddProjectError ? (
+                <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                  {quickAddProjectError}
+                </div>
+              ) : null}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleQuickAddProject}
+                  disabled={isCreatingProject}
+                  className="rounded-full border border-border/60 bg-[#00B67A]/80 px-5 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white transition hover:bg-[#009f6b]/80 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isCreatingProject ? 'Creating...' : 'Create project'}
+                </button>
+              </div>
+            </div>
+          </DraggablePanel>
+        </div>
+      ) : null}
     </div>
   );
 }

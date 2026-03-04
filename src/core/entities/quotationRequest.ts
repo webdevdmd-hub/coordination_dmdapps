@@ -33,6 +33,8 @@ export type QuotationRequestTask = {
   assignedTo?: string;
   assignedName?: string;
   taskId?: string;
+  estimateNumber?: string;
+  estimateAmount?: number;
   updatedAt?: string;
   createdAt: string;
 };

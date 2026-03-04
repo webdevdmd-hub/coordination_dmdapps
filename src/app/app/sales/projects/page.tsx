@@ -45,9 +45,9 @@ const statusOptions: Array<{ value: ProjectStatus; label: string }> = [
 
 const statusStyles: Record<ProjectStatus, string> = {
   'not-started': 'bg-surface-strong text-text',
-  'in-progress': 'bg-accent/70 text-text',
+  'in-progress': 'bg-[#00B67A]/16 text-[#00B67A]',
   'on-hold': 'bg-amber-500/20 text-amber-200',
-  completed: 'bg-emerald-200 text-emerald-900',
+  completed: 'bg-[#00B67A]/22 text-[#00B67A]',
   canceled: 'bg-rose-500/20 text-rose-200',
 };
 
@@ -183,6 +183,15 @@ const formatStatusLabel = (value: string) =>
 
 const activityDotClass = (activity: ProjectActivity) => {
   const note = activity.note.toLowerCase();
+  if (activity.type === 'quotation_status') {
+    return 'bg-cyan-500';
+  }
+  if (activity.type === 'quotation_finalized') {
+    return 'bg-emerald-500';
+  }
+  if (activity.type === 'quotation_deadline') {
+    return 'bg-amber-500';
+  }
   if (note.includes('rfq')) {
     return 'bg-emerald-500';
   }
@@ -1424,6 +1433,24 @@ export default function Page() {
     }
   };
 
+  const handleQuickStatusChange = async (project: Project, nextStatus: ProjectStatus) => {
+    if (!user || !canEdit) {
+      return;
+    }
+    if (!isAdmin && project.assignedTo !== user.id) {
+      return;
+    }
+    try {
+      const updated = await firebaseProjectRepository.update(project.id, {
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      });
+      setProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    } catch {
+      setError('Unable to update project status.');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
@@ -1478,7 +1505,7 @@ export default function Page() {
               type="button"
               onClick={handleOpenCreate}
               disabled={!canCreate}
-              className="col-span-2 w-full rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+              className="col-span-2 w-full rounded-2xl border border-[#00B67A]/30 bg-[#00B67A] px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(0,182,122,0.22)] transition hover:-translate-y-[1px] hover:bg-[#009f6b] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
               + New project
             </button>
@@ -1544,9 +1571,9 @@ export default function Page() {
                   key={status}
                   type="button"
                   onClick={() => setStatusFilter(status)}
-                  className={`w-full shrink-0 whitespace-nowrap rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
+                    className={`w-full shrink-0 whitespace-nowrap rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
                     statusFilter === status
-                      ? 'bg-accent text-white'
+                      ? 'bg-[#00B67A] text-white'
                       : 'text-muted hover:text-text'
                   }`}
                 >
@@ -1576,49 +1603,59 @@ export default function Page() {
                 onClick={() => handleEntryOpen(project)}
                 onKeyDown={(event) => handleEntryKeyDown(event, project)}
                 aria-disabled={!canOpenDetails}
-                className={`rounded-3xl border border-border bg-surface p-6 ${
-                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:shadow-soft' : ''
+                className={`rounded-3xl border border-border bg-surface p-4 shadow-soft ${
+                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:border-border/80' : ''
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
                       {project.customerName}
                     </p>
-                    <h2 className="mt-2 font-display text-5xl text-text">
-                      {project.name}
-                    </h2>
+                    <h2 className="mt-1 font-display text-lg text-text">{project.name}</h2>
+                    <div className="mt-1 space-y-1 text-[11px] text-muted">
+                      <p>Owner <span className="font-semibold text-text">{ownerNameMap.get(project.assignedTo) ?? project.assignedTo}</span></p>
+                      <p>Due {formatDate(project.dueDate)}</p>
+                    </div>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                      statusStyles[project.status]
-                    }`}
-                  >
-                    {formatStatusLabel(project.status)}
-                  </span>
-                </div>
-                <div className="mt-4 border-t border-border pt-4">
-                  <div className="grid gap-3 text-xs text-muted md:grid-cols-2 md:text-sm">
-                  <div className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      Project value
-                    </p>
-                    <p className="mt-1 text-3xl font-semibold text-text">AED {project.value.toLocaleString()}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      Owner
-                    </p>
-                    <p className="mt-1 text-lg text-text">{ownerNameMap.get(project.assignedTo) ?? project.assignedTo}</p>
-                  </div>
+                  <div className="flex flex-col items-start gap-2 md:items-end">
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                        statusStyles[project.status]
+                      }`}
+                    >
+                      {formatStatusLabel(project.status)}
+                    </span>
+                    <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                      AED {project.value.toLocaleString()}
+                    </span>
+                    <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                      {formatDate(project.startDate)}
+                    </span>
                   </div>
                 </div>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+
+                <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Value</p>
+                    <p className="mt-1 text-sm font-semibold text-text">AED {project.value.toLocaleString()}</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{(ownerNameMap.get(project.assignedTo) ?? project.assignedTo).split(' ')[0]}</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Status</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{formatStatusLabel(project.status)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center justify-end gap-2">
                   {canEdit ? (
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(project)}
-                      className="w-full rounded-full border border-border bg-[var(--surface-soft)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-[var(--surface-muted)] md:w-auto"
+                      className="rounded-xl bg-[#00B67A]/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#00B67A]"
                     >
                       Update
                     </button>
@@ -1629,45 +1666,79 @@ export default function Page() {
           </div>
         ) : (
           <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
-            {filteredProjects.map((project, index) => (
-              <button
+            {filteredProjects.map((project) => (
+              <div
                 key={project.id}
-                type="button"
+                role={canOpenDetails ? 'button' : undefined}
+                tabIndex={canOpenDetails ? 0 : -1}
                 onClick={() => handleEntryOpen(project)}
                 onKeyDown={(event) => handleEntryKeyDown(event, project)}
                 aria-disabled={!canOpenDetails}
-                className={`group relative border-b border-border bg-surface p-6 text-left transition hover:bg-[var(--surface-soft)] ${
+                className={`grid gap-3 border-b border-border px-3 py-3 last:border-b-0 md:grid-cols-[1.1fr_1.2fr_1fr_0.95fr_1fr_0.9fr_auto] md:items-center md:gap-2 md:px-4 ${
                   canOpenDetails ? 'cursor-pointer' : ''
-                } md:grid md:grid-cols-[2fr_1fr_1fr] md:items-start md:gap-3`}
-                style={{ animationDelay: `${index * 80}ms` }}
+                } transition hover:bg-[var(--surface-soft)]`}
               >
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-                    {project.customerName}
-                  </p>
-                  <h3 className="mt-2 font-display text-4xl text-text">{project.name}</h3>
-                </div>
-                <div className="mt-4 flex flex-col gap-2 md:mt-0">
-                  <span
-                    className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
-                      statusStyles[project.status]
-                    }`}
-                  >
-                    {formatStatusLabel(project.status)}
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
+                    {(ownerNameMap.get(project.assignedTo) ?? project.assignedTo)
+                      .split(' ')
+                      .map((word) => word[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase()}
                   </span>
-                  <p className="text-sm font-semibold text-text">
-                    AED {project.value.toLocaleString()}
-                  </p>
-                </div>
-                <div className="mt-4 text-sm text-muted md:mt-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">
-                    Owner
-                  </p>
-                  <p className="mt-1 text-sm text-text">
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
                     {ownerNameMap.get(project.assignedTo) ?? project.assignedTo}
                   </p>
                 </div>
-              </button>
+
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-text">{project.name}</p>
+                  <p className="truncate text-xs text-muted">{project.customerName}</p>
+                </div>
+
+                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                  {project.customerName}
+                </p>
+
+                <p className="text-sm text-text">{formatDate(project.dueDate)}</p>
+
+                <div>
+                  <select
+                    value={project.status}
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    onChange={(event) =>
+                      handleQuickStatusChange(project, event.target.value as ProjectStatus)
+                    }
+                    disabled={!canEdit || (!isAdmin && project.assignedTo !== user?.id)}
+                    className="w-full rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {statusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <span className="inline-flex w-fit rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text">
+                  AED {project.value.toLocaleString()}
+                </span>
+
+                {canEdit ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleOpenEdit(project);
+                    }}
+                    className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                  >
+                    Update
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
         )}

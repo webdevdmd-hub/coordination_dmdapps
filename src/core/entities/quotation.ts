@@ -13,6 +13,8 @@ export type Quotation = {
   validUntil: string;
   customerId: string;
   customerName: string;
+  projectId?: string;
+  projectName?: string;
   status: QuotationStatus;
   lineItems: QuotationLineItem[];
   notes: string;

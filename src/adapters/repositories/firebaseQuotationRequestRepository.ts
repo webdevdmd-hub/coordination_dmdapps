@@ -24,6 +24,8 @@ export type QuotationRequestTaskInput = {
   assignedTo?: string;
   assignedName?: string;
   taskId?: string;
+  estimateNumber?: string;
+  estimateAmount?: number;
   createdAt?: string;
   updatedAt?: string;
 };

@@ -35,13 +35,13 @@ const statusOptions: Array<{ value: CustomerStatus; label: string }> = [
 ];
 
 const statusStyles: Record<CustomerStatus, string> = {
-  active: 'bg-emerald-200 text-emerald-900',
+  active: 'bg-[#00B67A]/20 text-[#00B67A]',
   inactive: 'bg-surface-strong text-text',
-  new: 'bg-accent/70 text-text',
+  new: 'bg-[#00B67A]/16 text-[#00B67A]',
   contacted: 'bg-sky-200 text-sky-900',
   proposal: 'bg-amber-200 text-amber-900',
   negotiation: 'bg-violet-200 text-violet-900',
-  won: 'bg-emerald-200 text-emerald-900',
+  won: 'bg-[#00B67A]/20 text-[#00B67A]',
   lost: 'bg-rose-500/20 text-rose-200',
 };
 
@@ -361,6 +361,24 @@ export default function Page() {
     }
   };
 
+  const handleQuickStatusChange = async (customer: Customer, nextStatus: CustomerStatus) => {
+    if (!user || !canEdit) {
+      return;
+    }
+    if (!isAdmin && customer.assignedTo !== user.id) {
+      return;
+    }
+    try {
+      const updated = await firebaseCustomerRepository.update(customer.id, {
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      });
+      setCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    } catch {
+      setError('Unable to update customer status.');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
@@ -412,7 +430,7 @@ export default function Page() {
               type="button"
               onClick={handleOpenCreate}
               disabled={!canCreate}
-              className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl border border-[#00B67A]/30 bg-[#00B67A] px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(0,182,122,0.22)] transition hover:-translate-y-[1px] hover:bg-[#009f6b] disabled:cursor-not-allowed disabled:opacity-60"
             >
               New customer
             </button>
@@ -472,11 +490,11 @@ export default function Page() {
                   key={status}
                   type="button"
                   onClick={() => setStatusFilter(status)}
-                  className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition sm:w-auto sm:rounded-full ${
-                    statusFilter === status
-                      ? 'bg-accent text-white'
+                    className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition sm:w-auto sm:rounded-full ${
+                      statusFilter === status
+                      ? 'bg-[#00B67A] text-white'
                       : 'text-muted hover:text-text'
-                  }`}
+                    }`}
                 >
                   {status === 'all'
                     ? 'All'
@@ -503,39 +521,66 @@ export default function Page() {
           </div>
         ) : viewMode === 'list' ? (
           <div className="mt-6 space-y-4">
-            {filtered.map((customer) => (
-              <div
-                key={customer.id}
-                role={canOpenDetails ? 'button' : undefined}
-                tabIndex={canOpenDetails ? 0 : -1}
-                onClick={() => handleEntryOpen(customer)}
-                onKeyDown={(event) => handleEntryKeyDown(event, customer)}
-                aria-disabled={!canOpenDetails}
-                className={`rounded-3xl border border-border bg-surface p-6 ${
-                  canOpenDetails ? 'cursor-pointer transition hover:bg-[var(--surface-soft)]' : ''
-                }`}
-              >
-                <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-                        {customer.companyName}
-                      </p>
-                      <span
-                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                          statusStyles[customer.status]
-                        }`}
-                      >
-                        {statusOptions.find((option) => option.value === customer.status)?.label ??
-                          customer.status}
-                      </span>
-                    </div>
-                    <h2 className="mt-2 font-display text-4xl text-text">{customer.contactPerson}</h2>
-                    <div className="mt-2 flex flex-wrap items-center gap-4 text-lg text-muted">
-                      <p>Owner: {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}</p>
-                      <p>{customer.email}</p>
-                    </div>
+            <div className="overflow-hidden rounded-3xl border border-border bg-surface">
+              {filtered.map((customer) => (
+                <div
+                  key={customer.id}
+                  role={canOpenDetails ? 'button' : undefined}
+                  tabIndex={canOpenDetails ? 0 : -1}
+                  onClick={() => handleEntryOpen(customer)}
+                  onKeyDown={(event) => handleEntryKeyDown(event, customer)}
+                  aria-disabled={!canOpenDetails}
+                  className={`grid gap-3 border-b border-border px-3 py-3 last:border-b-0 md:grid-cols-[1.1fr_1.2fr_1fr_1fr_1fr_0.9fr_auto] md:items-center md:gap-2 md:px-4 ${
+                    canOpenDetails ? 'cursor-pointer transition hover:bg-[var(--surface-soft)]' : ''
+                  }`}
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
+                      {getOwnerInitials(customer.assignedTo)}
+                    </span>
+                    <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+                      {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}
+                    </p>
                   </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-semibold text-text">{customer.contactPerson}</p>
+                    <p className="truncate text-xs text-muted">{customer.email}</p>
+                  </div>
+
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                    {customer.companyName}
+                  </p>
+
+                  <p className="truncate text-sm text-text">{customer.source || '-'}</p>
+
+                  <div>
+                    <select
+                      value={customer.status}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      onChange={(event) =>
+                        handleQuickStatusChange(customer, event.target.value as CustomerStatus)
+                      }
+                      disabled={!canEdit || (!isAdmin && customer.assignedTo !== user?.id)}
+                      className="w-full rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span
+                    className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                      statusStyles[customer.status]
+                    }`}
+                  >
+                    {statusOptions.find((option) => option.value === customer.status)?.label ?? customer.status}
+                  </span>
+
                   {canEdit ? (
                     <button
                       type="button"
@@ -543,14 +588,14 @@ export default function Page() {
                         event.stopPropagation();
                         handleOpenEdit(customer);
                       }}
-                      className="rounded-full border border-border px-6 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-[var(--surface-soft)]"
+                      className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
                     >
                       Update
                     </button>
                   ) : null}
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : (
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -562,36 +607,61 @@ export default function Page() {
                 onClick={() => handleEntryOpen(customer)}
                 onKeyDown={(event) => handleEntryKeyDown(event, customer)}
                 aria-disabled={!canOpenDetails}
-                className={`rounded-3xl border border-border bg-surface p-6 ${
-                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:shadow-soft' : ''
+                className={`rounded-3xl border border-border bg-surface p-4 shadow-soft ${
+                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:border-border/80' : ''
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
                       {customer.companyName}
                     </p>
-                    <h2 className="mt-2 font-display text-4xl text-text">
-                      {customer.contactPerson}
-                    </h2>
+                    <h2 className="mt-1 font-display text-lg text-text">{customer.contactPerson}</h2>
+                    <div className="mt-1 space-y-1 text-[11px] text-muted">
+                      <p className="truncate">{customer.email}</p>
+                      <p>
+                        Owner{' '}
+                        <span className="font-semibold text-text">
+                          {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}
+                        </span>
+                      </p>
+                    </div>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                      statusStyles[customer.status]
-                    }`}
-                  >
-                    {statusOptions.find((option) => option.value === customer.status)?.label ??
-                      customer.status}
-                  </span>
+                  <div className="flex flex-col items-start gap-2 md:items-end">
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                        statusStyles[customer.status]
+                      }`}
+                    >
+                      {statusOptions.find((option) => option.value === customer.status)?.label ?? customer.status}
+                    </span>
+                    <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                      {customer.source || 'No source'}
+                    </span>
+                    <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                      {customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : '-'}
+                    </span>
+                  </div>
                 </div>
-                <div className="mt-4 space-y-2 text-lg text-muted">
-                  <p>Owner: {ownerNameMap.get(customer.assignedTo) ?? customer.assignedTo}</p>
-                  <p>{customer.email}</p>
+
+                <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{getOwnerInitials(customer.assignedTo)}</p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Status</p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {statusOptions.find((option) => option.value === customer.status)?.label ?? customer.status}
+                    </p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Shared</p>
+                    <p className="mt-1 text-sm font-semibold text-text">{customer.sharedRoles.length}</p>
+                  </div>
                 </div>
-                <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-                  <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-xs font-semibold text-text">
-                    {getOwnerInitials(customer.assignedTo)}
-                  </span>
+
+                <div className="mt-3 flex items-center justify-end">
                   {canEdit ? (
                     <button
                       type="button"
@@ -599,7 +669,7 @@ export default function Page() {
                         event.stopPropagation();
                         handleOpenEdit(customer);
                       }}
-                      className="rounded-full border border-border px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:bg-[var(--surface-soft)]"
+                      className="rounded-xl bg-[#00B67A]/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#00B67A]"
                     >
                       Update
                     </button>

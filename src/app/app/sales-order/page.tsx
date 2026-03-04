@@ -214,6 +214,8 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rejectRequest, setRejectRequest] = useState<SalesOrderRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const canView = !!user &&
     hasPermission(user.permissions, ['admin', 'sales_order_request_view', 'sales_order_request_view']);
@@ -349,9 +351,9 @@ export default function Page() {
     request: SalesOrderRequest,
     status: 'approved' | 'rejected',
     rejectionReason?: string,
-  ) => {
+  ): Promise<boolean> => {
     if (!user || !canApprove) {
-      return;
+      return false;
     }
     setIsSaving(request.id);
     setError(null);
@@ -403,8 +405,10 @@ export default function Page() {
         notifyRequester(request, user.id, user.fullName, status, rejectionReason),
         ...(status === 'approved' ? [logStoreHandoffActivity(request, user.id, user.fullName)] : []),
       ]);
+      return true;
     } catch {
       setError('Unable to update Sales Order Req status.');
+      return false;
     } finally {
       setIsSaving(null);
     }
@@ -414,16 +418,26 @@ export default function Page() {
     await applyStatusUpdate(request, 'approved');
   };
 
-  const handleReject = async (request: SalesOrderRequest) => {
-    const reason = window.prompt('Enter rejection reason');
-    if (reason === null) {
+  const openRejectModal = (request: SalesOrderRequest) => {
+    setRejectRequest(request);
+    setRejectReason(request.approval?.rejectionReason ?? '');
+    setError(null);
+  };
+
+  const handleRejectSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!rejectRequest) {
       return;
     }
-    if (!reason.trim()) {
+    if (!rejectReason.trim()) {
       setError('Rejection reason is required.');
       return;
     }
-    await applyStatusUpdate(request, 'rejected', reason.trim());
+    const ok = await applyStatusUpdate(rejectRequest, 'rejected', rejectReason.trim());
+    if (ok) {
+      setRejectRequest(null);
+      setRejectReason('');
+    }
   };
 
   const openRequestDetails = (request: SalesOrderRequest, tab: 'details' | 'timeline') => {
@@ -560,6 +574,11 @@ export default function Page() {
                       {request.projectName}
                     </h3>
                     <p className="mt-1 text-xs text-muted">Requested by: {request.requestedByName}</p>
+                    {request.status === 'rejected' && request.approval?.rejectionReason ? (
+                      <p className="mt-1 text-xs text-rose-200">
+                        Rejection Reason: {request.approval.rejectionReason}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -604,7 +623,7 @@ export default function Page() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              handleReject(request);
+                              openRejectModal(request);
                             }}
                             disabled={isSaving === request.id}
                             className="h-8 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -782,7 +801,7 @@ export default function Page() {
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => handleReject(selectedRequest)}
+                    onClick={() => openRejectModal(selectedRequest)}
                     disabled={isSaving === selectedRequest.id}
                     className="rounded-full border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -798,6 +817,73 @@ export default function Page() {
                   </button>
                 </div>
               ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {rejectRequest ? (
+          <div
+            data-modal-overlay="true"
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => {
+              setRejectRequest(null);
+              setRejectReason('');
+            }}
+          >
+            <div
+              className="w-full max-w-xl rounded-2xl border border-border/60 bg-surface p-4 shadow-soft"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                    Reject request
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold text-text">{rejectRequest.requestNo}</h3>
+                  <p className="mt-1 text-sm text-muted">{rejectRequest.projectName}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectRequest(null);
+                    setRejectReason('');
+                  }}
+                  className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted hover:text-text"
+                >
+                  Close
+                </button>
+              </div>
+              <form className="mt-4 space-y-3" onSubmit={handleRejectSubmit}>
+                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  Rejection reason
+                </label>
+                <textarea
+                  required
+                  value={rejectReason}
+                  onChange={(event) => setRejectReason(event.target.value)}
+                  placeholder="Provide reason for rejecting this Sales Order Req..."
+                  className="min-h-[120px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRejectRequest(null);
+                      setRejectReason('');
+                    }}
+                    className="rounded-full border border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving === rejectRequest.id}
+                    className="rounded-full border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving === rejectRequest.id ? 'Rejecting...' : 'Reject'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         ) : null}

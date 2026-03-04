@@ -653,7 +653,7 @@ export default function Page() {
             </p>
             <p
               className={`mt-2 font-semibold text-text ${
-                variant === 'cards' ? 'text-sm' : variant === 'kanban' ? 'text-3xl' : 'text-3xl sm:text-4xl'
+                variant === 'cards' ? 'text-sm' : variant === 'kanban' ? 'text-2xl' : 'text-2xl sm:text-3xl'
               }`}
             >
               {task.title}

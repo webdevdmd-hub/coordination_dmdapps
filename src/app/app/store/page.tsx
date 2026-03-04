@@ -175,7 +175,7 @@ export default function Page() {
               onClick={() => setStatusFilter('all')}
               className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
                 statusFilter === 'all'
-                  ? 'bg-accent/80 text-text'
+                  ? 'bg-[#00B67A] text-white'
                   : 'border border-border/60 bg-bg/70 text-muted'
               }`}
             >
@@ -186,7 +186,7 @@ export default function Page() {
               onClick={() => setStatusFilter('pending')}
               className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
                 statusFilter === 'pending'
-                  ? 'bg-accent/80 text-text'
+                  ? 'bg-[#00B67A] text-white'
                   : 'border border-border/60 bg-bg/70 text-muted'
               }`}
             >
@@ -197,7 +197,7 @@ export default function Page() {
               onClick={() => setStatusFilter('received')}
               className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
                 statusFilter === 'received'
-                  ? 'bg-accent/80 text-text'
+                  ? 'bg-[#00B67A] text-white'
                   : 'border border-border/60 bg-bg/70 text-muted'
               }`}
             >
@@ -219,11 +219,12 @@ export default function Page() {
             No Store requests found for this filter.
           </div>
         ) : (
-          filteredRequests.map((request) => (
-            <section
-              key={request.id}
-              className="rounded-2xl border border-border/60 bg-surface/80 p-4 shadow-soft"
-            >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filteredRequests.map((request) => (
+              <section
+                key={request.id}
+                className="lift-hover rounded-xl border border-border/60 bg-surface/80 p-3 shadow-soft"
+              >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">
@@ -235,7 +236,7 @@ export default function Page() {
                 <span
                   className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
                     isReceived(request)
-                      ? 'bg-emerald-500/15 text-emerald-200'
+                      ? 'bg-[#00B67A]/15 text-[#00B67A]'
                       : 'bg-blue-500/15 text-blue-200'
                   }`}
                 >
@@ -268,19 +269,20 @@ export default function Page() {
                 </p>
               </div>
               {!isReceived(request) ? (
-                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => handleMarkAsReceived(request)}
                     disabled={isSaving === request.id}
-                    className="rounded-full border border-border/60 bg-emerald-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-full border border-border/60 bg-[#00B67A] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-[#009f6b] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSaving === request.id ? 'Saving...' : 'Receive'}
                   </button>
                 </div>
               ) : null}
-            </section>
-          ))
+              </section>
+            ))}
+          </div>
         )}
 
         {error ? (

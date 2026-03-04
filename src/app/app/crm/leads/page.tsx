@@ -325,7 +325,12 @@ export default function Page() {
     }
   };
 
-  const handleUpdateLead = async (id: string, updates: Partial<Lead>) => {
+  const handleUpdateLead = async (
+    id: string,
+    updates: Partial<Lead>,
+    options?: { syncSelected?: boolean },
+  ) => {
+    const syncSelected = options?.syncSelected ?? true;
     setError(null);
     if (!user) {
       setError('You must be signed in to update a lead.');
@@ -349,7 +354,9 @@ export default function Page() {
         lastTouchedAt: new Date().toISOString(),
       });
       setLeads((prev) => prev.map((lead) => (lead.id === id ? updated : lead)));
-      setSelectedLead(updated);
+      if (syncSelected) {
+        setSelectedLead(updated);
+      }
       if (target) {
         const changedFields = Object.keys(updates).filter((key) => {
           const typedKey = key as keyof Lead;
@@ -443,7 +450,7 @@ export default function Page() {
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong"
+                className="rounded-2xl border border-[#00B67A]/30 bg-[#00B67A] px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(0,182,122,0.22)] transition hover:-translate-y-[1px] hover:bg-[#009f6b]"
               >
                 + New Lead
               </button>
@@ -571,80 +578,149 @@ export default function Page() {
               <div className="space-y-4">
                 <div className="overflow-hidden rounded-3xl border border-border bg-surface">
                   {filteredLeads.map((lead) => (
-                    <button
+                    <div
                       key={lead.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedLead(lead)}
-                      className="grid w-full items-center gap-4 border-b border-border px-6 py-5 text-left transition hover:bg-[var(--surface-soft)] md:grid-cols-[2fr_1fr_1fr]"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedLead(lead);
+                        }
+                      }}
+                      className="grid cursor-pointer gap-3 border-b border-border px-3 py-3 transition hover:bg-[var(--surface-soft)] last:border-b-0 md:grid-cols-[1.15fr_1.25fr_1fr_0.9fr_1fr_0.9fr_auto] md:items-center md:gap-2 md:px-4"
                     >
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">
-                          {lead.company}
-                        </p>
-                        <h3 className="mt-2 font-display text-4xl text-text">{lead.name}</h3>
-                        <p className="mt-1 text-lg text-muted">{lead.email}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                            leadStatusClass[lead.status]
-                          }`}
-                        >
-                          {lead.status}
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
+                          {getOwnerInitials(lead.ownerId)}
                         </span>
-                        <p className="text-xl font-semibold text-text">{formatCurrency(lead.value)}</p>
+                        <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+                          {getOwnerName(lead.ownerId)}
+                        </p>
                       </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-text">{lead.name}</p>
+                        <p className="truncate text-xs text-muted">{lead.email}</p>
+                      </div>
+
+                      <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                        {lead.company}
+                      </p>
+
+                      <p className="text-sm text-text">
+                        {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
+                      </p>
+
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Owner</p>
-                        <div className="mt-2 flex items-center gap-3">
-                          <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-xs font-semibold text-text">
-                            {getOwnerInitials(lead.ownerId)}
-                          </span>
-                          <p className="text-lg text-text">{getOwnerName(lead.ownerId)}</p>
-                        </div>
+                        <select
+                          value={lead.status}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          onChange={(event) =>
+                            void handleUpdateLead(
+                              lead.id,
+                              { status: event.target.value as LeadStatus },
+                              { syncSelected: false },
+                            )
+                          }
+                          disabled={
+                            !user ||
+                            !hasPermission(user.permissions, ['admin', 'lead_edit']) ||
+                            (!user.permissions.includes('admin') && lead.ownerId !== user.id)
+                          }
+                          className="w-full rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {createLeadStatusOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    </button>
+
+                      <span className="inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] border border-border bg-[var(--surface-soft)] text-text">
+                        {formatCurrency(lead.value)}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedLead(lead);
+                        }}
+                        className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                      >
+                        Update
+                      </button>
+                    </div>
                   ))}
                 </div>
-                <p className="text-xl text-muted">
+                <p className="text-sm text-muted">
                   Showing {filteredLeads.length} of {leads.length} leads
                 </p>
               </div>
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredLeads.map((lead) => (
                   <button
                     key={lead.id}
                     type="button"
                     onClick={() => setSelectedLead(lead)}
-                    className="group relative rounded-3xl border border-border bg-surface p-6 text-left transition hover:-translate-y-[1px] hover:shadow-soft"
+                    className="rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-border/80"
                   >
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">{lead.company}</p>
-                    <h3 className="mt-2 font-display text-5xl text-text">{lead.name}</h3>
-                    <p className="mt-1 text-xl text-muted">{lead.email}</p>
-                    <div className="mt-5 flex items-center gap-3">
-                      <span
-                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                          leadStatusClass[lead.status]
-                        }`}
-                      >
-                        {lead.status}
-                      </span>
-                      <p className="text-2xl font-semibold text-text">{formatCurrency(lead.value)}</p>
-                    </div>
-                    <div className="mt-6 border-t border-border pt-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Owner</p>
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-xs font-semibold text-text">
-                            {getOwnerInitials(lead.ownerId)}
-                          </span>
-                          <p className="text-lg text-text">{getOwnerName(lead.ownerId)}</p>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
+                          {lead.company}
+                        </p>
+                        <h3 className="mt-1 font-display text-lg text-text">{lead.name}</h3>
+                        <div className="mt-1 space-y-1 text-[11px] text-muted">
+                          <p className="truncate">{lead.email}</p>
+                          <p>
+                            Owner <span className="font-semibold text-text">{getOwnerName(lead.ownerId)}</span>
+                          </p>
                         </div>
-                        <span className="rounded-xl bg-accent/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
-                          View lead
+                      </div>
+                      <div className="flex flex-col items-start gap-2 md:items-end">
+                        <span
+                          className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                            leadStatusClass[lead.status]
+                          }`}
+                        >
+                          {lead.status}
+                        </span>
+                        <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                          {formatCurrency(lead.value)}
+                        </span>
+                        <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
+                          {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
                         </span>
                       </div>
+                    </div>
+
+                    <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
+                      <div className="px-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
+                        <p className="mt-1 text-sm font-semibold text-text">{getOwnerInitials(lead.ownerId)}</p>
+                      </div>
+                      <div className="px-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Stage</p>
+                        <p className="mt-1 text-sm font-semibold text-text">
+                          {lead.status.replace(/\b\w/g, (value) => value.toUpperCase())}
+                        </p>
+                      </div>
+                      <div className="px-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Contact</p>
+                        <p className="mt-1 text-sm font-semibold text-text">1</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-end">
+                      <span className="rounded-xl bg-[#00B67A]/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#00B67A]">
+                        View lead
+                      </span>
                     </div>
                   </button>
                 ))}

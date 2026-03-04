@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { firebaseProjectRepository } from '@/adapters/repositories/firebaseProjectRepository';
 import { firebaseQuotationRequestRepository } from '@/adapters/repositories/firebaseQuotationRequestRepository';
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
 import { firebaseLeadRepository } from '@/adapters/repositories/firebaseLeadRepository';
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { Project } from '@/core/entities/project';
 import {
   QuotationRequest,
   QuotationRequestTask,
   QuotationRequestStatus,
 } from '@/core/entities/quotationRequest';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { getFirebaseAuth } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries } from '@/lib/roles';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
@@ -24,6 +27,15 @@ type EligibleUser = {
   roleName: string;
 };
 
+type SalesOrderRequestFormState = {
+  projectId: string;
+  estimateNumber: string;
+  estimateAmount: string;
+  salesOrderNumber: string;
+  salesOrderAmount: string;
+  salesOrderDate: string;
+};
+
 const statusOptions: Array<{ value: QuotationRequestStatus; label: string }> = [
   { value: 'new', label: 'New' },
   { value: 'review', label: 'In review' },
@@ -32,22 +44,22 @@ const statusOptions: Array<{ value: QuotationRequestStatus; label: string }> = [
 ];
 
 const priorityStyles: Record<string, string> = {
-  low: 'bg-emerald-100 text-emerald-700',
+  low: 'bg-[#00B67A]/14 text-[#00B67A]',
   medium: 'bg-amber-100 text-amber-700',
   high: 'bg-rose-100 text-rose-700',
 };
 
 const statusStyles: Record<QuotationRequestStatus, string> = {
   new: 'bg-surface-strong text-text',
-  review: 'bg-accent/70 text-text',
-  approved: 'bg-emerald-200 text-emerald-900',
+  review: 'bg-[#00B67A]/16 text-[#00B67A]',
+  approved: 'bg-[#00B67A]/22 text-[#00B67A]',
   rejected: 'bg-amber-200 text-amber-800',
 };
 
 const taskStatusStyles: Record<string, string> = {
   pending: 'bg-slate-100 text-slate-600',
   assigned: 'bg-blue-100 text-blue-700',
-  done: 'bg-emerald-100 text-emerald-700',
+  done: 'bg-[#00B67A]/14 text-[#00B67A]',
 };
 
 const formatDate = (value: string) => {
@@ -57,6 +69,17 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   return date.toLocaleDateString();
 };
+
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+const emptySalesOrderForm = (): SalesOrderRequestFormState => ({
+  projectId: '',
+  estimateNumber: '',
+  estimateAmount: '',
+  salesOrderNumber: '',
+  salesOrderAmount: '',
+  salesOrderDate: todayKey(),
+});
 
 const normalizeRequest = (raw: Record<string, unknown>): QuotationRequest => {
   const recipients = Array.isArray(raw.recipients) ? raw.recipients : [];
@@ -88,10 +111,19 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
+  const [activeSalesOrderTaskId, setActiveSalesOrderTaskId] = useState<string | null>(null);
   const [activeAddTaskId, setActiveAddTaskId] = useState<string | null>(null);
   const [customTaskTitle, setCustomTaskTitle] = useState('');
   const [customTaskAssignee, setCustomTaskAssignee] = useState('');
   const [isAddingTask, setIsAddingTask] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() =>
+    emptySalesOrderForm(),
+  );
+  const [isSalesOrderModalOpen, setIsSalesOrderModalOpen] = useState(false);
+  const [isSalesOrderSubmitting, setIsSalesOrderSubmitting] = useState(false);
+  const [salesOrderError, setSalesOrderError] = useState<string | null>(null);
+  const [salesOrderSuccess, setSalesOrderSuccess] = useState<string | null>(null);
 
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view']);
   const canViewAllRequests =
@@ -101,6 +133,11 @@ export default function Page() {
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_delete']);
   const canAssign =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_assign']);
+  const canRequestSalesOrder =
+    !!user && hasPermission(user.permissions, ['admin', 'sales_order_request_create']);
+  const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
+  const canViewAllProjects =
+    !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
 
   useEffect(() => {
     let isActive = true;
@@ -149,6 +186,32 @@ export default function Page() {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!user || !canViewProjects) {
+      setProjects([]);
+      return;
+    }
+    let isActive = true;
+    const loadProjects = async () => {
+      try {
+        const result = canViewAllProjects
+          ? await firebaseProjectRepository.listAll()
+          : await firebaseProjectRepository.listForUser(user.id, user.role);
+        if (isActive) {
+          setProjects(result);
+        }
+      } catch {
+        if (isActive) {
+          setProjects([]);
+        }
+      }
+    };
+    loadProjects();
+    return () => {
+      isActive = false;
+    };
+  }, [user, canViewProjects, canViewAllProjects]);
 
   useEffect(() => {
     if (!user || !canView) {
@@ -243,6 +306,139 @@ export default function Page() {
     return tasksByRequest[activeRequest.id] ?? [];
   }, [tasksByRequest, activeRequest]);
 
+  const activeSalesOrderTask = useMemo(
+    () => activeTasks.find((task) => task.id === activeSalesOrderTaskId) ?? null,
+    [activeTasks, activeSalesOrderTaskId],
+  );
+
+  const isEstimateTask = (task: QuotationRequestTask) => task.tag.trim().toLowerCase() === 'estimate';
+
+  const getProjectOptionsForRequest = (request: QuotationRequest) =>
+    projects.filter((project) => project.customerId === request.customerId);
+
+  const handleOpenSalesOrderModal = (request: QuotationRequest, task: QuotationRequestTask) => {
+    if (!canRequestSalesOrder || task.status !== 'done' || !isEstimateTask(task)) {
+      return;
+    }
+    const projectOptions = getProjectOptionsForRequest(request);
+    setActiveSalesOrderTaskId(task.id);
+    setSalesOrderFormState({
+      ...emptySalesOrderForm(),
+      projectId: projectOptions[0]?.id ?? '',
+      estimateNumber: task.estimateNumber ?? '',
+      estimateAmount:
+        typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
+          ? String(task.estimateAmount)
+          : '',
+    });
+    setSalesOrderError(null);
+    setSalesOrderSuccess(null);
+    setIsSalesOrderModalOpen(true);
+  };
+
+  const handleSubmitSalesOrderRequest = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user || !activeRequest || !canRequestSalesOrder) {
+      return;
+    }
+    const projectId = salesOrderFormState.projectId.trim();
+    const estimateNumber = salesOrderFormState.estimateNumber.trim();
+    const salesOrderNumber = salesOrderFormState.salesOrderNumber.trim();
+    const salesOrderDate = salesOrderFormState.salesOrderDate.trim();
+    const estimateAmount = Number(salesOrderFormState.estimateAmount);
+    const salesOrderAmount = Number(salesOrderFormState.salesOrderAmount);
+
+    if (!projectId) {
+      setSalesOrderError('Project is required.');
+      return;
+    }
+    if (!estimateNumber) {
+      setSalesOrderError('Estimate number is required.');
+      return;
+    }
+    if (!Number.isFinite(estimateAmount) || estimateAmount <= 0) {
+      setSalesOrderError('Estimate amount must be greater than 0.');
+      return;
+    }
+    if (!salesOrderNumber) {
+      setSalesOrderError('Sales Order number is required.');
+      return;
+    }
+    if (!Number.isFinite(salesOrderAmount) || salesOrderAmount <= 0) {
+      setSalesOrderError('Sales Order amount must be greater than 0.');
+      return;
+    }
+    if (!salesOrderDate) {
+      setSalesOrderError('Sales Order date is required.');
+      return;
+    }
+
+    setIsSalesOrderSubmitting(true);
+    setSalesOrderError(null);
+    setSalesOrderSuccess(null);
+    try {
+      const auth = getFirebaseAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setSalesOrderError('You must be signed in to submit Sales Order Reqs.');
+        return;
+      }
+      const idToken = await currentUser.getIdToken();
+      const payload = JSON.stringify({
+        projectId,
+        estimateNumber,
+        estimateAmount,
+        salesOrderNumber,
+        salesOrderAmount,
+        salesOrderDate,
+      });
+      const endpoints = [
+        '/api/sales-order/sales-order-requests',
+        '/api/sales-order/requests',
+        '/api/sales-order-requests',
+      ];
+      let response: Response | null = null;
+      for (const endpoint of endpoints) {
+        const candidate = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: payload,
+        });
+        if (candidate.status !== 404) {
+          response = candidate;
+          break;
+        }
+      }
+      if (!response) {
+        setSalesOrderError('Unable to submit Sales Order Req (no response).');
+        return;
+      }
+      const data = (await response.json().catch(() => ({}))) as Record<string, string>;
+      if (!response.ok) {
+        setSalesOrderError(
+          data.error ?? `Unable to submit Sales Order Req (HTTP ${response.status}).`,
+        );
+        return;
+      }
+      const now = new Date().toISOString();
+      await firebaseLeadRepository.addActivity(activeRequest.leadId, {
+        type: 'note',
+        note: `Sales Order Req submitted from RFQ Estimate task (${estimateNumber}).`,
+        date: now,
+        createdBy: user.id,
+      });
+      const requestNo = data.requestNo ?? 'Sales Order Req';
+      setSalesOrderSuccess(`${requestNo} submitted for approval.`);
+    } catch {
+      setSalesOrderError('Unable to submit Sales Order Req. Please try again.');
+    } finally {
+      setIsSalesOrderSubmitting(false);
+    }
+  };
+
   const handleAssignTask = async (
     request: QuotationRequest,
     task: QuotationRequestTask,
@@ -262,6 +458,7 @@ export default function Page() {
         title: `${task.tag} · ${request.leadCompany}`,
         description: `RFQ task for ${request.leadName}`,
         assignedTo: selected.id,
+        assignedUsers: [selected.id],
         status: 'todo',
         priority: 'medium',
         recurrence: 'none',
@@ -280,7 +477,36 @@ export default function Page() {
       });
       taskId = created.id;
     } else {
-      await firebaseTaskRepository.update(taskId, { assignedTo: selected.id });
+      try {
+        await firebaseTaskRepository.update(taskId, {
+          assignedTo: selected.id,
+          assignedUsers: [selected.id],
+          updatedAt: now,
+        });
+      } catch {
+        const recreated = await firebaseTaskRepository.create({
+          title: `${task.tag} · ${request.leadCompany}`,
+          description: `RFQ task for ${request.leadName}`,
+          assignedTo: selected.id,
+          assignedUsers: [selected.id],
+          status: 'todo',
+          priority: 'medium',
+          recurrence: 'none',
+          startDate: now.slice(0, 10),
+          endDate: now.slice(0, 10),
+          dueDate: now.slice(0, 10),
+          parentTaskId: '',
+          projectId: '',
+          sharedRoles: [],
+          createdBy: user.id,
+          leadId: request.leadId,
+          leadReference: request.leadName,
+          quotationRequestId: request.id,
+          quotationRequestTaskId: task.id,
+          rfqTag: task.tag,
+        });
+        taskId = recreated.id;
+      }
     }
     const updated = (await firebaseQuotationRequestRepository.updateTask(request.id, task.id, {
       assignedTo: selected.id,
@@ -472,8 +698,12 @@ export default function Page() {
     if (activeRequestId === requestId) {
       setActiveRequestId(null);
       setActiveAddTaskId(null);
+      setActiveSalesOrderTaskId(null);
       setCustomTaskTitle('');
       setCustomTaskAssignee('');
+      setIsSalesOrderModalOpen(false);
+      setSalesOrderError(null);
+      setSalesOrderSuccess(null);
     }
   };
 
@@ -485,7 +715,7 @@ export default function Page() {
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               Quotation Requests
             </p>
-            <h1 className="font-display text-6xl text-text">Request control center</h1>
+            <h1 className="font-display text-6xl text-text">Request control for leads</h1>
             <p className="mt-2 max-w-3xl text-2xl text-muted">
               Track every quotation request, delegate technical tasks, and keep the lead timeline in
               sync.
@@ -495,7 +725,7 @@ export default function Page() {
             <button
               type="button"
               disabled={!canView}
-              className="w-full rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+              className="w-full rounded-2xl border border-[#00B67A]/30 bg-[#00B67A] px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(0,182,122,0.22)] transition hover:-translate-y-[1px] hover:bg-[#009f6b] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
               View queue
             </button>
@@ -557,7 +787,7 @@ export default function Page() {
                   onClick={() => setStatusFilter(status)}
                   className={`w-full shrink-0 whitespace-nowrap rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
                     statusFilter === status
-                      ? 'bg-accent text-white'
+                      ? 'bg-[#00B67A] text-white'
                       : 'text-muted hover:text-text'
                   }`}
                 >
@@ -595,7 +825,7 @@ export default function Page() {
                   key={request.id}
                   type="button"
                   onClick={() => setActiveRequestId(request.id)}
-                  className="rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-accent/40"
+                  className="rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-[#00B67A]/40"
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
@@ -674,7 +904,7 @@ export default function Page() {
                       <p className="mt-2 text-2xl font-semibold text-text">{assignedCount}</p>
                     </div>
                     <div className="px-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00B67A]">
                         Done
                       </p>
                       <p className="mt-2 text-2xl font-semibold text-text">{doneCount}</p>
@@ -693,13 +923,17 @@ export default function Page() {
         ) : null}
       </section>
 
-      {activeRequest ? (
+      {activeRequest && !isSalesOrderModalOpen ? (
         <div
           data-modal-overlay="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
           onClick={() => {
             setActiveRequestId(null);
             setActiveAddTaskId(null);
+            setActiveSalesOrderTaskId(null);
+            setIsSalesOrderModalOpen(false);
+            setSalesOrderError(null);
+            setSalesOrderSuccess(null);
           }}
         >
           <DraggablePanel
@@ -734,7 +968,7 @@ export default function Page() {
                       )
                     }
                     disabled={!canEdit}
-                    className="appearance-none rounded-full border border-accent/30 bg-accent px-5 py-2.5 pr-10 text-xs font-semibold uppercase tracking-[0.16em] text-white outline-none disabled:opacity-60"
+                    className="appearance-none rounded-full border border-[#00B67A]/30 bg-[#00B67A] px-5 py-2.5 pr-10 text-xs font-semibold uppercase tracking-[0.16em] text-white outline-none disabled:opacity-60"
                   >
                     {statusOptions.map((status) => (
                       <option key={status.value} value={status.value}>
@@ -760,6 +994,10 @@ export default function Page() {
                   onClick={() => {
                     setActiveRequestId(null);
                     setActiveAddTaskId(null);
+                    setActiveSalesOrderTaskId(null);
+                    setIsSalesOrderModalOpen(false);
+                    setSalesOrderError(null);
+                    setSalesOrderSuccess(null);
                   }}
                   className="rounded-full border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-[var(--surface-soft)]"
                 >
@@ -782,7 +1020,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="px-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-600">Done</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#00B67A]">Done</p>
                 <p className="mt-1 text-2xl font-semibold text-text">
                   {activeTasks.filter((task) => task.status === 'done').length}
                 </p>
@@ -843,6 +1081,18 @@ export default function Page() {
                           {task.status}
                         </span>
                       </div>
+                      {isEstimateTask(task) ? (
+                        <div className="mt-2 space-y-1 text-xs text-[#00B67A]">
+                          <p>Estimate No: {task.estimateNumber || '-'}</p>
+                          <p>
+                            Estimate Amount:{' '}
+                            {typeof task.estimateAmount === 'number' &&
+                            Number.isFinite(task.estimateAmount)
+                              ? task.estimateAmount.toLocaleString()
+                              : '-'}
+                          </p>
+                        </div>
+                      ) : null}
                       <div className="mt-3">
                         <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
                           Assign to
@@ -865,6 +1115,17 @@ export default function Page() {
                           ))}
                         </select>
                       </div>
+                      {canRequestSalesOrder && isEstimateTask(task) && task.status === 'done' ? (
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSalesOrderModal(activeRequest, task)}
+                            className="rounded-full border border-border/60 bg-[#00B67A] px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-[#009f6b]"
+                          >
+                            Sales Order Req
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 )}
@@ -909,7 +1170,7 @@ export default function Page() {
                             type="button"
                             onClick={() => handleAddCustomTask(activeRequest)}
                             disabled={isAddingTask}
-                            className="rounded-2xl border border-accent/30 bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-2xl border border-[#00B67A]/30 bg-[#00B67A] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-[#009f6b] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isAddingTask ? 'Adding...' : 'Add task'}
                           </button>
@@ -969,6 +1230,194 @@ export default function Page() {
                 </div>
               </div>
             </details>
+
+          </DraggablePanel>
+        </div>
+      ) : null}
+
+      {isSalesOrderModalOpen && activeRequest && activeSalesOrderTask ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm"
+          onClick={() => {
+            setIsSalesOrderModalOpen(false);
+            setSalesOrderError(null);
+            setSalesOrderSuccess(null);
+          }}
+        >
+          <DraggablePanel
+            className="w-full max-w-3xl rounded-3xl border border-border/60 bg-surface/95 p-4 shadow-floating sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                  Sales Order Req
+                </p>
+                <h3 className="mt-2 font-display text-xl text-text sm:text-2xl">
+                  {activeRequest.leadName} - Estimate
+                </h3>
+                <p className="mt-2 text-xs text-muted sm:text-sm">
+                  Submit Sales Order details from the completed Estimate task.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSalesOrderModalOpen(false);
+                  setSalesOrderError(null);
+                  setSalesOrderSuccess(null);
+                }}
+                className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
+              >
+                Close
+              </button>
+            </div>
+
+            <form className="mt-6 space-y-4" onSubmit={handleSubmitSalesOrderRequest}>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                  Project
+                </label>
+                <select
+                  required
+                  value={salesOrderFormState.projectId}
+                  onChange={(event) =>
+                    setSalesOrderFormState((prev) => ({
+                      ...prev,
+                      projectId: event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                >
+                  <option value="">Select project</option>
+                  {getProjectOptionsForRequest(activeRequest).map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Estimate number
+                  </label>
+                  <input
+                    required
+                    value={salesOrderFormState.estimateNumber}
+                    onChange={(event) =>
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        estimateNumber: event.target.value,
+                      }))
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="EST-2026-001"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Estimate amount
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    value={salesOrderFormState.estimateAmount}
+                    onChange={(event) =>
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        estimateAmount: event.target.value,
+                      }))
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="15000"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Sales Order number
+                  </label>
+                  <input
+                    required
+                    value={salesOrderFormState.salesOrderNumber}
+                    onChange={(event) =>
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        salesOrderNumber: event.target.value,
+                      }))
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="SOR-2026-015"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Sales Order amount
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    value={salesOrderFormState.salesOrderAmount}
+                    onChange={(event) =>
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        salesOrderAmount: event.target.value,
+                      }))
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="17500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                  Sales Order date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={salesOrderFormState.salesOrderDate}
+                  onChange={(event) =>
+                    setSalesOrderFormState((prev) => ({
+                      ...prev,
+                      salesOrderDate: event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                />
+              </div>
+
+              {salesOrderError ? (
+                <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
+                  {salesOrderError}
+                </div>
+              ) : null}
+              {salesOrderSuccess ? (
+                <div className="rounded-2xl border border-[#00B67A]/40 bg-[#00B67A]/12 px-4 py-2 text-sm text-[#00B67A]">
+                  {salesOrderSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSalesOrderSubmitting}
+                  className="rounded-full border border-border/60 bg-[#00B67A]/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white transition hover:-translate-y-[1px] hover:bg-[#009f6b]/80 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSalesOrderSubmitting ? 'Submitting...' : 'Submit for approval'}
+                </button>
+              </div>
+            </form>
           </DraggablePanel>
         </div>
       ) : null}
