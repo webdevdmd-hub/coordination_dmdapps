@@ -143,6 +143,8 @@ export default function Page() {
   const [timerTick, setTimerTick] = useState(() => Date.now());
   const [timerBusyId, setTimerBusyId] = useState<string | null>(null);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
@@ -637,6 +639,23 @@ export default function Page() {
         key={task.id}
         role="button"
         tabIndex={0}
+        draggable={variant === 'kanban'}
+        onDragStart={
+          variant === 'kanban'
+            ? (event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                setDraggingTaskId(task.id);
+              }
+            : undefined
+        }
+        onDragEnd={
+          variant === 'kanban'
+            ? () => {
+                setDraggingTaskId(null);
+                setDragOverStatus(null);
+              }
+            : undefined
+        }
         onClick={() => handleOpenEdit(task)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -1206,6 +1225,19 @@ export default function Page() {
     }
   };
 
+  const handleDropTaskToStatus = async (status: TaskStatus) => {
+    if (!draggingTaskId) {
+      return;
+    }
+    const task = tasks.find((item) => item.id === draggingTaskId);
+    setDraggingTaskId(null);
+    setDragOverStatus(null);
+    if (!task || task.status === status) {
+      return;
+    }
+    await handleQuickStatusChange(task, status);
+  };
+
   const handleDelete = async () => {
     if (!selectedTask) {
       return;
@@ -1389,7 +1421,29 @@ export default function Page() {
               { key: 'review', label: 'Review' },
               { key: 'done', label: 'Completed' },
             ] as const).map((column) => (
-              <div key={column.key} className="rounded-3xl border border-border bg-surface p-3">
+              <div
+                key={column.key}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  if (dragOverStatus !== column.key) {
+                    setDragOverStatus(column.key);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverStatus === column.key) {
+                    setDragOverStatus(null);
+                  }
+                }}
+                onDrop={async (event) => {
+                  event.preventDefault();
+                  await handleDropTaskToStatus(column.key);
+                }}
+                className={`rounded-3xl border bg-surface p-3 transition ${
+                  dragOverStatus === column.key
+                    ? 'border-emerald-400 ring-2 ring-emerald-300/50'
+                    : 'border-border'
+                }`}
+              >
                 <div className="mb-3 flex items-center justify-between px-2">
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">
                     {column.label}
