@@ -15,6 +15,7 @@ type CreateRoleRequest = {
 type UpdateRoleRequest = {
   id: string;
   permissions?: PermissionKey[];
+  name?: string;
   description?: string;
 };
 
@@ -175,6 +176,18 @@ export async function PATCH(request: Request) {
   }
 
   const updates: Record<string, unknown> = {};
+  if (typeof payload.name === 'string') {
+    const name = payload.name.trim();
+    if (!name) {
+      return toErrorResponse('Role name is required.');
+    }
+    const key = toRoleKey(name);
+    if (!key) {
+      return toErrorResponse('Role name is invalid.');
+    }
+    updates.name = name;
+    updates.key = key;
+  }
   if (payload.permissions !== undefined) {
     updates.permissions = toKnownPermissions(payload.permissions);
   }
@@ -189,9 +202,23 @@ export async function PATCH(request: Request) {
 
   try {
     const existing = await db.collection('roles').doc(payload.id).get();
+    if (!existing.exists) {
+      return toErrorResponse('Role not found.', 404);
+    }
     const existingData = existing.data() as { key?: string } | undefined;
     if (existingData?.key === ADMIN_ROLE_KEY) {
       return toErrorResponse('Admin role permissions are locked.', 403);
+    }
+    if (typeof updates.key === 'string') {
+      const duplicate = await db
+        .collection('roles')
+        .where('key', '==', updates.key)
+        .limit(2)
+        .get();
+      const hasAnotherRoleWithSameKey = duplicate.docs.some((doc) => doc.id !== payload.id);
+      if (hasAnotherRoleWithSameKey) {
+        return toErrorResponse('Role already exists.');
+      }
     }
     await db.collection('roles').doc(payload.id).set(updates, { merge: true });
     return NextResponse.json({ id: payload.id }, { status: 200 });

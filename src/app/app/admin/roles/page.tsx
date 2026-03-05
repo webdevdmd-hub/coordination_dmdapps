@@ -19,7 +19,17 @@ type NewRole = {
   description: string;
 };
 
+type EditRole = {
+  name: string;
+  description: string;
+};
+
 const emptyNewRole: NewRole = {
+  name: '',
+  description: '',
+};
+
+const emptyEditRole: EditRole = {
   name: '',
   description: '',
 };
@@ -184,6 +194,9 @@ export default function Page() {
   const [newRole, setNewRole] = useState<NewRole>(emptyNewRole);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editRole, setEditRole] = useState<EditRole>(emptyEditRole);
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [permissionDraft, setPermissionDraft] = useState<PermissionKey[]>([]);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
@@ -304,6 +317,54 @@ export default function Page() {
     }
   };
 
+  const openEditRole = () => {
+    if (!selectedRole || selectedRole.key === 'admin') {
+      return;
+    }
+    setEditRole({
+      name: selectedRole.name ?? '',
+      description: selectedRole.description ?? '',
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateRole = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedRole) {
+      return;
+    }
+    if (!editRole.name.trim()) {
+      setError('Role name is required.');
+      return;
+    }
+    setError(null);
+    setIsUpdatingRole(true);
+    try {
+      const response = await fetch('/api/admin/roles', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedRole.id,
+          name: editRole.name.trim(),
+          description: editRole.description.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(payload?.error ?? 'Unable to update role.');
+      }
+      setIsEditOpen(false);
+      await refreshRoles();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to update role.';
+      setError(message);
+    } finally {
+      setIsUpdatingRole(false);
+    }
+  };
+
   return (
     <ModuleShell
       title="Role management"
@@ -353,6 +414,16 @@ export default function Page() {
               </div>
               {selectedRole ? (
                 <>
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={openEditRole}
+                      disabled={isAdminRole}
+                      className="rounded-full border border-border/60 bg-bg/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Edit role
+                    </button>
+                  </div>
                   {selectedRole.description ? (
                     <p className="rounded-2xl border border-border/60 bg-bg/70 p-3 text-sm text-text">
                       {selectedRole.description}
@@ -534,6 +605,76 @@ export default function Page() {
                 className="w-full rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isCreating ? 'Creating...' : 'Create role'}
+              </button>
+            </form>
+          </DraggablePanel>
+        </div>
+      ) : null}
+
+      {isEditOpen ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
+          onClick={() => setIsEditOpen(false)}
+        >
+          <DraggablePanel
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit role"
+            className="w-full max-w-2xl animate-fade-up rounded-3xl border border-border/60 bg-surface/95 p-6 shadow-floating"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Edit</p>
+                <h3 className="mt-2 font-display text-2xl text-text">Role details</h3>
+                <p className="mt-2 text-sm text-muted">
+                  Update role name and description.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(false)}
+                className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
+              >
+                Close
+              </button>
+            </div>
+
+            <form className="mt-6 space-y-4" onSubmit={handleUpdateRole}>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                  Role name
+                </label>
+                <input
+                  required
+                  value={editRole.name}
+                  onChange={(event) =>
+                    setEditRole((prev) => ({ ...prev, name: event.target.value }))
+                  }
+                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+                  placeholder="Sales Manager"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                  Description
+                </label>
+                <textarea
+                  value={editRole.description}
+                  onChange={(event) =>
+                    setEditRole((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  className="mt-2 min-h-[140px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+                  placeholder="Describe what this role can access."
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isUpdatingRole}
+                className="w-full rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isUpdatingRole ? 'Updating...' : 'Update role'}
               </button>
             </form>
           </DraggablePanel>
