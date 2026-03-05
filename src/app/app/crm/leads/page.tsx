@@ -668,42 +668,39 @@ export default function Page() {
                     key={lead.id}
                     type="button"
                     onClick={() => setSelectedLead(lead)}
-                    className="rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-border/80"
+                    className="group rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-[#00B67A]/40"
                   >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
-                          {lead.company}
-                        </p>
-                        <h3 className="mt-1 font-display text-lg text-text">{lead.name}</h3>
-                        <div className="mt-1 space-y-1 text-[11px] text-muted">
-                          <p className="truncate">{lead.email}</p>
-                          <p>
-                            Owner <span className="font-semibold text-text">{getOwnerName(lead.ownerId)}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-soft)] text-xs font-semibold uppercase tracking-[0.12em] text-text">
+                          {getOwnerInitials(lead.ownerId)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
+                            {lead.company}
                           </p>
+                          <h3 className="mt-1 truncate font-display text-xl text-text">{lead.name}</h3>
+                          <p className="mt-1 truncate text-sm text-muted">{lead.email}</p>
                         </div>
                       </div>
-                      <div className="flex flex-col items-start gap-2 md:items-end">
-                        <span
-                          className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                            leadStatusClass[lead.status]
-                          }`}
-                        >
-                          {lead.status}
-                        </span>
-                        <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
-                          {formatCurrency(lead.value)}
-                        </span>
-                        <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
-                          {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
-                        </span>
-                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                          leadStatusClass[lead.status]
+                        }`}
+                      >
+                        {lead.status}
+                      </span>
                     </div>
 
-                    <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
+                    <div className="mt-4 rounded-2xl border border-border/70 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-text">{getOwnerName(lead.ownerId)}</p>
+                    </div>
+
+                    <div className="mt-3 grid w-full grid-cols-3 divide-x divide-border rounded-2xl border border-border/70 py-2 text-center">
                       <div className="px-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
-                        <p className="mt-1 text-sm font-semibold text-text">{getOwnerInitials(lead.ownerId)}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Value</p>
+                        <p className="mt-1 text-sm font-semibold text-text">{formatCurrency(lead.value)}</p>
                       </div>
                       <div className="px-2">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Stage</p>
@@ -712,13 +709,15 @@ export default function Page() {
                         </p>
                       </div>
                       <div className="px-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Contact</p>
-                        <p className="mt-1 text-sm font-semibold text-text">1</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Created</p>
+                        <p className="mt-1 text-sm font-semibold text-text">
+                          {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
+                        </p>
                       </div>
                     </div>
 
                     <div className="mt-3 flex items-center justify-end">
-                      <span className="rounded-xl bg-[#00B67A]/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#00B67A]">
+                      <span className="rounded-xl border border-[#00B67A]/25 bg-[#00B67A]/12 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#00B67A]">
                         View lead
                       </span>
                     </div>
