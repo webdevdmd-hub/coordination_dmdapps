@@ -59,7 +59,6 @@ export default function Page() {
     phone: '',
     value: '',
     source: '',
-    status: 'new' as LeadStatus,
   });
 
   const defaultLeadSources = useMemo(
@@ -253,7 +252,7 @@ export default function Page() {
         email: newLead.email.trim(),
         phone: newLead.phone.trim(),
         ownerId: user.id,
-        status: newLead.status,
+        status: 'new',
         value: Number(newLead.value) || 0,
         source: newLead.source.trim(),
         nextStep: '',
@@ -271,7 +270,6 @@ export default function Page() {
         phone: '',
         value: '',
         source: '',
-        status: 'new',
       });
       const refreshed = await firebaseLeadRepository.listByOwner(user.id);
       setLeads(refreshed);
@@ -879,33 +877,7 @@ export default function Page() {
                   />
                 </div>
               </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <label
-                    htmlFor="lead-status"
-                    className="text-xs font-semibold uppercase tracking-[0.24em] text-muted"
-                  >
-                    Status
-                  </label>
-                  <select
-                    id="lead-status"
-                    name="lead-status"
-                    value={newLead.status}
-                    onChange={(event) =>
-                      setNewLead((prev) => ({
-                        ...prev,
-                        status: event.target.value as LeadStatus,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  >
-                    {createLeadStatusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label
                     htmlFor="lead-value"
