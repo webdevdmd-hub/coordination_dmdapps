@@ -1,4 +1,6 @@
 import {
+  type DocumentData,
+  type DocumentReference,
   addDoc,
   collection,
   deleteDoc,
@@ -7,6 +9,7 @@ import {
   getDocs,
   query,
   updateDoc,
+  writeBatch,
   where,
 } from 'firebase/firestore';
 
@@ -25,6 +28,20 @@ const CRM_NAMESPACE_ID = 'main';
 const crmLeadsCollection = () => collection(getFirebaseDb(), 'crm', CRM_NAMESPACE_ID, 'crm_leads');
 const activitiesCollection = (leadId: string) =>
   collection(getFirebaseDb(), 'crm', CRM_NAMESPACE_ID, 'crm_leads', leadId, 'activities');
+const tasksCollection = () => collection(getFirebaseDb(), 'tasks');
+
+const deleteSnapshotsInChunks = async (snapshots: Array<{ ref: DocumentReference<DocumentData> }>) => {
+  if (snapshots.length === 0) {
+    return;
+  }
+  const db = getFirebaseDb();
+  for (let index = 0; index < snapshots.length; index += 450) {
+    const chunk = snapshots.slice(index, index + 450);
+    const batch = writeBatch(db);
+    chunk.forEach((snap) => batch.delete(snap.ref));
+    await batch.commit();
+  }
+};
 
 export const firebaseLeadRepository: LeadRepository = {
   async getById(id) {
@@ -64,6 +81,16 @@ export const firebaseLeadRepository: LeadRepository = {
     return toLead(snap.id, snap.data() as LeadFirestore);
   },
   async delete(id) {
+    const [tasksSnap, activitiesSnap] = await Promise.all([
+      getDocs(query(tasksCollection(), where('leadId', '==', id))),
+      getDocs(activitiesCollection(id)),
+    ]);
+
+    await deleteSnapshotsInChunks([
+      ...tasksSnap.docs.map((taskDoc) => ({ ref: taskDoc.ref })),
+      ...activitiesSnap.docs.map((activityDoc) => ({ ref: activityDoc.ref })),
+    ]);
+
     await deleteDoc(doc(crmLeadsCollection(), id));
   },
   async listActivities(leadId) {

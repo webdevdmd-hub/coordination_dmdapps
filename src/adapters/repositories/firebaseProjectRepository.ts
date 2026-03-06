@@ -1,4 +1,6 @@
 import {
+  type DocumentData,
+  type DocumentReference,
   addDoc,
   collection,
   deleteDoc,
@@ -7,6 +9,7 @@ import {
   getDocs,
   query,
   updateDoc,
+  writeBatch,
   where,
 } from 'firebase/firestore';
 
@@ -24,6 +27,20 @@ const toProject = (id: string, data: ProjectFirestore): Project => ({
 const SALES_NAMESPACE_ID = 'main';
 const projectCollection = () =>
   collection(getFirebaseDb(), 'sales', SALES_NAMESPACE_ID, 'projects');
+const taskCollection = () => collection(getFirebaseDb(), 'tasks');
+
+const deleteSnapshotsInChunks = async (snapshots: Array<{ ref: DocumentReference<DocumentData> }>) => {
+  if (snapshots.length === 0) {
+    return;
+  }
+  const db = getFirebaseDb();
+  for (let index = 0; index < snapshots.length; index += 450) {
+    const chunk = snapshots.slice(index, index + 450);
+    const batch = writeBatch(db);
+    chunk.forEach((snap) => batch.delete(snap.ref));
+    await batch.commit();
+  }
+};
 
 export const firebaseProjectRepository: ProjectRepository = {
   async listAll() {
@@ -68,6 +85,8 @@ export const firebaseProjectRepository: ProjectRepository = {
     return toProject(snap.id, snap.data() as ProjectFirestore);
   },
   async delete(id) {
+    const tasksSnap = await getDocs(query(taskCollection(), where('projectId', '==', id)));
+    await deleteSnapshotsInChunks(tasksSnap.docs.map((taskDoc) => ({ ref: taskDoc.ref })));
     await deleteDoc(doc(projectCollection(), id));
   },
 };
