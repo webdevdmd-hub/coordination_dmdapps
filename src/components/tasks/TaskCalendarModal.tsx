@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { TaskRecurrence } from '@/core/entities/task';
+import { TaskPriority, TaskRecurrence } from '@/core/entities/task';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 
 type TaskCalendarModalProps = {
@@ -15,6 +15,7 @@ type TaskCalendarModalProps = {
     endDate: string;
     startTime: string;
     endTime: string;
+    priority: TaskPriority;
     recurrenceType: TaskRecurrence;
   }) => Promise<string | null>;
   isSubmitting?: boolean;
@@ -34,6 +35,7 @@ export function TaskCalendarModal({
   const [endDate, setEndDate] = useState(todayKey());
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
+  const [priority, setPriority] = useState<TaskPriority>('medium');
   const [recurrenceType, setRecurrenceType] = useState<TaskRecurrence>('none');
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +61,7 @@ export function TaskCalendarModal({
       endDate,
       startTime,
       endTime,
+      priority,
       recurrenceType,
     });
     if (result) {
@@ -165,6 +168,19 @@ export function TaskCalendarModal({
                 onChange={(event) => setEndTime(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
               />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              Priority
+              <select
+                value={priority}
+                onChange={(event) => setPriority(event.target.value as TaskPriority)}
+                className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
             </label>
             <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
               Repeat

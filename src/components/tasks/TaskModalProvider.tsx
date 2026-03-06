@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
-import { TaskRecurrence } from '@/core/entities/task';
+import { TaskPriority, TaskRecurrence } from '@/core/entities/task';
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
 import { firebaseCalendarRepository } from '@/adapters/repositories/firebaseCalendarRepository';
 import { firebaseLeadRepository } from '@/adapters/repositories/firebaseLeadRepository';
@@ -47,6 +47,7 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
       endDate: string;
       startTime: string;
       endTime: string;
+      priority: TaskPriority;
       recurrenceType: TaskRecurrence;
     }) => {
       if (!user) {
@@ -74,7 +75,7 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
           description: payload.description.trim(),
           assignedTo,
           status: 'todo',
-          priority: 'medium',
+          priority: payload.priority,
           recurrence: payload.recurrenceType,
           startDate: startDateValue,
           endDate: endDateValue,
