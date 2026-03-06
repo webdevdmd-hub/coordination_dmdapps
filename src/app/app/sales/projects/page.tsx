@@ -865,11 +865,17 @@ export default function Page() {
     }
     const selectedTaskAssignees =
       selectedTask?.assignedUsers ?? (selectedTask?.assignedTo ? [selectedTask.assignedTo] : []);
+    const canEditAsParticipant =
+      !!selectedTask &&
+      !!user &&
+      (selectedTask.assignedTo === user.id ||
+        selectedTaskAssignees.includes(user.id) ||
+        selectedTask.createdBy === user.id);
     const canEditEstimateOnly =
       !!selectedTask &&
       !!user &&
       (selectedTask.assignedTo === user.id || selectedTaskAssignees.includes(user.id));
-    if (selectedTask && !canEditTasks && !canEditEstimateOnly) {
+    if (selectedTask && !canEditTasks && !canEditEstimateOnly && !canEditAsParticipant) {
       setTaskError('You do not have permission to edit tasks.');
       return;
     }
@@ -886,11 +892,11 @@ export default function Page() {
     const assignedUsers = taskFormState.assignedUsers.filter(Boolean);
     const assignedTo = assignedUsers[0] ?? '';
     if (selectedTask && !isAdmin) {
-      const previousAssignees =
-        selectedTask.assignedUsers ?? (selectedTask.assignedTo ? [selectedTask.assignedTo] : []);
+      const previousAssignees = Array.from(new Set(selectedTaskAssignees.filter(Boolean)));
+      const nextAssignees = Array.from(new Set(assignedUsers));
       const assignmentChanged =
         selectedTask.assignedTo !== assignedTo ||
-        !areSameRecipientSets(previousAssignees, assignedUsers);
+        !areSameRecipientSets(previousAssignees, nextAssignees);
       if (assignmentChanged) {
         setTaskError('Only admins can reassign tasks after assignment.');
         setIsTaskSaving(false);

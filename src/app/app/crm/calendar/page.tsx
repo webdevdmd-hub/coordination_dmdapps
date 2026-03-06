@@ -527,7 +527,15 @@ export default function Page() {
       setError('You do not have permission to create events.');
       return;
     }
-    if (editingEvent && !hasPermission(user.permissions, ['admin', 'calendar_edit'])) {
+    const canEditOwnTaskEvent =
+      !!editingEvent &&
+      editingEvent.type === 'task' &&
+      editingEvent.ownerId === user.id;
+    if (
+      editingEvent &&
+      !hasPermission(user.permissions, ['admin', 'calendar_edit']) &&
+      !canEditOwnTaskEvent
+    ) {
       setError('You do not have permission to edit events.');
       return;
     }
