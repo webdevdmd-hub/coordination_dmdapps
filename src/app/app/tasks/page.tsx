@@ -615,16 +615,6 @@ export default function Page() {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleOpenEdit(task);
-            }}
-            className="rounded-xl border border-[#407056]/30 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]"
-          >
-            Update
-          </button>
         </div>
       );
     }
@@ -745,16 +735,6 @@ export default function Page() {
               {timerBusyId === task.id ? 'Starting...' : variant === 'kanban' ? 'Timer' : 'Start timer'}
             </button>
           )}
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleOpenEdit(task);
-            }}
-            className="rounded-full border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-text"
-          >
-            Update
-          </button>
         </div>
       </div>
     );

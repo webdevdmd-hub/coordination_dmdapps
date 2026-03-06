@@ -7,7 +7,11 @@ export const getFirebaseMessaging = async (): Promise<Messaging | null> => {
   if (!supported) {
     return null;
   }
-  return getMessaging(getFirebaseApp());
+  try {
+    return getMessaging(getFirebaseApp());
+  } catch {
+    return null;
+  }
 };
 
 export const requestPushToken = async (

@@ -8,6 +8,7 @@ import { ALL_PERMISSIONS, PermissionKey } from '@/core/entities/permissions';
 import { UserRole } from '@/core/entities/user';
 import { clearServerSession, establishServerSession } from '@/frameworks/firebase/auth';
 import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
+import { isFirebaseConfigured } from '@/frameworks/firebase/config';
 
 type UserProfile = {
   id: string;
@@ -28,6 +29,12 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const fallbackAuthContext: AuthContextValue = {
+  user: null,
+  permissions: [],
+  loading: false,
+  permissionsSyncedAt: null,
+};
 
 const permissionSet = new Set(ALL_PERMISSIONS);
 
@@ -120,6 +127,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissionsSyncedAt, setPermissionsSyncedAt] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      setUser(null);
+      setLoading(false);
+      setPermissionsSyncedAt(null);
+      return;
+    }
     const auth = getFirebaseAuth();
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
@@ -145,6 +158,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      return;
+    }
     const auth = getFirebaseAuth();
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
@@ -178,8 +194,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider.');
-  }
-  return context;
+  return context ?? fallbackAuthContext;
 };

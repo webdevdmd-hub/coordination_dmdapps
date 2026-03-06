@@ -21,6 +21,11 @@ const toCalendarEvent = (id: string, data: CalendarEventFirestore): CalendarEven
   ...data,
 });
 
+const stripUndefined = <T extends Record<string, unknown>>(value: T) =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  ) as T;
+
 const CRM_NAMESPACE_ID = 'main';
 const crmCalendarCollection = () =>
   collection(getFirebaseDb(), 'crm', CRM_NAMESPACE_ID, 'crm_calendar');
@@ -40,19 +45,20 @@ export const firebaseCalendarRepository: CalendarRepository = {
   },
   async create(input: CreateCalendarEventInput) {
     const now = new Date().toISOString();
-    const payload: CalendarEventFirestore = {
+    const payload = stripUndefined({
       ...input,
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
-    };
+    }) as CalendarEventFirestore;
     const docRef = await addDoc(crmCalendarCollection(), payload);
     return toCalendarEvent(docRef.id, payload);
   },
   async update(id, updates) {
     const rest = { ...updates };
     delete (rest as { id?: string }).id;
+    const sanitized = stripUndefined(rest);
     const docRef = doc(crmCalendarCollection(), id);
-    await updateDoc(docRef, rest);
+    await updateDoc(docRef, sanitized);
     const snap = await getDoc(docRef);
     if (!snap.exists()) {
       throw new Error('Calendar event not found after update.');

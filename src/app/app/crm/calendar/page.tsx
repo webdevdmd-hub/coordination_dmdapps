@@ -115,6 +115,23 @@ const daysBetween = (start: Date, end: Date) => {
   return Math.max(0, Math.round(ms / (24 * 60 * 60 * 1000)));
 };
 
+const formatEventTimeRange = (event: CalendarEvent) => {
+  if (!event.startTime || !event.endTime) {
+    return event.is_all_day ? 'All day' : '';
+  }
+  const to12Hour = (value: string) => {
+    const [hourRaw, minute] = value.split(':');
+    const hour = Number(hourRaw);
+    if (!Number.isFinite(hour)) {
+      return value;
+    }
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${minute} ${suffix}`;
+  };
+  return `${to12Hour(event.startTime)} - ${to12Hour(event.endTime)}`;
+};
+
 type CalendarDisplayEvent = CalendarEvent & {
   occurrenceKey: string;
   sourceStartDate: string;
@@ -175,6 +192,8 @@ export default function Page() {
   const canViewAllCalendar =
     !!user && hasPermission(user.permissions, ['admin', 'calendar_view_all']);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'calendar_create']);
+  const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
+  const canCreateItems = canCreate || canCreateTasks;
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'calendar_assign']);
 
   const ownerNameMap = useMemo(() => {
@@ -397,7 +416,7 @@ export default function Page() {
       })
       .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-    const grouped = new Map<string, CalendarEvent[]>();
+    const grouped = new Map<string, CalendarDisplayEvent[]>();
     items.forEach((eventItem) => {
       const key = eventItem.startDate;
       grouped.set(key, [...(grouped.get(key) ?? []), eventItem]);
@@ -523,14 +542,13 @@ export default function Page() {
       setError('You must be signed in to save events.');
       return;
     }
-    if (!canCreate && !editingEvent) {
+    if (!canCreateItems && !editingEvent) {
       setError('You do not have permission to create events.');
       return;
     }
     const canEditOwnTaskEvent =
       !!editingEvent &&
-      editingEvent.type === 'task' &&
-      editingEvent.ownerId === user.id;
+      editingEvent.type === 'task';
     if (
       editingEvent &&
       !hasPermission(user.permissions, ['admin', 'calendar_edit']) &&
@@ -539,7 +557,12 @@ export default function Page() {
       setError('You do not have permission to edit events.');
       return;
     }
-    if (editingEvent && !user.permissions.includes('admin') && editingEvent.ownerId !== user.id) {
+    if (
+      editingEvent &&
+      !user.permissions.includes('admin') &&
+      editingEvent.ownerId !== user.id &&
+      !canEditOwnTaskEvent
+    ) {
       setError('You do not have permission to edit this event.');
       return;
     }
@@ -674,8 +697,12 @@ export default function Page() {
         });
       }
       setIsCreateOpen(false);
-    } catch {
-      setError('Unable to save the event. Please try again.');
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to save the event. Please try again.';
+      setError(message);
       if (createdTaskId) {
         await firebaseTaskRepository.delete(createdTaskId);
       }
@@ -724,10 +751,11 @@ export default function Page() {
     if (!target) {
       return;
     }
-    if (!hasPermission(user.permissions, ['admin', 'calendar_edit'])) {
+    const canMoveTaskEvent = target.type === 'task';
+    if (!hasPermission(user.permissions, ['admin', 'calendar_edit']) && !canMoveTaskEvent) {
       return;
     }
-    if (!user.permissions.includes('admin') && target.ownerId !== user.id) {
+    if (!user.permissions.includes('admin') && target.ownerId !== user.id && !canMoveTaskEvent) {
       return;
     }
     const start = fromDateKey(target.startDate);
@@ -791,7 +819,7 @@ export default function Page() {
             <button
               type="button"
               onClick={() => openCreateModal()}
-              disabled={!canCreate}
+              disabled={!canCreateItems}
               className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
             >
               + Add event
@@ -1092,7 +1120,7 @@ export default function Page() {
           <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-text">Schedule for {selectedDateLabel}</p>
-              {canCreate ? (
+              {canCreateItems ? (
                 <button
                   type="button"
                   onClick={() => openCreateModal(selectedDate)}
@@ -1131,6 +1159,9 @@ export default function Page() {
                         <p className="mt-1 text-xs text-muted">
                           {eventItem.type.toUpperCase()} · {ownerName}
                         </p>
+                        {formatEventTimeRange(eventItem) ? (
+                          <p className="mt-1 text-xs text-muted">{formatEventTimeRange(eventItem)}</p>
+                        ) : null}
                       </div>
                       <span
                       className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
@@ -1166,7 +1197,7 @@ export default function Page() {
                     key={dateKey}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => handleDrop(dateKey, event)}
-                    onClick={() => (canCreate ? openCreateModal(dateKey) : null)}
+                    onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
                     className="min-h-[180px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3"
                   >
                     <div className="flex items-center justify-between">
@@ -1201,6 +1232,11 @@ export default function Page() {
                               <span className="ml-2 text-[10px] uppercase">{eventItem.type}</span>
                             </div>
                             <span className="mt-1 block text-[10px] opacity-80">{ownerName}</span>
+                            {formatEventTimeRange(eventItem) ? (
+                              <span className="mt-1 block text-[10px] opacity-80">
+                                {formatEventTimeRange(eventItem)}
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}
@@ -1233,7 +1269,7 @@ export default function Page() {
                     key={dateKey}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => handleDrop(dateKey, event)}
-                    onClick={() => (canCreate ? openCreateModal(dateKey) : null)}
+                    onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
                     className="min-h-[200px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3"
                   >
                     <div className="flex items-center justify-between">
@@ -1268,6 +1304,11 @@ export default function Page() {
                               <span className="ml-2 text-[10px] uppercase">{eventItem.type}</span>
                             </div>
                             <span className="mt-1 block text-[10px] opacity-80">{ownerName}</span>
+                            {formatEventTimeRange(eventItem) ? (
+                              <span className="mt-1 block text-[10px] opacity-80">
+                                {formatEventTimeRange(eventItem)}
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}
@@ -1329,6 +1370,11 @@ export default function Page() {
                               <p className="mt-1 text-xs text-muted">
                                 {eventItem.type.toUpperCase()} · {ownerName}
                               </p>
+                              {formatEventTimeRange(eventItem) ? (
+                                <p className="mt-1 text-xs text-muted">
+                                  {formatEventTimeRange(eventItem)}
+                                </p>
+                              ) : null}
                             </div>
                             <span
                               className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
@@ -1410,7 +1456,7 @@ export default function Page() {
                     key={dateKey}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => handleDrop(dateKey, event)}
-                    onClick={() => (canCreate ? openCreateModal(dateKey) : null)}
+                    onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
                     className={`min-h-[220px] border-b border-border border-r border-border bg-surface p-3 transition ${
                       isCurrentMonth ? '' : 'bg-[var(--surface-soft)] text-muted'
                     }`}
@@ -1447,6 +1493,11 @@ export default function Page() {
                               <span className="ml-2 text-[10px] uppercase">{eventItem.type}</span>
                             </div>
                             <span className="mt-1 block text-[10px] opacity-80">{ownerName}</span>
+                            {formatEventTimeRange(eventItem) ? (
+                              <span className="mt-1 block text-[10px] opacity-80">
+                                {formatEventTimeRange(eventItem)}
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}

@@ -15,7 +15,7 @@ import { firebaseNotificationRepository } from '@/adapters/repositories/firebase
 import type { Notification } from '@/core/entities/notification';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
-import { getPublicEnv } from '@/frameworks/firebase/config';
+import { getPublicEnv, isFirebaseConfigured } from '@/frameworks/firebase/config';
 import { listenForForegroundMessages, requestPushToken } from '@/frameworks/firebase/messaging';
 
 type NotificationContextValue = {
@@ -78,26 +78,33 @@ function NotificationProviderInner({
     if (!user) {
       return;
     }
-    const unsubscribe = firebaseNotificationRepository.subscribeForUser(
-      user.id,
-      (items) => {
-        const newItems = items.filter((item) => !seenIdsRef.current.has(item.id) && !item.readAt);
-        items.forEach((item) => seenIdsRef.current.add(item.id));
-        setNotifications(items);
-        if (!initialLoadRef.current) {
-          setToasts((prev) => {
-            const next = [...prev];
-            newItems.forEach((notification) => {
-              next.push(toToast(notification));
+    if (!isFirebaseConfigured()) {
+      return;
+    }
+    try {
+      const unsubscribe = firebaseNotificationRepository.subscribeForUser(
+        user.id,
+        (items) => {
+          const newItems = items.filter((item) => !seenIdsRef.current.has(item.id) && !item.readAt);
+          items.forEach((item) => seenIdsRef.current.add(item.id));
+          setNotifications(items);
+          if (!initialLoadRef.current) {
+            setToasts((prev) => {
+              const next = [...prev];
+              newItems.forEach((notification) => {
+                next.push(toToast(notification));
+              });
+              return next;
             });
-            return next;
-          });
-        }
-        initialLoadRef.current = false;
-      },
-      60,
-    );
-    return () => unsubscribe();
+          }
+          initialLoadRef.current = false;
+        },
+        60,
+      );
+      return () => unsubscribe();
+    } catch {
+      return;
+    }
   }, [user]);
 
   useEffect(() => {
@@ -116,6 +123,9 @@ function NotificationProviderInner({
 
   useEffect(() => {
     if (!user) {
+      return;
+    }
+    if (!isFirebaseConfigured()) {
       return;
     }
     if (typeof Notification === 'undefined') {
@@ -157,6 +167,9 @@ function NotificationProviderInner({
   }, [user]);
 
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      return;
+    }
     let unsubscribe: (() => void) | null = null;
     const attach = async () => {
       unsubscribe = await listenForForegroundMessages(() => {
@@ -172,11 +185,17 @@ function NotificationProviderInner({
   }, []);
 
   const markRead = useCallback(async (id: string) => {
+    if (!isFirebaseConfigured()) {
+      return;
+    }
     await firebaseNotificationRepository.markRead(id);
   }, []);
 
   const markAllRead = useCallback(async () => {
     if (!user) {
+      return;
+    }
+    if (!isFirebaseConfigured()) {
       return;
     }
     const unreadIds = notifications.filter((item) => !item.readAt).map((item) => item.id);
@@ -188,6 +207,9 @@ function NotificationProviderInner({
 
   const enablePush = useCallback(async () => {
     if (!user) {
+      return;
+    }
+    if (!isFirebaseConfigured()) {
       return;
     }
     if (typeof Notification === 'undefined') {

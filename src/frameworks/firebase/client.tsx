@@ -1,6 +1,11 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
-import { Firestore, connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
+import {
+  Firestore,
+  connectFirestoreEmulator,
+  getFirestore,
+  initializeFirestore,
+} from 'firebase/firestore';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 import {
@@ -10,6 +15,7 @@ import {
 } from '@/frameworks/firebase/config';
 
 let firebaseApp: FirebaseApp | null = null;
+let firebaseDb: Firestore | null = null;
 let emulatorsConnected = false;
 
 const getApp = () => {
@@ -38,13 +44,21 @@ const connectEmulators = (auth: Auth, firestore: Firestore) => {
 export const getFirebaseAuth = () => {
   const auth = getAuth(getApp());
   if (shouldUseEmulators()) {
-    connectEmulators(auth, getFirestore(getApp()));
+    connectEmulators(auth, getFirebaseDb());
   }
   return auth;
 };
 
 export const getFirebaseDb = () => {
-  const firestore = getFirestore(getApp());
+  if (firebaseDb) {
+    return firebaseDb;
+  }
+  // Mitigate flaky QUIC/WebChannel transport errors on some networks/browsers.
+  firebaseDb = initializeFirestore(getApp(), {
+    experimentalAutoDetectLongPolling: true,
+    useFetchStreams: false,
+  });
+  const firestore = firebaseDb ?? getFirestore(getApp());
   if (shouldUseEmulators()) {
     connectEmulators(getAuth(getApp()), firestore);
   }
@@ -54,7 +68,7 @@ export const getFirebaseDb = () => {
 export const getFirebaseStorage = () => {
   const storage = getStorage(getApp());
   if (shouldUseEmulators()) {
-    connectEmulators(getAuth(getApp()), getFirestore(getApp()));
+    connectEmulators(getAuth(getApp()), getFirebaseDb());
   }
   return storage;
 };

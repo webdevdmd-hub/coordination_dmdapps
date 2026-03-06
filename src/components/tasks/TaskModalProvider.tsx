@@ -114,9 +114,12 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
         }
         setOpen(false);
         return null;
-      } catch {
+      } catch (error) {
         if (createdTaskId) {
           await firebaseTaskRepository.delete(createdTaskId);
+        }
+        if (error instanceof Error && error.message) {
+          return error.message;
         }
         return 'Unable to add task to calendar. Please try again.';
       } finally {

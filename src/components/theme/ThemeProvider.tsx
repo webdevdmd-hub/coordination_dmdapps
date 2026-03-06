@@ -12,6 +12,11 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 const STORAGE_KEY = 'hs_theme_mode';
+const fallbackThemeContext: ThemeContextValue = {
+  theme: 'light',
+  setTheme: () => {},
+  toggleTheme: () => {},
+};
 
 const applyTheme = (theme: ThemeMode) => {
   document.documentElement.dataset.theme = theme;
@@ -57,8 +62,5 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useTheme() {
   const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider.');
-  }
-  return context;
+  return context ?? fallbackThemeContext;
 }
