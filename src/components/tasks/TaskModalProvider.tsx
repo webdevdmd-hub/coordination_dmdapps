@@ -42,10 +42,11 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
   const handleSubmit = useCallback(
     async (payload: {
       title: string;
-      date: string;
+      description: string;
+      startDate: string;
+      endDate: string;
       startTime: string;
       endTime: string;
-      isAllDay: boolean;
       recurrenceType: TaskRecurrence;
     }) => {
       if (!user) {
@@ -57,46 +58,51 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
       setIsSubmitting(true);
       let createdTaskId: string | null = null;
       try {
-        const startTimeValue = payload.isAllDay ? '00:00' : payload.startTime;
-        const endTimeValue = payload.isAllDay ? '23:59' : payload.endTime;
-        const start = new Date(`${payload.date}T${startTimeValue}:00`);
-        const end = new Date(`${payload.date}T${endTimeValue}:00`);
+        const startDateValue = payload.startDate;
+        const endDateValue = payload.endDate;
+        const start = new Date(`${startDateValue}T${payload.startTime}:00`);
+        const end = new Date(`${endDateValue}T${payload.endTime}:00`);
+        if (new Date(`${endDateValue}T00:00:00`).getTime() < new Date(`${startDateValue}T00:00:00`).getTime()) {
+          return 'End date must be on or after start date.';
+        }
         if (end.getTime() <= start.getTime()) {
-          return 'End time must be after the start time.';
+          return 'End date/time must be after start date/time.';
         }
         const assignedTo = context?.ownerId ?? '';
         const createdTask = await firebaseTaskRepository.create({
           title: payload.title.trim(),
-          description: '',
+          description: payload.description.trim(),
           assignedTo,
           status: 'todo',
           priority: 'medium',
           recurrence: payload.recurrenceType,
-          startDate: payload.date,
-          endDate: payload.date,
-          dueDate: payload.date,
+          startDate: startDateValue,
+          endDate: endDateValue,
+          dueDate: endDateValue,
           sharedRoles: [],
           createdBy: user.id,
           leadId: context?.leadId,
           leadReference: context?.leadName,
           recurrence_type: payload.recurrenceType,
-          is_all_day: payload.isAllDay,
-          startTime: payload.isAllDay ? '' : payload.startTime,
-          endTime: payload.isAllDay ? '' : payload.endTime,
+          is_all_day: false,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
         });
         createdTaskId = createdTask.id;
         await firebaseCalendarRepository.create({
           title: payload.title.trim(),
+          description: payload.description.trim(),
           ownerId: assignedTo || user.id,
           type: 'task',
           category: 'task',
-          startDate: payload.date,
-          endDate: payload.date,
+          startDate: startDateValue,
+          endDate: endDateValue,
           leadId: context?.leadId,
+          taskId: createdTask.id,
           recurrence_type: payload.recurrenceType,
-          is_all_day: payload.isAllDay,
-          startTime: payload.isAllDay ? '' : payload.startTime,
-          endTime: payload.isAllDay ? '' : payload.endTime,
+          is_all_day: false,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
         });
         if (context?.leadId) {
           await firebaseLeadRepository.addActivity(context.leadId, {

@@ -10,10 +10,11 @@ type TaskCalendarModalProps = {
   onClose: () => void;
   onSubmit: (payload: {
     title: string;
-    date: string;
+    description: string;
+    startDate: string;
+    endDate: string;
     startTime: string;
     endTime: string;
-    isAllDay: boolean;
     recurrenceType: TaskRecurrence;
   }) => Promise<string | null>;
   isSubmitting?: boolean;
@@ -28,30 +29,36 @@ export function TaskCalendarModal({
   isSubmitting = false,
 }: TaskCalendarModalProps) {
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(todayKey());
+  const [description, setDescription] = useState('');
+  const [startDate, setStartDate] = useState(todayKey());
+  const [endDate, setEndDate] = useState(todayKey());
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
-  const [isAllDay, setIsAllDay] = useState(true);
   const [recurrenceType, setRecurrenceType] = useState<TaskRecurrence>('none');
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!title.trim() || !date) {
-      setError('Task title and date are required.');
+    if (!title.trim() || !startDate || !endDate) {
+      setError('Task title, start date, and end date are required.');
       return;
     }
-    if (!isAllDay && (!startTime || !endTime)) {
+    if (!startTime || !endTime) {
       setError('Start and end times are required.');
+      return;
+    }
+    if (new Date(`${endDate}T00:00:00`).getTime() < new Date(`${startDate}T00:00:00`).getTime()) {
+      setError('End date must be on or after start date.');
       return;
     }
     setError(null);
     const result = await onSubmit({
-      title,
-      date,
+      title: title.trim(),
+      description: description.trim(),
+      startDate,
+      endDate,
       startTime,
       endTime,
-      isAllDay,
       recurrenceType,
     });
     if (result) {
@@ -66,11 +73,11 @@ export function TaskCalendarModal({
   return (
     <div
       data-modal-overlay="true"
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-6"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-[var(--modal-padding)] py-[var(--modal-padding)] backdrop-blur"
       onClick={onClose}
     >
       <DraggablePanel
-        className="w-full max-w-xl overflow-hidden rounded-[28px] bg-surface/95 bg-clip-padding p-6 shadow-floating"
+        className="relative w-full max-w-3xl max-h-[calc(100vh-2*var(--modal-padding))] overflow-x-hidden overflow-y-auto rounded-[var(--modal-radius)] border border-border/60 bg-surface/95 bg-clip-padding p-[var(--modal-padding)] shadow-floating"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4">
@@ -107,29 +114,57 @@ export function TaskCalendarModal({
               className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
             />
           </label>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <label className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-              All-day
-              <span className="relative inline-flex h-6 w-11 items-center">
-                <input
-                  type="checkbox"
-                  checked={isAllDay}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setIsAllDay(checked);
-                    if (checked) {
-                      setStartTime('');
-                      setEndTime('');
-                    } else {
-                      setStartTime((prev) => prev || '09:00');
-                      setEndTime((prev) => prev || '10:00');
-                    }
-                  }}
-                  className="peer sr-only"
-                />
-                <span className="h-6 w-11 rounded-full bg-border/60 transition peer-checked:bg-accent/80" />
-                <span className="absolute left-1 h-4 w-4 rounded-full bg-white transition peer-checked:translate-x-5" />
-              </span>
+          <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Description
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              className="mt-2 min-h-[110px] w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+              placeholder="Task details..."
+            />
+          </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              Start Date
+              <input
+                required
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+              />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              End Date
+              <input
+                required
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+              />
+            </label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              Start Time
+              <input
+                required
+                type="time"
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+              />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              End Time
+              <input
+                required
+                type="time"
+                value={endTime}
+                onChange={(event) => setEndTime(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+              />
             </label>
             <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
               Repeat
@@ -145,42 +180,6 @@ export function TaskCalendarModal({
                 <option value="yearly">Yearly</option>
               </select>
             </label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-              Date
-              <input
-                required
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
-              />
-            </label>
-            {!isAllDay ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                  Start Time
-                  <input
-                    required
-                    type="time"
-                    value={startTime}
-                    onChange={(event) => setStartTime(event.target.value)}
-                    className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                  End Time
-                  <input
-                    required
-                    type="time"
-                    value={endTime}
-                    onChange={(event) => setEndTime(event.target.value)}
-                    className="mt-2 w-full rounded-xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
-                  />
-                </label>
-              </div>
-            ) : null}
           </div>
           {error ? (
             <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">

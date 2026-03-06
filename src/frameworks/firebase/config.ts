@@ -29,7 +29,7 @@ export const getPublicEnv = (key: keyof PublicRuntimeConfig) => {
   return '';
 };
 
-export const firebaseConfig = {
+export const getFirebaseConfig = () => ({
   apiKey: getPublicEnv('NEXT_PUBLIC_FIREBASE_API_KEY'),
   authDomain: getPublicEnv('NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN'),
   projectId: getPublicEnv('NEXT_PUBLIC_FIREBASE_PROJECT_ID'),
@@ -37,11 +37,12 @@ export const firebaseConfig = {
   messagingSenderId: getPublicEnv('NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'),
   appId: getPublicEnv('NEXT_PUBLIC_FIREBASE_APP_ID'),
   measurementId: getPublicEnv('NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID'),
-};
+});
 
 export const shouldUseEmulators = () => getPublicEnv('NEXT_PUBLIC_USE_FIREBASE_EMULATORS') === 'true';
 
 export const isFirebaseConfigured = () => {
+  const firebaseConfig = getFirebaseConfig();
   const required = [
     firebaseConfig.apiKey,
     firebaseConfig.authDomain,

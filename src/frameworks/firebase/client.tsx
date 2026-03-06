@@ -4,7 +4,7 @@ import { Firestore, connectFirestoreEmulator, getFirestore } from 'firebase/fire
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 import {
-  firebaseConfig,
+  getFirebaseConfig,
   isFirebaseConfigured,
   shouldUseEmulators,
 } from '@/frameworks/firebase/config';
@@ -19,7 +19,7 @@ const getApp = () => {
   if (!isFirebaseConfigured()) {
     throw new Error('Firebase is not configured. Check env variables.');
   }
-  firebaseApp = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+  firebaseApp = getApps().length ? getApps()[0] : initializeApp(getFirebaseConfig());
   return firebaseApp;
 };
 

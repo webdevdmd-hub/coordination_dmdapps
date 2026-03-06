@@ -115,6 +115,39 @@ const daysBetween = (start: Date, end: Date) => {
   return Math.max(0, Math.round(ms / (24 * 60 * 60 * 1000)));
 };
 
+type CalendarDisplayEvent = CalendarEvent & {
+  occurrenceKey: string;
+  sourceStartDate: string;
+  sourceEndDate: string;
+};
+
+const addMonths = (date: Date, amount: number) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + amount);
+  return next;
+};
+
+const addYears = (date: Date, amount: number) => {
+  const next = new Date(date);
+  next.setFullYear(next.getFullYear() + amount);
+  return next;
+};
+
+const getNextOccurrenceStart = (date: Date, recurrenceType: TaskRecurrence) => {
+  switch (recurrenceType) {
+    case 'daily':
+      return addDays(date, 1);
+    case 'weekly':
+      return addDays(date, 7);
+    case 'monthly':
+      return addMonths(date, 1);
+    case 'yearly':
+      return addYears(date, 1);
+    default:
+      return null;
+  }
+};
+
 export default function Page() {
   const { user } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -240,6 +273,76 @@ export default function Page() {
     });
   }, [events, categoryFilter, ownerFilter]);
 
+  const visibleRange = useMemo(() => {
+    if (viewMode === 'day') {
+      const selected = fromDateKey(selectedDate);
+      return { start: selected, end: selected };
+    }
+    if (viewMode === 'week') {
+      return { start: weekStartDate, end: addDays(weekStartDate, 6) };
+    }
+    if (viewMode === 'four_days') {
+      const start = fromDateKey(selectedDate);
+      return { start, end: addDays(start, 3) };
+    }
+    if (viewMode === 'year') {
+      const year = currentMonth.getFullYear();
+      return { start: new Date(year, 0, 1), end: new Date(year, 11, 31) };
+    }
+    return { start: startOfWeek(startOfMonth(currentMonth)), end: endOfWeek(endOfMonth(currentMonth)) };
+  }, [viewMode, selectedDate, weekStartDate, currentMonth]);
+
+  const displayEvents = useMemo(() => {
+    const items: CalendarDisplayEvent[] = [];
+    const rangeStart = visibleRange.start;
+    const rangeEnd = visibleRange.end;
+
+    filteredEvents.forEach((eventItem) => {
+      const sourceStart = fromDateKey(eventItem.startDate);
+      const sourceEnd = fromDateKey(eventItem.endDate);
+      const spanDays = daysBetween(sourceStart, sourceEnd);
+      const recurrenceType = eventItem.recurrence_type ?? 'none';
+      const sourceStartKey = toDateKey(sourceStart);
+      const sourceEndKey = toDateKey(sourceEnd);
+
+      const pushOccurrence = (occurrenceStart: Date, occurrenceEnd: Date, occurrenceIndex: number) => {
+        if (occurrenceEnd.getTime() < rangeStart.getTime() || occurrenceStart.getTime() > rangeEnd.getTime()) {
+          return;
+        }
+        const occurrenceStartKey = toDateKey(occurrenceStart);
+        const occurrenceEndKey = toDateKey(occurrenceEnd);
+        items.push({
+          ...eventItem,
+          startDate: occurrenceStartKey,
+          endDate: occurrenceEndKey,
+          occurrenceKey: `${eventItem.id}:${occurrenceStartKey}:${occurrenceIndex}`,
+          sourceStartDate: sourceStartKey,
+          sourceEndDate: sourceEndKey,
+        });
+      };
+
+      if (recurrenceType === 'none') {
+        pushOccurrence(sourceStart, sourceEnd, 0);
+        return;
+      }
+
+      let occurrenceStart = sourceStart;
+      let occurrenceCount = 0;
+      while (occurrenceStart.getTime() <= rangeEnd.getTime() && occurrenceCount < 1000) {
+        const occurrenceEnd = addDays(occurrenceStart, spanDays);
+        pushOccurrence(occurrenceStart, occurrenceEnd, occurrenceCount);
+        const nextStart = getNextOccurrenceStart(occurrenceStart, recurrenceType);
+        if (!nextStart) {
+          break;
+        }
+        occurrenceStart = nextStart;
+        occurrenceCount += 1;
+      }
+    });
+
+    return items;
+  }, [filteredEvents, visibleRange]);
+
   const yearLabel = useMemo(() => String(currentMonth.getFullYear()), [currentMonth]);
 
   const yearMonths = useMemo(() => {
@@ -248,14 +351,14 @@ export default function Page() {
   }, [currentMonth]);
 
   const eventsByMonth = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>();
-    filteredEvents.forEach((eventItem) => {
+    const map = new Map<string, CalendarDisplayEvent[]>();
+    displayEvents.forEach((eventItem) => {
       const date = fromDateKey(eventItem.startDate);
       const key = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, '0')}`;
       map.set(key, [...(map.get(key) ?? []), eventItem]);
     });
     return map;
-  }, [filteredEvents]);
+  }, [displayEvents]);
 
   const monthDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth));
@@ -270,8 +373,8 @@ export default function Page() {
   }, [currentMonth]);
 
   const eventsByDate = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>();
-    filteredEvents.forEach((event) => {
+    const map = new Map<string, CalendarDisplayEvent[]>();
+    displayEvents.forEach((event) => {
       const start = fromDateKey(event.startDate);
       const end = fromDateKey(event.endDate);
       let cursor = start;
@@ -282,12 +385,12 @@ export default function Page() {
       }
     });
     return map;
-  }, [filteredEvents]);
+  }, [displayEvents]);
 
   const scheduleGroups = useMemo(() => {
     const start = startOfMonth(currentMonth);
     const end = endOfMonth(currentMonth);
-    const items = filteredEvents
+    const items = displayEvents
       .filter((event) => {
         const date = fromDateKey(event.startDate);
         return date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
@@ -304,7 +407,7 @@ export default function Page() {
       date,
       list,
     }));
-  }, [filteredEvents, currentMonth]);
+  }, [displayEvents, currentMonth]);
 
   const dayEvents = useMemo(() => {
     return eventsByDate.get(selectedDate) ?? [];
@@ -404,6 +507,14 @@ export default function Page() {
     });
     setIsDescriptionOpen(Boolean(event.description));
     setIsCreateOpen(true);
+  };
+
+  const openEditModalById = (eventId: string) => {
+    const sourceEvent = events.find((entry) => entry.id === eventId);
+    if (!sourceEvent) {
+      return;
+    }
+    openEditModal(sourceEvent);
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -994,13 +1105,13 @@ export default function Page() {
                   const ownerName = ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
                   return (
                     <button
-                      key={eventItem.id}
+                      key={eventItem.occurrenceKey}
                       type="button"
                       draggable={hasPermission(user?.permissions ?? [], ['admin', 'calendar_edit'])}
                       onDragStart={(event) => handleDragStart(eventItem.id, event)}
                       onClick={(event) => {
                         event.stopPropagation();
-                        openEditModal(eventItem);
+                        openEditModalById(eventItem.id);
                       }}
                       className="flex w-full items-center justify-between rounded-2xl border border-border/60 bg-surface/80 px-4 py-3 text-left"
                       style={{
@@ -1068,7 +1179,7 @@ export default function Page() {
                             onDragStart={(event) => handleDragStart(eventItem.id, event)}
                             onClick={(event) => {
                               event.stopPropagation();
-                              openEditModal(eventItem);
+                              openEditModalById(eventItem.id);
                             }}
                             className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
                             style={{
@@ -1135,7 +1246,7 @@ export default function Page() {
                             onDragStart={(event) => handleDragStart(eventItem.id, event)}
                             onClick={(event) => {
                               event.stopPropagation();
-                              openEditModal(eventItem);
+                              openEditModalById(eventItem.id);
                             }}
                             className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
                             style={{
@@ -1191,7 +1302,7 @@ export default function Page() {
                         const ownerName = ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
                         return (
                           <button
-                            key={eventItem.id}
+                            key={eventItem.occurrenceKey}
                             type="button"
                             draggable={hasPermission(user?.permissions ?? [], [
                               'admin',
@@ -1200,7 +1311,7 @@ export default function Page() {
                             onDragStart={(event) => handleDragStart(eventItem.id, event)}
                             onClick={(event) => {
                               event.stopPropagation();
-                              openEditModal(eventItem);
+                              openEditModalById(eventItem.id);
                             }}
                             className="flex w-full items-center justify-between rounded-2xl border border-border/60 bg-surface/80 px-4 py-3 text-left"
                             style={{ borderColor: style?.text ?? undefined }}
@@ -1314,7 +1425,7 @@ export default function Page() {
                             onDragStart={(event) => handleDragStart(eventItem.id, event)}
                             onClick={(event) => {
                               event.stopPropagation();
-                              openEditModal(eventItem);
+                              openEditModalById(eventItem.id);
                             }}
                             className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
                             style={{
