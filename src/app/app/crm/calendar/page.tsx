@@ -45,10 +45,16 @@ const monthNames = [
   'November',
   'December',
 ];
-const primaryViewModes: Array<{ value: 'month' | 'week' | 'day'; label: string }> = [
+const calendarViewModes: Array<{
+  value: 'month' | 'week' | 'day' | 'four_days' | 'year' | 'schedule';
+  label: string;
+}> = [
   { value: 'month', label: 'Month' },
   { value: 'week', label: 'Week' },
   { value: 'day', label: 'Day' },
+  { value: 'four_days', label: '4 Days' },
+  { value: 'year', label: 'Year' },
+  { value: 'schedule', label: 'Schedule' },
 ];
 
 const categoryOptions: Array<{
@@ -842,39 +848,6 @@ export default function Page() {
                 strokeLinejoin="round"
                 aria-hidden="true"
               >
-                <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />
-              </svg>
-              <label htmlFor="calendar-category" className="sr-only">
-                Category
-              </label>
-              <select
-                id="calendar-category"
-                name="calendar-category"
-                value={categoryFilter}
-                onChange={(event) =>
-                  setCategoryFilter(event.target.value as CalendarCategory | 'all')
-                }
-                className="w-full bg-transparent text-lg text-text outline-none"
-              >
-                <option value="all">All categories</option>
-                {categoryOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
@@ -933,12 +906,12 @@ export default function Page() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
-                {primaryViewModes.map((option) => (
+                {calendarViewModes.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setViewMode(option.value)}
-                    className={`rounded-xl px-6 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition ${
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition ${
                       viewMode === option.value
                         ? 'bg-black text-white shadow-soft'
                         : 'text-muted hover:text-text'
@@ -1035,34 +1008,32 @@ export default function Page() {
                   Next
                 </button>
               </div>
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">
-                <label htmlFor="calendar-view" className="sr-only">
-                  Calendar view
-                </label>
-                <select
-                  id="calendar-view"
-                  name="calendar-view"
-                  value={viewMode}
-                  onChange={(event) =>
-                    setViewMode(
-                      event.target.value as
-                        | 'day'
-                        | 'week'
-                        | 'month'
-                        | 'year'
-                        | 'schedule'
-                        | 'four_days',
-                    )
-                  }
-                  className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
+              <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-[var(--surface-soft)] p-1 whitespace-nowrap">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('all')}
+                  className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                    categoryFilter === 'all'
+                      ? 'bg-black text-white shadow-soft'
+                      : 'text-muted hover:text-text'
+                  }`}
                 >
-                  <option value="day">Day</option>
-                  <option value="week">Week</option>
-                  <option value="month">Month</option>
-                  <option value="year">Year</option>
-                  <option value="schedule">Schedule</option>
-                  <option value="four_days">4 days</option>
-                </select>
+                  All Categories
+                </button>
+                {categoryOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setCategoryFilter(option.value)}
+                    className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                      categoryFilter === option.value
+                        ? 'bg-black text-white shadow-soft'
+                        : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
               {viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days' ? (
                 <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">

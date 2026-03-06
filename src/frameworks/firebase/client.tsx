@@ -56,7 +56,6 @@ export const getFirebaseDb = () => {
   // Mitigate flaky QUIC/WebChannel transport errors on some networks/browsers.
   firebaseDb = initializeFirestore(getApp(), {
     experimentalAutoDetectLongPolling: true,
-    useFetchStreams: false,
   });
   const firestore = firebaseDb ?? getFirestore(getApp());
   if (shouldUseEmulators()) {
