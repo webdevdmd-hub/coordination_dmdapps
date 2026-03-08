@@ -36,13 +36,6 @@ type SalesOrderRequestFormState = {
   salesOrderDate: string;
 };
 
-const statusOptions: Array<{ value: QuotationRequestStatus; label: string }> = [
-  { value: 'new', label: 'New' },
-  { value: 'review', label: 'In review' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-];
-
 const priorityStyles: Record<string, string> = {
   low: 'bg-[#00B67A]/14 text-[#00B67A]',
   medium: 'bg-amber-100 text-amber-700',
@@ -550,29 +543,6 @@ export default function Page() {
     });
   };
 
-  const handleStatusChange = async (request: QuotationRequest, status: QuotationRequestStatus) => {
-    if (!canEdit || !user) {
-      return;
-    }
-    const updated = (await firebaseQuotationRequestRepository.update(request.id, {
-      status,
-    })) as QuotationRequest;
-    setRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
-    await emitNotificationEventSafe({
-      type: 'quotation_request.status_changed',
-      title: 'Quotation Request Updated',
-      body: `${user.fullName} changed ${request.leadCompany} to ${status}.`,
-      actorId: user.id,
-      recipients: buildRecipientList(request.requestedBy, [], user.id),
-      entityType: 'quotationRequest',
-      entityId: request.id,
-      meta: {
-        status,
-        leadId: request.leadId,
-      },
-    });
-  };
-
   const handleStartAddTask = (requestId: string) => {
     setActiveAddTaskId(requestId);
     setCustomTaskTitle('');
@@ -958,37 +928,13 @@ export default function Page() {
                     Delete request
                   </button>
                 ) : null}
-                <div className="relative">
-                  <select
-                    value={activeRequest.status}
-                    onChange={(event) =>
-                      handleStatusChange(
-                        activeRequest,
-                        event.target.value as QuotationRequestStatus,
-                      )
-                    }
-                    disabled={!canEdit}
-                    className="appearance-none rounded-full border border-[#00B67A]/30 bg-[#00B67A] px-5 py-2.5 pr-10 text-xs font-semibold uppercase tracking-[0.16em] text-white outline-none disabled:opacity-60"
-                  >
-                    {statusOptions.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
-                      </option>
-                    ))}
-                  </select>
-                  <svg
-                    viewBox="0 0 20 20"
-                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/80"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="m5 7 5 6 5-6" />
-                  </svg>
-                </div>
+                <span
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                    statusStyles[activeRequest.status]
+                  }`}
+                >
+                  {activeRequest.status}
+                </span>
                 <button
                   type="button"
                   onClick={() => {

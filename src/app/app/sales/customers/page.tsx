@@ -434,12 +434,6 @@ export default function Page() {
             >
               New customer
             </button>
-            <button
-              type="button"
-              className="rounded-2xl border border-border bg-surface px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-text transition hover:-translate-y-[1px] hover:bg-[var(--surface-soft)]"
-            >
-              Import
-            </button>
           </div>
         </div>
 

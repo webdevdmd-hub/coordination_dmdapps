@@ -138,7 +138,6 @@ export default function Page() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [timerTick, setTimerTick] = useState(() => Date.now());
   const [timerBusyId, setTimerBusyId] = useState<string | null>(null);
@@ -745,14 +744,12 @@ export default function Page() {
       return;
     }
     setSelectedTask(null);
-    setIsAdvancedOpen(false);
     setFormState(emptyTask(''));
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (task: Task) => {
     setSelectedTask(task);
-    setIsAdvancedOpen(false);
     setFormState({
       title: task.title,
       description: task.description,
@@ -782,7 +779,6 @@ export default function Page() {
   const handleCloseModal = () => {
     setIsCreateOpen(false);
     setIsEditOpen(false);
-    setIsAdvancedOpen(false);
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1289,6 +1285,20 @@ export default function Page() {
                 ))}
               </select>
             </div>
+            <div className="flex items-center gap-1 rounded-2xl border border-border bg-surface p-1">
+              {taskViewOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setViewMode(option.value)}
+                  className={`rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                    viewMode === option.value ? 'bg-text text-bg' : 'text-muted'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={handleOpenCreate}
@@ -1357,20 +1367,6 @@ export default function Page() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 rounded-2xl border border-border bg-surface p-1">
-              {taskViewOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setViewMode(option.value)}
-                  className={`rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                    viewMode === option.value ? 'bg-text text-bg' : 'text-muted'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
             <p className="text-sm text-muted/80">{filteredTasks.length} tasks visible</p>
           </div>
         </div>
@@ -1496,10 +1492,10 @@ export default function Page() {
                 onSubmit={handleSave}
               >
                 <div className="col-span-2 grid gap-4 grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      Title
-                    </label>
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                        Title
+                      </label>
                     <input
                       required
                       value={formState.title}
@@ -1509,41 +1505,6 @@ export default function Page() {
                       className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                       placeholder="Follow up with Atlas Corp"
                     />
-                    <div className="mt-3">
-                      <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        <input
-                          type="checkbox"
-                          checked={formState.isRevision}
-                          onChange={(event) =>
-                            setFormState((prev) => ({
-                              ...prev,
-                              isRevision: event.target.checked,
-                              revisionNumber: event.target.checked ? prev.revisionNumber : '',
-                            }))
-                          }
-                          className="h-4 w-4"
-                        />
-                        Mark as Revision
-                      </label>
-                      {formState.isRevision ? (
-                        <div className="mt-3">
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                            Revision Number
-                          </label>
-                          <input
-                            value={formState.revisionNumber}
-                            onChange={(event) =>
-                              setFormState((prev) => ({
-                                ...prev,
-                                revisionNumber: event.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                            placeholder="REV-01"
-                          />
-                        </div>
-                      ) : null}
-                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
@@ -1689,67 +1650,92 @@ export default function Page() {
                       className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     />
                   </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsAdvancedOpen((prev) => !prev)}
-                  className="col-span-2 rounded-full border border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
-                >
-                  {isAdvancedOpen ? 'Hide advanced options' : 'Advanced options'}
-                </button>
-
-                {isAdvancedOpen ? (
-                  <div className="col-span-2 grid gap-4 grid-cols-2">
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        Parent task (optional)
-                      </label>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Reference Model No
+                    </label>
+                    <input
+                      value={formState.referenceModelNumber}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          referenceModelNumber: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                      placeholder="XYZ-123"
+                    />
+                  </div>
+                  <div>
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted">
                       <input
-                        value={formState.parentTaskId}
-                        onChange={(event) =>
-                          setFormState((prev) => ({ ...prev, parentTaskId: event.target.value }))
-                        }
-                        className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        Link to project (optional)
-                      </label>
-                      <select
-                        value={formState.projectId}
-                        onChange={(event) =>
-                          setFormState((prev) => ({ ...prev, projectId: event.target.value }))
-                        }
-                        className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                      >
-                        <option value="">Select project</option>
-                        {projects.map((project) => (
-                          <option key={project.id} value={project.id}>
-                            {project.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        Reference model number
-                      </label>
-                      <input
-                        value={formState.referenceModelNumber}
+                        type="checkbox"
+                        checked={formState.isRevision}
                         onChange={(event) =>
                           setFormState((prev) => ({
                             ...prev,
-                            referenceModelNumber: event.target.value,
+                            isRevision: event.target.checked,
+                            revisionNumber: event.target.checked ? prev.revisionNumber : '',
                           }))
                         }
-                        className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                        placeholder="XYZ-123"
+                        className="h-4 w-4"
                       />
-                    </div>
+                      Mark as Revision
+                    </label>
+                    {formState.isRevision ? (
+                      <div className="mt-3">
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Revision Number
+                        </label>
+                        <input
+                          value={formState.revisionNumber}
+                          onChange={(event) =>
+                            setFormState((prev) => ({
+                              ...prev,
+                              revisionNumber: event.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          placeholder="REV-01"
+                        />
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                </div>
+
+                <div className="col-span-2 grid gap-4 grid-cols-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Parent task (optional)
+                    </label>
+                    <input
+                      value={formState.parentTaskId}
+                      onChange={(event) =>
+                        setFormState((prev) => ({ ...prev, parentTaskId: event.target.value }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Link to project (optional)
+                    </label>
+                    <select
+                      value={formState.projectId}
+                      onChange={(event) =>
+                        setFormState((prev) => ({ ...prev, projectId: event.target.value }))
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    >
+                      <option value="">Select project</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
                 <div className="col-span-2 flex flex-wrap items-center justify-end gap-3">
                   {selectedTask && canDelete ? (
