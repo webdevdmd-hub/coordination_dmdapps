@@ -11,6 +11,7 @@ type EditableUser = {
   id: string;
   fullName: string;
   email: string;
+  departmentId: string;
   role: UserRole;
   active: boolean;
 };
@@ -18,6 +19,7 @@ type EditableUser = {
 type NewUser = {
   fullName: string;
   email: string;
+  departmentId: string;
   role: UserRole;
   active: boolean;
   password: string;
@@ -33,6 +35,7 @@ type Role = {
 const emptyNewUser: NewUser = {
   fullName: '',
   email: '',
+  departmentId: '',
   role: 'agent' as UserRole,
   active: true,
   password: '',
@@ -120,6 +123,7 @@ export default function Page() {
       id: selectedUser.id,
       fullName: selectedUser.fullName,
       email: selectedUser.email,
+      departmentId: selectedUser.departmentId ?? '',
       role: selectedUser.role,
       active: selectedUser.active,
     });
@@ -249,6 +253,7 @@ export default function Page() {
         body: JSON.stringify({
           fullName: newUser.fullName.trim(),
           email: newUser.email.trim(),
+          departmentId: newUser.departmentId.trim(),
           role: resolveRoleSelection(roleValue),
           active: newUser.active,
           password: newUser.password,
@@ -288,6 +293,7 @@ export default function Page() {
           id: editUser.id,
           fullName: editUser.fullName.trim(),
           email: editUser.email.trim(),
+          departmentId: editUser.departmentId.trim(),
           role: resolveRoleSelection(roleValue),
           active: editUser.active,
         }),
@@ -607,6 +613,21 @@ export default function Page() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Department
+                  </label>
+                  <input
+                    value={newUser.departmentId}
+                    onChange={(event) =>
+                      setNewUser((prev) => ({ ...prev, departmentId: event.target.value }))
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="sales, design, accounts"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
                     Role
                   </label>
                   <select
@@ -717,6 +738,7 @@ export default function Page() {
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                   />
                 </div>
+                <div />
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
@@ -749,6 +771,23 @@ export default function Page() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Department
+                  </label>
+                  <input
+                    value={editUser.departmentId}
+                    onChange={(event) =>
+                      setEditUser((prev) =>
+                        prev ? { ...prev, departmentId: event.target.value } : prev,
+                      )
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    placeholder="sales, design, accounts"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
                     Status
                   </label>
                   <div className="mt-2 flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted">
@@ -770,6 +809,7 @@ export default function Page() {
                     </button>
                   </div>
                 </div>
+                <div />
               </div>
               <div className="flex flex-wrap items-center justify-end gap-3">
                 <button

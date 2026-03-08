@@ -16,6 +16,7 @@ type UserProfile = {
   email: string;
   phone?: string;
   avatarUrl?: string;
+  departmentId?: string;
   role: UserRole;
   permissions: PermissionKey[];
   active: boolean;
@@ -109,12 +110,14 @@ const toUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile | 
   const phone = typeof data.phone === 'string' ? data.phone : '';
   const avatarUrl = typeof data.avatarUrl === 'string' ? data.avatarUrl : '';
   const active = Boolean(data.active ?? true);
+  const departmentId = typeof data.departmentId === 'string' ? data.departmentId : '';
   return {
     id: snap.id,
     fullName,
     email,
     phone,
     avatarUrl,
+    departmentId,
     role,
     permissions: isAdmin ? ALL_PERMISSIONS : Array.from(new Set(rolePermissions)),
     active,

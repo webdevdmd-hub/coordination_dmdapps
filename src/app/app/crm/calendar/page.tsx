@@ -14,6 +14,7 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { emitNotificationEventSafe } from '@/lib/notifications';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 
 type CalendarFormState = {
   title: string;
@@ -55,6 +56,15 @@ const calendarViewModes: Array<{
   { value: 'four_days', label: '4 Days' },
   { value: 'year', label: 'Year' },
   { value: 'schedule', label: 'Schedule' },
+];
+
+const calendarCategoryFilters: Array<{ value: CalendarCategory | 'all'; label: string }> = [
+  { value: 'all', label: 'All Categories' },
+  { value: 'call', label: 'Call' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'visit', label: 'Visit' },
+  { value: 'follow_up', label: 'Follow-up' },
+  { value: 'task', label: 'Task' },
 ];
 
 const categoryOptions: Array<{
@@ -197,6 +207,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'calendar_view']);
   const canViewAllCalendar =
     !!user && hasPermission(user.permissions, ['admin', 'calendar_view_all']);
+  const canViewDepartmentCalendar =
+    !!user && hasDepartmentScope(user.permissions, 'calendar_view_department');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'calendar_create']);
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canCreateItems = canCreate || canCreateTasks;
@@ -218,11 +230,13 @@ export default function Page() {
     }
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     const base = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllCalendar) {
+    if (!canViewAllCalendar && !canViewDepartmentCalendar) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All sales persons' }, ...base];
-  }, [canViewAllCalendar, user, users]);
+  }, [canViewAllCalendar, canViewDepartmentCalendar, user, users]);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'calendar_assign');
@@ -233,11 +247,11 @@ export default function Page() {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllCalendar) {
+    if (!canViewAllCalendar && !canViewDepartmentCalendar) {
       setOwnerFilter(user.id);
       return;
     }
-  }, [user, canViewAllCalendar]);
+  }, [user, canViewAllCalendar, canViewDepartmentCalendar]);
 
   const dateInputValue = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -297,6 +311,17 @@ export default function Page() {
       return matchesCategory && matchesOwner;
     });
   }, [events, categoryFilter, ownerFilter]);
+
+  const selectedViewModeIndex = Math.max(
+    0,
+    calendarViewModes.findIndex((option) => option.value === viewMode),
+  );
+  const selectedCategoryIndex = Math.max(
+    0,
+    calendarCategoryFilters.findIndex((option) => option.value === categoryFilter),
+  );
+  const viewSegmentWidth = 120;
+  const categorySegmentWidth = 150;
 
   const visibleRange = useMemo(() => {
     if (viewMode === 'day') {
@@ -440,7 +465,7 @@ export default function Page() {
 
   useEffect(() => {
     const loadUsers = async () => {
-      if (!user || !(canViewAllCalendar || canAssign)) {
+      if (!user || !(canViewAllCalendar || canViewDepartmentCalendar || canAssign)) {
         setUsers([]);
         setRoles([]);
         return;
@@ -458,7 +483,7 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllCalendar, canAssign]);
+  }, [user, canViewAllCalendar, canViewDepartmentCalendar, canAssign]);
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -475,12 +500,27 @@ export default function Page() {
       setLoading(true);
       setError(null);
       try {
-        const useAll = canViewAllCalendar && ownerFilter === 'all';
-        const result = useAll
-          ? await firebaseCalendarRepository.listAll()
-          : await firebaseCalendarRepository.listByOwner(
-              ownerFilter === 'all' ? user.id : ownerFilter,
-            );
+        if (canViewAllCalendar) {
+          const useAll = ownerFilter === 'all';
+          const result = useAll
+            ? await firebaseCalendarRepository.listAll()
+            : await firebaseCalendarRepository.listByOwner(ownerFilter);
+          setEvents(result);
+          return;
+        }
+        if (canViewDepartmentCalendar) {
+          const allEvents = await firebaseCalendarRepository.listAll();
+          const departmentEvents = allEvents.filter((entry) => departmentUserIds.has(entry.ownerId));
+          setEvents(
+            ownerFilter === 'all'
+              ? departmentEvents
+              : departmentEvents.filter((entry) => entry.ownerId === ownerFilter),
+          );
+          return;
+        }
+        const result = await firebaseCalendarRepository.listByOwner(
+          ownerFilter === 'all' ? user.id : ownerFilter,
+        );
         setEvents(result);
       } catch {
         setError('Unable to load calendar events. Please try again.');
@@ -489,7 +529,14 @@ export default function Page() {
       }
     };
     loadEvents();
-  }, [user, canView, canViewAllCalendar, ownerFilter]);
+  }, [
+    user,
+    canView,
+    canViewAllCalendar,
+    canViewDepartmentCalendar,
+    ownerFilter,
+    departmentUserIds,
+  ]);
 
   useEffect(() => {
     if (!user) {
@@ -859,7 +906,7 @@ export default function Page() {
                 name="calendar-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCalendar}
+                disabled={!canViewAllCalendar && !canViewDepartmentCalendar}
                 className="w-full bg-transparent text-lg text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -905,21 +952,29 @@ export default function Page() {
 
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
-                {calendarViewModes.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setViewMode(option.value)}
-                    className={`rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition ${
-                      viewMode === option.value
-                        ? 'bg-black text-white shadow-soft'
-                        : 'text-muted hover:text-text'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+              <div className="max-w-full overflow-x-auto">
+                <div className="relative inline-flex min-w-max items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                    style={{
+                      width: `${viewSegmentWidth}px`,
+                      transform: `translateX(${selectedViewModeIndex * viewSegmentWidth}px)`,
+                    }}
+                  />
+                  {calendarViewModes.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setViewMode(option.value)}
+                      className={`relative z-[1] w-[120px] shrink-0 rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition-colors duration-200 ${
+                        viewMode === option.value ? 'text-white' : 'text-muted hover:text-text'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-2 py-1">
                 <button
@@ -1008,32 +1063,29 @@ export default function Page() {
                   Next
                 </button>
               </div>
-              <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-[var(--surface-soft)] p-1 whitespace-nowrap">
-                <button
-                  type="button"
-                  onClick={() => setCategoryFilter('all')}
-                  className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                    categoryFilter === 'all'
-                      ? 'bg-black text-white shadow-soft'
-                      : 'text-muted hover:text-text'
-                  }`}
-                >
-                  All Categories
-                </button>
-                {categoryOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setCategoryFilter(option.value)}
-                    className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                      categoryFilter === option.value
-                        ? 'bg-black text-white shadow-soft'
-                        : 'text-muted hover:text-text'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+              <div className="max-w-full overflow-x-auto">
+                <div className="relative inline-flex min-w-max items-center rounded-2xl border border-border bg-[var(--surface-soft)] p-1">
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                    style={{
+                      width: `${categorySegmentWidth}px`,
+                      transform: `translateX(${selectedCategoryIndex * categorySegmentWidth}px)`,
+                    }}
+                  />
+                  {calendarCategoryFilters.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setCategoryFilter(option.value)}
+                      className={`relative z-[1] w-[150px] shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                        categoryFilter === option.value ? 'text-white' : 'text-muted hover:text-text'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               {viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days' ? (
                 <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">

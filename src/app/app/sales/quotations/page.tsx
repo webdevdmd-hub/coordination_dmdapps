@@ -16,6 +16,7 @@ import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 
 const statusOptions: Array<{ value: QuotationStatus; label: string }> = [
   { value: 'draft', label: 'Draft' },
@@ -110,6 +111,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_view']);
   const canViewAllQuotations =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_view_all']);
+  const canViewDepartmentQuotations =
+    !!user && hasDepartmentScope(user.permissions, 'quotation_view_department');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'quotation_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'quotation_delete']);
@@ -180,14 +183,16 @@ export default function Page() {
     }
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllQuotations) {
+    if (!canViewAllQuotations && !canViewDepartmentQuotations) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllQuotations, user, users]);
+  }, [canViewAllQuotations, canViewDepartmentQuotations, user, users]);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   useEffect(() => {
-    if (!user || !canViewAllQuotations) {
+    if (!user || !(canViewAllQuotations || canViewDepartmentQuotations)) {
       setUsers([]);
       return;
     }
@@ -200,17 +205,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllQuotations]);
+  }, [user, canViewAllQuotations, canViewDepartmentQuotations]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllQuotations) {
+    if (!canViewAllQuotations && !canViewDepartmentQuotations) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllQuotations]);
+  }, [user, canViewAllQuotations, canViewDepartmentQuotations]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -281,6 +286,24 @@ export default function Page() {
           setQuotations(filtered);
           return;
         }
+        if (canViewDepartmentQuotations) {
+          const allQuotes = await firebaseQuotationRepository.listAll();
+          const departmentQuotes = allQuotes.filter((quote) =>
+            departmentUserIds.has(quote.assignedTo),
+          );
+          if (ownerFilter === 'all') {
+            setQuotations(departmentQuotes);
+            return;
+          }
+          const selectedRole = userRoleMap.get(ownerFilter);
+          const filtered = departmentQuotes.filter(
+            (quote) =>
+              quote.assignedTo === ownerFilter ||
+              (selectedRole ? quote.sharedRoles.includes(selectedRole) : false),
+          );
+          setQuotations(filtered);
+          return;
+        }
         const result = await firebaseQuotationRepository.listForUser(user.id, user.role);
         setQuotations(result);
       } catch {
@@ -290,7 +313,15 @@ export default function Page() {
       }
     };
     loadQuotations();
-  }, [user, canView, canViewAllQuotations, ownerFilter, userRoleMap]);
+  }, [
+    user,
+    canView,
+    canViewAllQuotations,
+    canViewDepartmentQuotations,
+    ownerFilter,
+    userRoleMap,
+    departmentUserIds,
+  ]);
 
   const filteredQuotations = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -681,7 +712,7 @@ export default function Page() {
                 name="quote-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllQuotations}
+                disabled={!canViewAllQuotations && !canViewDepartmentQuotations}
                 className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -691,20 +722,33 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
-              <label htmlFor="quote-view" className="sr-only">
-                View
-              </label>
-              <select
-                id="quote-view"
-                name="quote-view"
-                value={viewMode}
-                onChange={(event) => setViewMode(event.target.value as 'list' | 'card')}
-                className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border/60 bg-bg/70 p-1 text-xs text-muted">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 0.5rem) / 2)',
+                  transform: viewMode === 'card' ? 'translateX(calc(100% + 0.25rem))' : 'translateX(0)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`relative z-[1] rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-colors duration-200 ${
+                  viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
               >
-                <option value="list">List</option>
-                <option value="card">Card</option>
-              </select>
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('card')}
+                className={`relative z-[1] rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-colors duration-200 ${
+                  viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                Cards
+              </button>
             </div>
             <button
               type="button"

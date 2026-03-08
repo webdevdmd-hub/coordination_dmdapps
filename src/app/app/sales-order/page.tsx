@@ -450,6 +450,36 @@ export default function Page() {
     <ModuleShell
       title="Sales Order"
       description="Review Sales Order Reqs and complete approval decisions."
+      actions={
+        <div className="relative grid grid-cols-2 rounded-2xl border border-border/60 bg-bg/70 p-1">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+            style={{
+              width: 'calc((100% - 0.5rem) / 2)',
+              transform: viewMode === 'card' ? 'translateX(calc(100% + 0.25rem))' : 'translateX(0)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`relative z-[1] rounded-xl px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+              viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+            }`}
+          >
+            List
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('card')}
+            className={`relative z-[1] rounded-xl px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+              viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
+            }`}
+          >
+            Cards
+          </button>
+        </div>
+      }
     >
       <div className="space-y-4">
         <div className="rounded-2xl border border-border/60 bg-surface/80 p-4">
@@ -498,26 +528,6 @@ export default function Page() {
                 }`}
               >
                 All ({requests.length})
-              </button>
-            </div>
-            <div className="inline-flex rounded-full border border-border/60 bg-bg/70 p-1">
-              <button
-                type="button"
-                onClick={() => setViewMode('card')}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] ${
-                  viewMode === 'card' ? 'bg-accent/80 text-text' : 'text-muted'
-                }`}
-              >
-                Card View
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] ${
-                  viewMode === 'list' ? 'bg-accent/80 text-text' : 'text-muted'
-                }`}
-              >
-                List View
               </button>
             </div>
           </div>

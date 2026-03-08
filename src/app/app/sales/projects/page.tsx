@@ -29,6 +29,7 @@ import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 import {
   areSameRecipientSets,
   buildRecipientList,
@@ -265,6 +266,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
   const canViewAllProjects =
     !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
+  const canViewDepartmentProjects =
+    !!user && hasDepartmentScope(user.permissions, 'project_view_department');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'project_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'project_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'project_delete']);
@@ -337,11 +340,13 @@ export default function Page() {
     }
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllProjects) {
+    if (!canViewAllProjects && !canViewDepartmentProjects) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllProjects, user, users]);
+  }, [canViewAllProjects, canViewDepartmentProjects, user, users]);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const assigneeOptions = useMemo(() => {
     if (!canAssignTasks) {
@@ -359,7 +364,7 @@ export default function Page() {
   );
 
   useEffect(() => {
-    if (!user || !(canViewAllProjects || canAssignTasks)) {
+    if (!user || !(canViewAllProjects || canViewDepartmentProjects || canAssignTasks)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -378,17 +383,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllProjects, canAssignTasks]);
+  }, [user, canViewAllProjects, canViewDepartmentProjects, canAssignTasks]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllProjects) {
+    if (!canViewAllProjects && !canViewDepartmentProjects) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllProjects]);
+  }, [user, canViewAllProjects, canViewDepartmentProjects]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -441,6 +446,24 @@ export default function Page() {
           setProjects(filtered);
           return;
         }
+        if (canViewDepartmentProjects) {
+          const allProjects = await firebaseProjectRepository.listAll();
+          const departmentProjects = allProjects.filter((project) =>
+            departmentUserIds.has(project.assignedTo),
+          );
+          if (ownerFilter === 'all') {
+            setProjects(departmentProjects);
+            return;
+          }
+          const selectedRole = userRoleMap.get(ownerFilter);
+          const filtered = departmentProjects.filter(
+            (project) =>
+              project.assignedTo === ownerFilter ||
+              (selectedRole ? project.sharedRoles.includes(selectedRole) : false),
+          );
+          setProjects(filtered);
+          return;
+        }
         const result = await firebaseProjectRepository.listForUser(user.id, user.role);
         setProjects(result);
       } catch {
@@ -450,7 +473,15 @@ export default function Page() {
       }
     };
     loadProjects();
-  }, [user, canView, canViewAllProjects, ownerFilter, userRoleMap]);
+  }, [
+    user,
+    canView,
+    canViewAllProjects,
+    canViewDepartmentProjects,
+    ownerFilter,
+    userRoleMap,
+    departmentUserIds,
+  ]);
 
   useEffect(() => {
     if (!isViewOpen || !selectedProject) {
@@ -1482,7 +1513,7 @@ export default function Page() {
                 name="project-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllProjects}
+                disabled={!canViewAllProjects && !canViewDepartmentProjects}
                 className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -1492,20 +1523,33 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted md:w-auto">
-              <label htmlFor="project-view" className="sr-only">
-                View
-              </label>
-              <select
-                id="project-view"
-                name="project-view"
-                value={viewMode}
-                onChange={(event) => setViewMode(event.target.value as 'list' | 'card')}
-                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none"
+            <div className="relative col-span-1 grid w-full grid-cols-2 rounded-2xl border border-border bg-[var(--surface-soft)] p-1 md:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 0.5rem) / 2)',
+                  transform: viewMode === 'card' ? 'translateX(calc(100% + 0.25rem))' : 'translateX(0)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`relative z-[1] rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                  viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
               >
-                <option value="list">List</option>
-                <option value="card">Grid</option>
-              </select>
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('card')}
+                className={`relative z-[1] rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                  viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                Cards
+              </button>
             </div>
             <button
               type="button"

@@ -19,6 +19,7 @@ import { getFirebaseAuth } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries } from '@/lib/roles';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 
 type EligibleUser = {
   id: string;
@@ -99,6 +100,7 @@ export default function Page() {
   const [requests, setRequests] = useState<QuotationRequest[]>([]);
   const [tasksByRequest, setTasksByRequest] = useState<Record<string, QuotationRequestTask[]>>({});
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; departmentId?: string; active: boolean }>>([]);
   const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -121,6 +123,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view']);
   const canViewAllRequests =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view_all']);
+  const canViewDepartmentRequests =
+    !!user && hasDepartmentScope(user.permissions, 'quotation_request_view_department');
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_edit']);
   const canDelete =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_delete']);
@@ -131,6 +135,8 @@ export default function Page() {
   const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
   const canViewAllProjects =
     !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, allUsers), [user, allUsers]);
 
   useEffect(() => {
     let isActive = true;
@@ -168,9 +174,17 @@ export default function Page() {
           .filter((value): value is EligibleUser => Boolean(value));
         filtered.sort((a, b) => a.name.localeCompare(b.name));
         setEligibleUsers(filtered);
+        setAllUsers(
+          users.map((entry) => ({
+            id: entry.id,
+            departmentId: entry.departmentId,
+            active: entry.active,
+          })),
+        );
       } catch {
         if (isActive) {
           setEligibleUsers([]);
+          setAllUsers([]);
         }
       }
     };
@@ -224,11 +238,17 @@ export default function Page() {
         const normalized = rawRequests.map((entry) => normalizeRequest(entry));
         const visible = canViewAllRequests
           ? normalized
-          : normalized.filter(
-              (request) =>
-                request.requestedBy === user.id ||
-                request.recipients?.some((recipient) => recipient.id === user.id),
-            );
+          : canViewDepartmentRequests
+            ? normalized.filter(
+                (request) =>
+                  departmentUserIds.has(request.requestedBy) ||
+                  request.recipients?.some((recipient) => departmentUserIds.has(recipient.id)),
+              )
+            : normalized.filter(
+                (request) =>
+                  request.requestedBy === user.id ||
+                  request.recipients?.some((recipient) => recipient.id === user.id),
+              );
         if (!isActive) {
           return;
         }
@@ -263,7 +283,7 @@ export default function Page() {
     return () => {
       isActive = false;
     };
-  }, [user, canView, canViewAllRequests]);
+  }, [user, canView, canViewAllRequests, canViewDepartmentRequests, departmentUserIds]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();

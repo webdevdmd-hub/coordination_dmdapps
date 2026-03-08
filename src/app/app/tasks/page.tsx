@@ -17,6 +17,7 @@ import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import {
   areSameRecipientSets,
@@ -148,6 +149,8 @@ export default function Page() {
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
   const canViewAllTasks = !!user && hasPermission(user.permissions, ['admin', 'task_view_all']);
+  const canViewDepartmentTasks =
+    !!user && hasDepartmentScope(user.permissions, 'task_view_department');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'task_delete']);
@@ -236,17 +239,6 @@ export default function Page() {
     return base + elapsed;
   };
 
-  const getSessionDuration = (task: Task) => {
-    if (!task.timerStartedAt) {
-      return 0;
-    }
-    const startedMs = Date.parse(task.timerStartedAt);
-    if (Number.isNaN(startedMs)) {
-      return 0;
-    }
-    return Math.max(0, Math.floor((timerTick - startedMs) / 1000));
-  };
-
   const canTrackTask = (task: Task) => {
     if (!user || !canEdit) {
       return false;
@@ -267,11 +259,13 @@ export default function Page() {
     }
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllTasks) {
+    if (!canViewAllTasks && !canViewDepartmentTasks) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllTasks, user, users]);
+  }, [canViewAllTasks, canViewDepartmentTasks, user, users]);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'task_assign');
@@ -332,7 +326,7 @@ export default function Page() {
   }, [selectedTask]);
 
   useEffect(() => {
-    if (!user || !(canViewAllTasks || canAssign)) {
+    if (!user || !(canViewAllTasks || canViewDepartmentTasks || canAssign)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -351,7 +345,7 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllTasks, canAssign]);
+  }, [user, canViewAllTasks, canViewDepartmentTasks, canAssign]);
 
   useEffect(() => {
     if (!user) {
@@ -376,10 +370,10 @@ export default function Page() {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllTasks) {
+    if (!canViewAllTasks && !canViewDepartmentTasks) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllTasks]);
+  }, [user, canViewAllTasks, canViewDepartmentTasks]);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -410,6 +404,29 @@ export default function Page() {
           setTasks(filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
           return;
         }
+        if (canViewDepartmentTasks) {
+          const allTasks = await firebaseTaskRepository.listAll();
+          const departmentTasks = allTasks.filter((task) => {
+            if (departmentUserIds.has(task.assignedTo)) {
+              return true;
+            }
+            return (task.assignedUsers ?? []).some((assigneeId) =>
+              departmentUserIds.has(assigneeId),
+            );
+          });
+          if (ownerFilter === 'all') {
+            setTasks(
+              departmentTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) })),
+            );
+            return;
+          }
+          const filtered = departmentTasks.filter(
+            (task) =>
+              task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
+          );
+          setTasks(filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
+          return;
+        }
         const result = await firebaseTaskRepository.listForUser(user.id, user.role);
         setTasks(result.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
       } catch {
@@ -419,7 +436,14 @@ export default function Page() {
       }
     };
     loadTasks();
-  }, [user, canView, canViewAllTasks, ownerFilter]);
+  }, [
+    user,
+    canView,
+    canViewAllTasks,
+    canViewDepartmentTasks,
+    ownerFilter,
+    departmentUserIds,
+  ]);
 
   useEffect(() => {
     if (!tasks.some((task) => task.timerStartedAt)) {
@@ -511,12 +535,16 @@ export default function Page() {
     [filteredTasks],
   );
 
+  const selectedViewIndex = Math.max(
+    0,
+    taskViewOptions.findIndex((option) => option.value === viewMode),
+  );
+
   const renderBoardTaskCard = (
     task: Task,
     variant: 'list' | 'cards' | 'kanban' = 'list',
   ) => {
     const isRunning = !!task.timerStartedAt;
-    const sessionSeconds = getSessionDuration(task);
     const totalSeconds = getLiveDuration(task);
     const canTrack = canTrackTask(task);
     const showDetails = variant !== 'kanban';
@@ -588,31 +616,25 @@ export default function Page() {
 
           <p className="text-sm text-text">Total {formatDuration(totalSeconds)}</p>
 
-          {isRunning ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (isRunning) {
                 handleStopTaskTimer(task);
-              }}
-              disabled={!canTrack || timerBusyId === task.id}
-              className="rounded-xl border border-[#407056] bg-[#407056] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {timerBusyId === task.id ? 'Stopping...' : 'Running'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                handleStartTaskTimer(task);
-              }}
-              disabled={!canTrack || timerBusyId === task.id}
-              className="rounded-xl border border-[#407056]/40 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {timerBusyId === task.id ? 'Starting...' : 'Start timer'}
-            </button>
-          )}
+                return;
+              }
+              handleStartTaskTimer(task);
+            }}
+            disabled={!canTrack || timerBusyId === task.id}
+            className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${
+              isRunning
+                ? 'border border-[#407056] bg-[#407056] text-white'
+                : 'border border-[#407056]/40 bg-white text-[#407056]'
+            }`}
+          >
+            {timerBusyId === task.id ? 'Updating...' : isRunning ? 'Stop timer' : 'Start timer'}
+          </button>
 
         </div>
       );
@@ -688,9 +710,6 @@ export default function Page() {
           <div className="mt-4 grid gap-2 text-sm text-muted sm:grid-cols-2">
             <p>Due {formatDate(task.dueDate)}</p>
             <p className="sm:text-right">Total {formatDuration(totalSeconds)}</p>
-            {isRunning ? (
-              <p className="sm:col-span-2 text-emerald-700">Running {formatDuration(sessionSeconds)}</p>
-            ) : null}
           </div>
         ) : null}
 
@@ -709,31 +728,25 @@ export default function Page() {
               </option>
             ))}
           </select>
-          {isRunning ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (isRunning) {
                 handleStopTaskTimer(task);
-              }}
-              disabled={!canTrack || timerBusyId === task.id}
-              className="rounded-full border border-emerald-600 bg-emerald-500 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {timerBusyId === task.id ? 'Stopping...' : 'Running'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                handleStartTaskTimer(task);
-              }}
-              disabled={!canTrack || timerBusyId === task.id}
-              className="rounded-full border border-emerald-500 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {timerBusyId === task.id ? 'Starting...' : variant === 'kanban' ? 'Timer' : 'Start timer'}
-            </button>
-          )}
+                return;
+              }
+              handleStartTaskTimer(task);
+            }}
+            disabled={!canTrack || timerBusyId === task.id}
+            className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:opacity-60 ${
+              isRunning
+                ? 'border border-emerald-600 bg-emerald-500 text-white'
+                : 'border border-emerald-500 text-emerald-700'
+            }`}
+          >
+            {timerBusyId === task.id ? 'Updating...' : isRunning ? 'Stop timer' : 'Start timer'}
+          </button>
         </div>
       </div>
     );
@@ -1275,7 +1288,7 @@ export default function Page() {
                 name="task-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllTasks}
+                disabled={!canViewAllTasks && !canViewDepartmentTasks}
                 className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/80"
               >
                 {ownerOptions.map((option) => (
@@ -1285,14 +1298,22 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-1 rounded-2xl border border-border bg-surface p-1">
+            <div className="relative grid grid-cols-3 rounded-2xl border border-border bg-surface p-1">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-text shadow-[0_6px_16px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 0.5rem) / 3)',
+                  transform: `translateX(calc(${selectedViewIndex} * (100% + 0.25rem)))`,
+                }}
+              />
               {taskViewOptions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   onClick={() => setViewMode(option.value)}
-                  className={`rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                    viewMode === option.value ? 'bg-text text-bg' : 'text-muted'
+                  className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                    viewMode === option.value ? 'text-bg' : 'text-muted'
                   }`}
                 >
                   {option.label}
@@ -1379,74 +1400,78 @@ export default function Page() {
           <div className="mt-6 rounded-3xl border border-border bg-surface p-6 text-sm text-muted">
             Loading tasks...
           </div>
-        ) : viewMode === 'list' ? (
-          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
-            {filteredTasks.map((task) => renderBoardTaskCard(task, 'list'))}
-          </div>
-        ) : viewMode === 'cards' ? (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredTasks.map((task) => renderBoardTaskCard(task, 'cards'))}
-            {canCreate ? (
-              <button
-                type="button"
-                onClick={handleOpenCreate}
-                className="rounded-3xl border-2 border-dashed border-border/70 bg-[var(--surface-soft)] p-6 text-center"
-              >
-                <p className="text-lg font-semibold text-text">Add New Task</p>
-                <p className="mt-2 text-sm text-muted/80">Click to create a new task in this view</p>
-              </button>
-            ) : null}
-          </div>
         ) : (
-          <div className="mt-6 grid gap-4 xl:grid-cols-4">
-            {([
-              { key: 'todo', label: 'To Do' },
-              { key: 'in-progress', label: 'In Progress' },
-              { key: 'review', label: 'Review' },
-              { key: 'done', label: 'Completed' },
-            ] as const).map((column) => (
-              <div
-                key={column.key}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  if (dragOverStatus !== column.key) {
-                    setDragOverStatus(column.key);
-                  }
-                }}
-                onDragLeave={() => {
-                  if (dragOverStatus === column.key) {
-                    setDragOverStatus(null);
-                  }
-                }}
-                onDrop={async (event) => {
-                  event.preventDefault();
-                  await handleDropTaskToStatus(column.key);
-                }}
-                className={`rounded-3xl border bg-surface p-3 transition ${
-                  dragOverStatus === column.key
-                    ? 'border-emerald-400 ring-2 ring-emerald-300/50'
-                    : 'border-border'
-                }`}
-              >
-                <div className="mb-3 flex items-center justify-between px-2">
-                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">
-                    {column.label}
-                  </p>
-                  <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs font-semibold text-muted">
-                    {tasksByStatus[column.key].length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {tasksByStatus[column.key].length === 0 ? (
-                    <div className="rounded-2xl border-2 border-dashed border-border/70 bg-surface p-8 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted/80">
-                      No tasks
-                    </div>
-                  ) : (
-                    tasksByStatus[column.key].map((task) => renderBoardTaskCard(task, 'kanban'))
-                  )}
-                </div>
+          <div key={viewMode} className="animate-fade-up">
+            {viewMode === 'list' ? (
+              <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
+                {filteredTasks.map((task) => renderBoardTaskCard(task, 'list'))}
               </div>
-            ))}
+            ) : viewMode === 'cards' ? (
+              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {filteredTasks.map((task) => renderBoardTaskCard(task, 'cards'))}
+                {canCreate ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenCreate}
+                    className="rounded-3xl border-2 border-dashed border-border/70 bg-[var(--surface-soft)] p-6 text-center"
+                  >
+                    <p className="text-lg font-semibold text-text">Add New Task</p>
+                    <p className="mt-2 text-sm text-muted/80">Click to create a new task in this view</p>
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="mt-6 grid gap-4 xl:grid-cols-4">
+                {([
+                  { key: 'todo', label: 'To Do' },
+                  { key: 'in-progress', label: 'In Progress' },
+                  { key: 'review', label: 'Review' },
+                  { key: 'done', label: 'Completed' },
+                ] as const).map((column) => (
+                  <div
+                    key={column.key}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (dragOverStatus !== column.key) {
+                        setDragOverStatus(column.key);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverStatus === column.key) {
+                        setDragOverStatus(null);
+                      }
+                    }}
+                    onDrop={async (event) => {
+                      event.preventDefault();
+                      await handleDropTaskToStatus(column.key);
+                    }}
+                    className={`rounded-3xl border bg-surface p-3 transition ${
+                      dragOverStatus === column.key
+                        ? 'border-emerald-400 ring-2 ring-emerald-300/50'
+                        : 'border-border'
+                    }`}
+                  >
+                    <div className="mb-3 flex items-center justify-between px-2">
+                      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">
+                        {column.label}
+                      </p>
+                      <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs font-semibold text-muted">
+                        {tasksByStatus[column.key].length}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {tasksByStatus[column.key].length === 0 ? (
+                        <div className="rounded-2xl border-2 border-dashed border-border/70 bg-surface p-8 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted/80">
+                          No tasks
+                        </div>
+                      ) : (
+                        tasksByStatus[column.key].map((task) => renderBoardTaskCard(task, 'kanban'))
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

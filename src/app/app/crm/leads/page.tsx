@@ -17,6 +17,7 @@ import { createLead } from '@/core/use-cases/createLead';
 import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 
 const leadStatusClass: Record<LeadStatus, string> = {
   new: 'bg-[var(--surface-muted)] text-muted border border-border',
@@ -68,6 +69,8 @@ export default function Page() {
   const canCreateLead = !!user && hasPermission(user.permissions, ['admin', 'lead_create']);
   const canViewLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view']);
   const canViewAllLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view_all']);
+  const canViewDepartmentLeads =
+    !!user && hasDepartmentScope(user.permissions, 'lead_view_department');
 
   const ownerOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -76,11 +79,13 @@ export default function Page() {
     }
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllLeads) {
+    if (!canViewAllLeads && !canViewDepartmentLeads) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [user, users, canViewAllLeads]);
+  }, [user, users, canViewAllLeads, canViewDepartmentLeads]);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const filteredLeads = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -143,11 +148,21 @@ export default function Page() {
       setLoading(true);
       setError(null);
       try {
-        const useAllLeads = canViewAllLeads && ownerFilter === 'all';
-        const ownerId = ownerFilter === 'all' ? user.id : ownerFilter;
-        const result = useAllLeads
-          ? await firebaseLeadRepository.listAll()
-          : await firebaseLeadRepository.listByOwner(ownerId);
+        if (canViewAllLeads) {
+          const result =
+            ownerFilter === 'all'
+              ? await firebaseLeadRepository.listAll()
+              : await firebaseLeadRepository.listByOwner(ownerFilter);
+          setLeads(result);
+          return;
+        }
+        if (canViewDepartmentLeads) {
+          const allLeads = await firebaseLeadRepository.listAll();
+          const scoped = allLeads.filter((lead) => departmentUserIds.has(lead.ownerId));
+          setLeads(ownerFilter === 'all' ? scoped : scoped.filter((lead) => lead.ownerId === ownerFilter));
+          return;
+        }
+        const result = await firebaseLeadRepository.listByOwner(ownerFilter === 'all' ? user.id : ownerFilter);
         setLeads(result);
       } catch {
         setError('Unable to load leads. Please try again.');
@@ -156,7 +171,7 @@ export default function Page() {
       }
     };
     loadLeads();
-  }, [user, ownerFilter, canViewAllLeads]);
+  }, [user, ownerFilter, canViewAllLeads, canViewDepartmentLeads, departmentUserIds]);
 
   useEffect(() => {
     const loadSources = async () => {
@@ -205,7 +220,7 @@ export default function Page() {
         setUsers([]);
         return;
       }
-      if (!canViewAllLeads) {
+      if (!canViewAllLeads && !canViewDepartmentLeads) {
         setUsers([]);
         return;
       }
@@ -217,17 +232,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllLeads]);
+  }, [user, canViewAllLeads, canViewDepartmentLeads]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllLeads) {
+    if (!canViewAllLeads && !canViewDepartmentLeads) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllLeads]);
+  }, [user, canViewAllLeads, canViewDepartmentLeads]);
 
   const handleCreateLead = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -421,6 +436,9 @@ export default function Page() {
     }
   };
 
+  const leadViewOptions: Array<'list' | 'cards'> = ['list', 'cards'];
+  const selectedLeadViewIndex = Math.max(0, leadViewOptions.indexOf(view));
+
   return (
     <div className="space-y-8">
       <section className="space-y-6">
@@ -430,14 +448,22 @@ export default function Page() {
             <h2 className="font-display text-5xl text-text">Leads</h2>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
-              {(['list', 'cards'] as const).map((layout) => (
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 0.5rem) / 2)',
+                  transform: `translateX(calc(${selectedLeadViewIndex} * (100% + 0.25rem)))`,
+                }}
+              />
+              {leadViewOptions.map((layout) => (
                 <button
                   key={layout}
                   type="button"
                   onClick={() => setView(layout)}
-                  className={`rounded-xl px-6 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition ${
-                    view === layout ? 'bg-black text-white shadow-soft' : 'text-muted hover:text-text'
+                  className={`relative z-[1] rounded-xl px-6 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                    view === layout ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
                   {layout}
@@ -497,7 +523,7 @@ export default function Page() {
               name="lead-owner"
               value={ownerFilter}
               onChange={(event) => setOwnerFilter(event.target.value)}
-              disabled={!canViewAllLeads}
+              disabled={!canViewAllLeads && !canViewDepartmentLeads}
               className="w-full bg-transparent text-lg text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
             >
               {ownerOptions.map((option) => (

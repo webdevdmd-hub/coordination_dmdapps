@@ -11,6 +11,7 @@ import { User } from '@/core/entities/user';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
+import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
 
 type CustomerFormState = {
   companyName: string;
@@ -66,6 +67,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'customer_view']);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
+  const canViewDepartmentCustomers =
+    !!user && hasDepartmentScope(user.permissions, 'customer_view_department');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'customer_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'customer_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'customer_delete']);
@@ -112,18 +115,20 @@ export default function Page() {
     }
     users.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllCustomers) {
+    if (!canViewAllCustomers && !canViewDepartmentCustomers) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllCustomers, user, users]);
+  }, [canViewAllCustomers, canViewDepartmentCustomers, user, users]);
+
+  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'customer_assign');
   }, [users, roles]);
 
   useEffect(() => {
-    if (!user || !(canViewAllCustomers || canAssign)) {
+    if (!user || !(canViewAllCustomers || canViewDepartmentCustomers || canAssign)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -142,17 +147,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllCustomers, canAssign]);
+  }, [user, canViewAllCustomers, canViewDepartmentCustomers, canAssign]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllCustomers) {
+    if (!canViewAllCustomers && !canViewDepartmentCustomers) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllCustomers]);
+  }, [user, canViewAllCustomers, canViewDepartmentCustomers]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -184,6 +189,24 @@ export default function Page() {
           setCustomers(filtered);
           return;
         }
+        if (canViewDepartmentCustomers) {
+          const allCustomers = await firebaseCustomerRepository.listAll();
+          const departmentCustomers = allCustomers.filter((customer) =>
+            departmentUserIds.has(customer.assignedTo),
+          );
+          if (ownerFilter === 'all') {
+            setCustomers(departmentCustomers);
+            return;
+          }
+          const selectedRole = userRoleMap.get(ownerFilter);
+          const filtered = departmentCustomers.filter(
+            (customer) =>
+              customer.assignedTo === ownerFilter ||
+              (selectedRole ? customer.sharedRoles.includes(selectedRole) : false),
+          );
+          setCustomers(filtered);
+          return;
+        }
         const result = await firebaseCustomerRepository.listForUser(user.id, user.role);
         setCustomers(result);
       } catch {
@@ -193,7 +216,15 @@ export default function Page() {
       }
     };
     loadCustomers();
-  }, [user, canView, canViewAllCustomers, ownerFilter, userRoleMap]);
+  }, [
+    user,
+    canView,
+    canViewAllCustomers,
+    canViewDepartmentCustomers,
+    ownerFilter,
+    userRoleMap,
+    departmentUserIds,
+  ]);
 
   const totals = useMemo(() => {
     const active = customers.filter((customer) => customer.status === 'active').length;
@@ -225,6 +256,9 @@ export default function Page() {
       .slice(0, 2)
       .toUpperCase();
   };
+
+  const customerViewOptions: Array<'list' | 'cards'> = ['list', 'cards'];
+  const selectedCustomerViewIndex = Math.max(0, customerViewOptions.indexOf(viewMode));
 
   const handleOpenCreate = () => {
     if (!user) {
@@ -402,7 +436,7 @@ export default function Page() {
                 name="customer-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCustomers}
+                disabled={!canViewAllCustomers && !canViewDepartmentCustomers}
                 className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -412,14 +446,22 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
-              {(['list', 'cards'] as const).map((layout) => (
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 0.5rem) / 2)',
+                  transform: `translateX(calc(${selectedCustomerViewIndex} * (100% + 0.25rem)))`,
+                }}
+              />
+              {customerViewOptions.map((layout) => (
                 <button
                   key={layout}
                   type="button"
                   onClick={() => setViewMode(layout)}
-                  className={`rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                    viewMode === layout ? 'bg-black text-white' : 'text-muted hover:text-text'
+                  className={`relative z-[1] rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                    viewMode === layout ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
                   {layout}

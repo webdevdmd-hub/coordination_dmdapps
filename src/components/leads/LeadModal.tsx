@@ -104,6 +104,8 @@ const RFQ_PRIORITY_OPTIONS: Array<{ value: 'low' | 'medium' | 'high'; label: str
   { value: 'high', label: 'High' },
 ];
 
+const normalizeRfqTag = (value: string) => value.trim().toLowerCase();
+
 export function LeadModal({
   lead,
   ownerNameMap,
@@ -141,6 +143,8 @@ export function LeadModal({
   const [rfqRecipientPick, setRfqRecipientPick] = useState('');
   const [rfqNotes, setRfqNotes] = useState('');
   const [rfqTags, setRfqTags] = useState<string[]>([]);
+  const [lockedRfqTags, setLockedRfqTags] = useState<Set<string>>(new Set());
+  const [isLoadingLockedRfqTags, setIsLoadingLockedRfqTags] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [assignableCustomerUsers, setAssignableCustomerUsers] = useState<User[]>([]);
   const [assignableCustomerRoles, setAssignableCustomerRoles] = useState<RoleSummary[]>([]);
@@ -225,6 +229,8 @@ export function LeadModal({
     setRfqRecipientPick('');
     setRfqNotes('');
     setRfqTags([]);
+    setLockedRfqTags(new Set());
+    setIsLoadingLockedRfqTags(false);
     setIsTimelineOpen(false);
     setNewSourceName('');
     setConvertForm({
@@ -386,6 +392,62 @@ export function LeadModal({
       'customer_assign',
     );
   }, [assignableCustomerUsers, assignableCustomerRoles]);
+
+  useEffect(() => {
+    if (!isRfqModalOpen || !lead) {
+      return;
+    }
+    let isActive = true;
+    const loadLockedRfqTags = async () => {
+      setIsLoadingLockedRfqTags(true);
+      try {
+        const requests = (await firebaseQuotationRequestRepository.listAll()) as Array<
+          Record<string, unknown>
+        >;
+        const leadRequests = requests.filter(
+          (request) => String(request.leadId ?? '') === lead.id,
+        );
+        const locked = new Set<string>();
+        await Promise.all(
+          leadRequests.map(async (request) => {
+            const requestId = String(request.id ?? '');
+            if (!requestId) {
+              return;
+            }
+            const tasks = (await firebaseQuotationRequestRepository.listTasks(requestId)) as Array<{
+              tag?: string;
+              status?: string;
+            }>;
+            tasks.forEach((task) => {
+              const tag = String(task.tag ?? '').trim();
+              const status = String(task.status ?? '').trim().toLowerCase();
+              if (!tag || status === 'done') {
+                return;
+              }
+              locked.add(normalizeRfqTag(tag));
+            });
+          }),
+        );
+        if (!isActive) {
+          return;
+        }
+        setLockedRfqTags(locked);
+        setRfqTags((prev) => prev.filter((tag) => !locked.has(normalizeRfqTag(tag))));
+      } catch {
+        if (isActive) {
+          setLockedRfqTags(new Set());
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingLockedRfqTags(false);
+        }
+      }
+    };
+    loadLockedRfqTags();
+    return () => {
+      isActive = false;
+    };
+  }, [isRfqModalOpen, lead]);
 
   if (!lead) {
     return null;
@@ -557,6 +619,7 @@ export function LeadModal({
     setRfqRecipients([]);
     setRfqNotes('');
     setRfqTags([]);
+    setLockedRfqTags(new Set());
     setIsRfqModalOpen(true);
     setIsFabOpen(false);
   };
@@ -578,35 +641,122 @@ export function LeadModal({
       setRfqError('Select at least one task tag.');
       return;
     }
+    const blockedTags = rfqTags.filter((tag) => lockedRfqTags.has(normalizeRfqTag(tag)));
+    if (blockedTags.length > 0) {
+      setRfqError(
+        `Task already in progress: ${blockedTags.join(
+          ', ',
+        )}. Complete existing task before requesting again.`,
+      );
+      return;
+    }
     setIsRequestingRfq(true);
     setRfqError(null);
     try {
+      const now = new Date().toISOString();
       const recipients = rfqRecipients
         .map((id) => rfqRecipientsById.get(id))
         .filter((value): value is { id: string; name: string; roleKey: string } => Boolean(value));
-      const created = await firebaseQuotationRequestRepository.create({
-        leadId: lead.id,
-        leadName: lead.name,
-        leadCompany: lead.company,
-        leadEmail: lead.email,
-        customerId: convertedCustomerId,
-        requestedBy: currentUserId ?? lead.ownerId,
-        requestedByName: user?.fullName ?? ownerName,
-        recipients,
-        priority: rfqPriority,
-        tags: rfqTags,
-        notes: rfqNotes.trim(),
-      });
-      await firebaseQuotationRequestRepository.addTasks(
-        created.id,
-        rfqTags.map((tag) => ({ tag, status: 'pending' })),
-      );
+      const existingRequests = (await firebaseQuotationRequestRepository.listAll()) as Array<
+        Record<string, unknown>
+      >;
+      const matchingRequest = [...existingRequests]
+        .filter(
+          (request) =>
+            String(request.leadId ?? '') === lead.id &&
+            String(request.customerId ?? '') === convertedCustomerId,
+        )
+        .sort((a, b) =>
+          String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
+        )[0];
+
+      let requestId = '';
+      let wasNewRequest = false;
+
+      if (matchingRequest) {
+        requestId = String(matchingRequest.id ?? '');
+        const existingRecipients = Array.isArray(matchingRequest.recipients)
+          ? (matchingRequest.recipients as Array<{ id: string; name: string; roleKey: string }>)
+          : [];
+        const mergedRecipientsMap = new Map<string, { id: string; name: string; roleKey: string }>();
+        existingRecipients.forEach((entry) => mergedRecipientsMap.set(entry.id, entry));
+        recipients.forEach((entry) => mergedRecipientsMap.set(entry.id, entry));
+        const mergedRecipients = Array.from(mergedRecipientsMap.values());
+
+        const existingTags = Array.isArray(matchingRequest.tags)
+          ? (matchingRequest.tags as string[])
+          : [];
+        const mergedTags = Array.from(new Set([...existingTags, ...rfqTags]));
+
+        const existingNotes = String(matchingRequest.notes ?? '').trim();
+        const incomingNotes = rfqNotes.trim();
+        const mergedNotes = incomingNotes
+          ? existingNotes
+            ? `${existingNotes}\n${incomingNotes}`
+            : incomingNotes
+          : existingNotes;
+
+        await firebaseQuotationRequestRepository.update(requestId, {
+          leadName: lead.name,
+          leadCompany: lead.company,
+          leadEmail: lead.email,
+          requestedBy: currentUserId ?? lead.ownerId,
+          requestedByName: user?.fullName ?? ownerName,
+          recipients: mergedRecipients,
+          priority: rfqPriority,
+          tags: mergedTags,
+          notes: mergedNotes,
+          updatedAt: now,
+        });
+
+        const existingTasks = (await firebaseQuotationRequestRepository.listTasks(requestId)) as Array<{
+          tag?: string;
+        }>;
+        const existingTaskTagSet = new Set(
+          existingTasks
+            .map((task) => String(task.tag ?? '').trim().toLowerCase())
+            .filter(Boolean),
+        );
+        const tagsToCreate = rfqTags.filter(
+          (tag) => !existingTaskTagSet.has(tag.trim().toLowerCase()),
+        );
+        if (tagsToCreate.length > 0) {
+          await firebaseQuotationRequestRepository.addTasks(
+            requestId,
+            tagsToCreate.map((tag) => ({ tag, status: 'pending', createdAt: now, updatedAt: now })),
+          );
+        }
+      } else {
+        const created = await firebaseQuotationRequestRepository.create({
+          leadId: lead.id,
+          leadName: lead.name,
+          leadCompany: lead.company,
+          leadEmail: lead.email,
+          customerId: convertedCustomerId,
+          requestedBy: currentUserId ?? lead.ownerId,
+          requestedByName: user?.fullName ?? ownerName,
+          recipients,
+          priority: rfqPriority,
+          tags: rfqTags,
+          notes: rfqNotes.trim(),
+          createdAt: now,
+        });
+        requestId = created.id;
+        wasNewRequest = true;
+        await firebaseQuotationRequestRepository.addTasks(
+          requestId,
+          rfqTags.map((tag) => ({ tag, status: 'pending', createdAt: now, updatedAt: now })),
+        );
+      }
+
       const logged = await firebaseLeadRepository.addActivity(lead.id, {
         type: 'note',
-        note: `RFQ requested by ${user?.fullName ?? ownerName}. Recipients: ${recipients
-          .map((entry) => entry.name)
-          .join(', ')}. Tasks: ${rfqTags.join(', ')}.`,
-        date: new Date().toISOString(),
+        note: wasNewRequest
+          ? `RFQ requested by ${user?.fullName ?? ownerName}. Recipients: ${recipients
+              .map((entry) => entry.name)
+              .join(', ')}. Tasks: ${rfqTags.join(', ')}.`
+          : `RFQ request updated by ${user?.fullName ?? ownerName}. Recipients/Tasks merged into existing request.`,
+        date: now,
         createdBy: currentUserId ?? lead.ownerId,
       });
       setActivities((prev) => [logged, ...prev]);
@@ -614,17 +764,20 @@ export function LeadModal({
         const recipientIds = recipients.map((entry) => entry.id);
         const requesterId = currentUserId ?? lead.ownerId;
         await emitNotificationEventSafe({
-          type: 'quotation_request.created',
-          title: 'Quotation Request Created',
-          body: `${user.fullName} requested a quote for ${lead.company}.`,
+          type: wasNewRequest ? 'quotation_request.created' : 'quotation_request.updated',
+          title: wasNewRequest ? 'Quotation Request Created' : 'Quotation Request Updated',
+          body: wasNewRequest
+            ? `${user.fullName} requested a quote for ${lead.company}.`
+            : `${user.fullName} updated an existing quote request for ${lead.company}.`,
           actorId: user.id,
           recipients: buildRecipientList(requesterId, recipientIds, user.id),
           entityType: 'quotationRequest',
-          entityId: created.id,
+          entityId: requestId,
           meta: {
             leadId: lead.id,
             priority: rfqPriority,
             tags: rfqTags,
+            mode: wasNewRequest ? 'created' : 'updated',
           },
         });
       }
@@ -776,6 +929,7 @@ export function LeadModal({
           <div className="mt-2 flex flex-wrap gap-2">
             {RFQ_TAGS.map((tag) => {
               const isSelected = rfqTags.includes(tag);
+              const isLocked = lockedRfqTags.has(normalizeRfqTag(tag));
               return (
                 <button
                   key={tag}
@@ -785,17 +939,24 @@ export function LeadModal({
                       prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
                     )
                   }
+                  disabled={isLocked || isLoadingLockedRfqTags}
                   className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition ${
-                    isSelected
+                    isLocked
+                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                      : isSelected
                       ? 'border-accent/60 bg-accent/15 text-text'
                       : 'border-border/60 bg-bg/70 text-muted hover:text-text'
                   }`}
                 >
                   {tag}
+                  {isLocked ? ' (Locked)' : ''}
                 </button>
               );
             })}
           </div>
+          {isLoadingLockedRfqTags ? (
+            <p className="mt-2 text-[11px] text-muted">Checking existing task locks...</p>
+          ) : null}
         </div>
         <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
           Notes
