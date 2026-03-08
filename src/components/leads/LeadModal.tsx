@@ -725,6 +725,12 @@ export function LeadModal({
             requestId,
             tagsToCreate.map((tag) => ({ tag, status: 'pending', createdAt: now, updatedAt: now })),
           );
+          if (String(matchingRequest.status ?? '').toLowerCase() === 'completed') {
+            await firebaseQuotationRequestRepository.update(requestId, {
+              status: 'review',
+              updatedAt: now,
+            });
+          }
         }
       } else {
         const created = await firebaseQuotationRequestRepository.create({

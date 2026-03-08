@@ -861,6 +861,24 @@ export default function Page() {
     setIsSaving(true);
     setError(null);
     try {
+      const syncQuotationRequestStatus = async (quotationRequestId: string) => {
+        const requestTasks = (await firebaseQuotationRequestRepository.listTasks(
+          quotationRequestId,
+        )) as Array<{ status?: string }>;
+        if (requestTasks.length === 0) {
+          return;
+        }
+        const isCompleted = requestTasks.every(
+          (entry) => String(entry.status ?? '').toLowerCase() === 'done',
+        );
+        if (isCompleted) {
+          await firebaseQuotationRequestRepository.update(quotationRequestId, {
+            status: 'completed',
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      };
+
       const basePayload = {
         title: formState.title.trim(),
         description: formState.description.trim(),
@@ -986,6 +1004,7 @@ export default function Page() {
             updated.quotationRequestTaskId,
             { status: 'done', updatedAt: completedAt },
           );
+          await syncQuotationRequestStatus(updated.quotationRequestId);
           await firebaseLeadRepository.addActivity(updated.leadId, {
             type: 'note',
             note: `RFQ task completed: ${updated.rfqTag}.`,
@@ -1164,6 +1183,24 @@ export default function Page() {
     setStatusBusyId(task.id);
     setError(null);
     try {
+      const syncQuotationRequestStatus = async (quotationRequestId: string) => {
+        const requestTasks = (await firebaseQuotationRequestRepository.listTasks(
+          quotationRequestId,
+        )) as Array<{ status?: string }>;
+        if (requestTasks.length === 0) {
+          return;
+        }
+        const isCompleted = requestTasks.every(
+          (entry) => String(entry.status ?? '').toLowerCase() === 'done',
+        );
+        if (isCompleted) {
+          await firebaseQuotationRequestRepository.update(quotationRequestId, {
+            status: 'completed',
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      };
+
       const updatedAt = new Date().toISOString();
       const updated = await firebaseTaskRepository.update(task.id, {
         status: nextStatus,
@@ -1208,6 +1245,7 @@ export default function Page() {
           updated.quotationRequestTaskId,
           { status: 'done', updatedAt },
         );
+        await syncQuotationRequestStatus(updated.quotationRequestId);
         await firebaseLeadRepository.addActivity(updated.leadId, {
           type: 'note',
           note: `RFQ task completed: ${updated.rfqTag}.`,

@@ -1,5 +1,5 @@
 export type QuotationRequestPriority = 'low' | 'medium' | 'high';
-export type QuotationRequestStatus = 'new' | 'review' | 'approved' | 'rejected';
+export type QuotationRequestStatus = 'new' | 'review' | 'approved' | 'rejected' | 'completed';
 
 export type QuotationRequestRecipient = {
   id: string;

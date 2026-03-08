@@ -48,6 +48,7 @@ const statusStyles: Record<QuotationRequestStatus, string> = {
   review: 'bg-[#00B67A]/16 text-[#00B67A]',
   approved: 'bg-[#00B67A]/22 text-[#00B67A]',
   rejected: 'bg-amber-200 text-amber-800',
+  completed: 'bg-emerald-600 text-white',
 };
 
 const taskStatusStyles: Record<string, string> = {
@@ -304,6 +305,7 @@ export default function Page() {
       review: requests.filter((request) => request.status === 'review').length,
       approved: requests.filter((request) => request.status === 'approved').length,
       rejected: requests.filter((request) => request.status === 'rejected').length,
+      completed: requests.filter((request) => request.status === 'completed').length,
     };
   }, [requests]);
 
@@ -722,7 +724,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-5">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New</p>
             <p className="mt-4 text-6xl font-semibold text-text">{totals.newCount}</p>
@@ -740,6 +742,12 @@ export default function Page() {
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Rejected</p>
             <p className="mt-4 text-6xl font-semibold text-text">{totals.rejected}</p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Completed
+            </p>
+            <p className="mt-4 text-6xl font-semibold text-text">{totals.completed}</p>
           </div>
         </div>
       </section>
@@ -770,7 +778,7 @@ export default function Page() {
               />
             </div>
             <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-2 md:w-auto md:flex md:flex-wrap md:items-center md:rounded-full md:p-1">
-              {(['all', 'new', 'review', 'approved', 'rejected'] as const).map((status) => (
+              {(['all', 'new', 'review', 'approved', 'rejected', 'completed'] as const).map((status) => (
                 <button
                   key={status}
                   type="button"

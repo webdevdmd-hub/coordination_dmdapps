@@ -13,7 +13,7 @@ export type CreateQuotationRequestInput = {
   recipients: Array<{ id: string; name: string; roleKey: string }>;
   priority: 'low' | 'medium' | 'high';
   tags: string[];
-  status?: 'new' | 'review' | 'approved' | 'rejected';
+  status?: 'new' | 'review' | 'approved' | 'rejected' | 'completed';
   notes?: string;
   createdAt?: string;
 };
