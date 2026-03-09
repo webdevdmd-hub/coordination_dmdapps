@@ -233,7 +233,7 @@ export default function Page() {
     if (!canViewAllCalendar && !canViewDepartmentCalendar) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
-    return [{ id: 'all', name: 'All sales persons' }, ...base];
+    return [{ id: 'all', name: 'All users' }, ...base];
   }, [canViewAllCalendar, canViewDepartmentCalendar, user, users]);
 
   const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
@@ -868,7 +868,39 @@ export default function Page() {
               touchpoint aligned.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <label htmlFor="calendar-owner-header" className="sr-only">
+                Owner
+              </label>
+              <select
+                id="calendar-owner-header"
+                name="calendar-owner-header"
+                value={ownerFilter}
+                onChange={(event) => setOwnerFilter(event.target.value)}
+                disabled={!canViewAllCalendar && !canViewDepartmentCalendar}
+                className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+              >
+                {ownerOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               onClick={() => openCreateModal()}
@@ -884,38 +916,6 @@ export default function Page() {
       <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <label htmlFor="calendar-owner" className="sr-only">
-                Owner
-              </label>
-              <select
-                id="calendar-owner"
-                name="calendar-owner"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCalendar && !canViewDepartmentCalendar}
-                className="w-full bg-transparent text-lg text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-              >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
               <svg
                 viewBox="0 0 24 24"
