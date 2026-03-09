@@ -448,13 +448,32 @@ export default function Page() {
             <h2 className="font-display text-5xl text-text">Leads</h2>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
+              <label htmlFor="lead-owner-header" className="sr-only">
+                User
+              </label>
+              <select
+                id="lead-owner-header"
+                name="lead-owner-header"
+                value={ownerFilter}
+                onChange={(event) => setOwnerFilter(event.target.value)}
+                disabled={!canViewAllLeads && !canViewDepartmentLeads}
+                className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+              >
+                {ownerOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
                 style={{
-                  width: 'calc((100% - 0.5rem) / 2)',
-                  transform: `translateX(calc(${selectedLeadViewIndex} * (100% + 0.25rem)))`,
+                  width: 'calc((100% - 1rem) / 2)',
+                  transform: `translateX(calc(${selectedLeadViewIndex} * 100%))`,
                 }}
               />
               {leadViewOptions.map((layout) => (
@@ -462,7 +481,7 @@ export default function Page() {
                   key={layout}
                   type="button"
                   onClick={() => setView(layout)}
-                  className={`relative z-[1] rounded-xl px-6 py-2 text-sm font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                  className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
                     view === layout ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
@@ -501,38 +520,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_2fr]">
-          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-muted">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />
-            </svg>
-            <label htmlFor="lead-owner" className="sr-only">
-              Owner
-            </label>
-            <select
-              id="lead-owner"
-              name="lead-owner"
-              value={ownerFilter}
-              onChange={(event) => setOwnerFilter(event.target.value)}
-              disabled={!canViewAllLeads && !canViewDepartmentLeads}
-              className="w-full bg-transparent text-lg text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-            >
-              {ownerOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
           <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-muted">
             <svg
               viewBox="0 0 24 24"

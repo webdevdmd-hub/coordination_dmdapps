@@ -5,7 +5,6 @@ import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { ModuleShell } from '@/components/ui/ModuleShell';
 import { SalesOrderRequest } from '@/core/entities/salesOrderRequest';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
@@ -153,12 +152,23 @@ export default function Page() {
     }
     return requests.filter((item) => isReceived(item));
   }, [requests, statusFilter]);
+  const storeStatusFilterOptions = ['all', 'pending', 'received'] as const;
+  const selectedStoreStatusIndex = Math.max(0, storeStatusFilterOptions.indexOf(statusFilter));
 
   return (
-    <ModuleShell
-      title="Store"
-      description="Sales Order Reqs sent by Accounts appear here for Store processing."
-    >
+    <div className="space-y-8">
+      <section className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Operations</p>
+            <h1 className="font-display text-5xl text-text">Store</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
+              Sales Order Reqs sent by Accounts appear here for Store processing.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <div className="space-y-4">
         <div className="rounded-2xl border border-border/60 bg-surface/80 p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Queue</p>
@@ -169,40 +179,49 @@ export default function Page() {
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-surface/80 p-4">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                statusFilter === 'all'
-                  ? 'bg-[#00B67A] text-white'
-                  : 'border border-border/60 bg-bg/70 text-muted'
-              }`}
+          <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+              style={{
+                width: `calc((100% - 0.5rem) / ${storeStatusFilterOptions.length})`,
+                transform: `translateX(calc(${selectedStoreStatusIndex} * 100%))`,
+              }}
+            />
+            <div
+              className="relative z-[1] grid gap-2"
+              style={{
+                gridTemplateColumns: `repeat(${storeStatusFilterOptions.length}, minmax(0, 1fr))`,
+              }}
             >
-              All ({totals.count})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('pending')}
-              className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                statusFilter === 'pending'
-                  ? 'bg-[#00B67A] text-white'
-                  : 'border border-border/60 bg-bg/70 text-muted'
-              }`}
-            >
-              Pending ({totals.pending})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('received')}
-              className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                statusFilter === 'received'
-                  ? 'bg-[#00B67A] text-white'
-                  : 'border border-border/60 bg-bg/70 text-muted'
-              }`}
-            >
-              Received ({totals.received})
-            </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  statusFilter === 'all' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                All ({totals.count})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('pending')}
+                className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  statusFilter === 'pending' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                Pending ({totals.pending})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('received')}
+                className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  statusFilter === 'received' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                Received ({totals.received})
+              </button>
+            </div>
           </div>
         </div>
 
@@ -291,6 +310,6 @@ export default function Page() {
           </div>
         ) : null}
       </div>
-    </ModuleShell>
+    </div>
   );
 }

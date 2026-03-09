@@ -16,12 +16,12 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Sales</p>
-            <h1 className="font-display text-3xl text-text">Revenue momentum</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Sales</p>
+            <h1 className="font-display text-5xl text-text">Revenue momentum</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
               Conversions flow in from CRM once a lead is approved. Track the revenue impact and
               quote throughput here.
             </p>
@@ -43,27 +43,27 @@ export default function Page() {
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
               Won customers
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.won}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.won}</p>
             <p className="mt-1 text-xs text-muted">Active in Sales</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
               Revenue pipeline
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">
+            <p className="mt-4 text-5xl font-semibold text-text">
               {formatCurrency(totals.revenue)}
             </p>
             <p className="mt-1 text-xs text-muted">Won opportunities</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
               Quote velocity
             </p>
-            <p className="mt-3 text-2xl font-semibold text-text">5.1 days</p>
+            <p className="mt-4 text-5xl font-semibold text-text">5.1 days</p>
             <p className="mt-1 text-xs text-muted">Average to issue quote</p>
           </div>
         </div>

@@ -5,7 +5,6 @@ import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { ModuleShell } from '@/components/ui/ModuleShell';
 import { SalesOrderRequest, SalesOrderRequestStatus } from '@/core/entities/salesOrderRequest';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { emitNotificationEventSafe } from '@/lib/notifications';
@@ -346,6 +345,16 @@ export default function Page() {
     }),
     [requests],
   );
+  const salesOrderStatusFilterOptions = [
+    'pending_approval',
+    'approved',
+    'rejected',
+    'all',
+  ] as const;
+  const selectedSalesOrderStatusIndex = Math.max(
+    0,
+    salesOrderStatusFilterOptions.indexOf(statusFilter),
+  );
 
   const applyStatusUpdate = async (
     request: SalesOrderRequest,
@@ -447,88 +456,104 @@ export default function Page() {
   };
 
   return (
-    <ModuleShell
-      title="Sales Order"
-      description="Review Sales Order Reqs and complete approval decisions."
-      actions={
-        <div className="relative grid grid-cols-2 rounded-2xl border border-border/60 bg-bg/70 p-1">
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
-            style={{
-              width: 'calc((100% - 0.5rem) / 2)',
-              transform: viewMode === 'card' ? 'translateX(calc(100% + 0.25rem))' : 'translateX(0)',
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={`relative z-[1] rounded-xl px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-              viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
-            }`}
-          >
-            List
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('card')}
-            className={`relative z-[1] rounded-xl px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-              viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
-            }`}
-          >
-            Cards
-          </button>
+    <div className="space-y-8">
+      <section className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
+              Sales Order
+            </p>
+            <h1 className="font-display text-5xl text-text">Sales Order requests</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
+              Review Sales Order Reqs and complete approval decisions.
+            </p>
+          </div>
+          <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+              style={{
+                width: 'calc((100% - 1rem) / 2)',
+                transform: viewMode === 'card' ? 'translateX(100%)' : 'translateX(0)',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+              }`}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('card')}
+              className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
+              }`}
+            >
+              Cards
+            </button>
+          </div>
         </div>
-      }
-    >
+      </section>
+
       <div className="space-y-4">
         <div className="rounded-2xl border border-border/60 bg-surface/80 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('pending_approval')}
-                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                  statusFilter === 'pending_approval'
-                    ? 'bg-accent/80 text-text'
-                    : 'border border-border/60 bg-bg/70 text-muted'
-                }`}
+            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+                style={{
+                  width: `calc((100% - 0.5rem) / ${salesOrderStatusFilterOptions.length})`,
+                  transform: `translateX(calc(${selectedSalesOrderStatusIndex} * 100%))`,
+                }}
+              />
+              <div
+                className="relative z-[1] grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${salesOrderStatusFilterOptions.length}, minmax(0, 1fr))`,
+                }}
               >
-                Pending ({totals.pending})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('approved')}
-                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                  statusFilter === 'approved'
-                    ? 'bg-accent/80 text-text'
-                    : 'border border-border/60 bg-bg/70 text-muted'
-                }`}
-              >
-                Approved ({totals.approved})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('rejected')}
-                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                  statusFilter === 'rejected'
-                    ? 'bg-accent/80 text-text'
-                    : 'border border-border/60 bg-bg/70 text-muted'
-                }`}
-              >
-                Rejected ({totals.rejected})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
-                  statusFilter === 'all'
-                    ? 'bg-accent/80 text-text'
-                    : 'border border-border/60 bg-bg/70 text-muted'
-                }`}
-              >
-                All ({requests.length})
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('pending_approval')}
+                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                    statusFilter === 'pending_approval' ? 'text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  Pending ({totals.pending})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('approved')}
+                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                    statusFilter === 'approved' ? 'text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  Approved ({totals.approved})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('rejected')}
+                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                    statusFilter === 'rejected' ? 'text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  Rejected ({totals.rejected})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                    statusFilter === 'all' ? 'text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  All ({requests.length})
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -898,6 +923,6 @@ export default function Page() {
           </div>
         ) : null}
       </div>
-    </ModuleShell>
+    </div>
   );
 }

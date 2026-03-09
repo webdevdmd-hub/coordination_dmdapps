@@ -259,6 +259,11 @@ export default function Page() {
 
   const customerViewOptions: Array<'list' | 'cards'> = ['list', 'cards'];
   const selectedCustomerViewIndex = Math.max(0, customerViewOptions.indexOf(viewMode));
+  const customerStatusFilterOptions = ['all', ...statusOptions.map((option) => option.value)] as const;
+  const selectedCustomerStatusIndex = Math.max(
+    0,
+    customerStatusFilterOptions.indexOf(statusFilter),
+  );
 
   const handleOpenCreate = () => {
     if (!user) {
@@ -415,14 +420,14 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
+      <section className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               Customers
             </p>
-            <h1 className="font-display text-6xl text-text">Post-win records</h1>
-            <p className="mt-2 max-w-2xl text-2xl text-muted">
+            <h1 className="font-display text-5xl text-text">Post-win records</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
               Won leads live here. Quotation requests and invoices attach to customer accounts.
             </p>
           </div>
@@ -446,13 +451,13 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
                 style={{
-                  width: 'calc((100% - 0.5rem) / 2)',
-                  transform: `translateX(calc(${selectedCustomerViewIndex} * (100% + 0.25rem)))`,
+                  width: 'calc((100% - 1rem) / 2)',
+                  transform: `translateX(calc(${selectedCustomerViewIndex} * 100%))`,
                 }}
               />
               {customerViewOptions.map((layout) => (
@@ -460,7 +465,7 @@ export default function Page() {
                   key={layout}
                   type="button"
                   onClick={() => setViewMode(layout)}
-                  className={`relative z-[1] rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                  className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
                     viewMode === layout ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
@@ -482,15 +487,15 @@ export default function Page() {
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Active</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.active}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.active}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.fresh}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.fresh}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Won</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.won}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.won}</p>
           </div>
         </div>
       </section>
@@ -520,23 +525,36 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70"
               />
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:p-1">
-              {(['all', ...statusOptions.map((option) => option.value)] as const).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setStatusFilter(status)}
-                    className={`w-full rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition sm:w-auto sm:rounded-full ${
-                      statusFilter === status
-                      ? 'bg-[#00B67A] text-white'
-                      : 'text-muted hover:text-text'
+            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 sm:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+                style={{
+                  width: `calc((100% - 0.5rem) / ${customerStatusFilterOptions.length})`,
+                  transform: `translateX(calc(${selectedCustomerStatusIndex} * 100%))`,
+                }}
+              />
+              <div
+                className="relative z-[1] grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${customerStatusFilterOptions.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {customerStatusFilterOptions.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
                     }`}
-                >
-                  {status === 'all'
-                    ? 'All'
-                    : statusOptions.find((option) => option.value === status)?.label}
-                </button>
-              ))}
+                  >
+                    {status === 'all'
+                      ? 'All'
+                      : statusOptions.find((option) => option.value === status)?.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <button

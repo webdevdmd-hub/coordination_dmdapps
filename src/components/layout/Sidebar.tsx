@@ -62,7 +62,7 @@ export function Sidebar({ activeItem, permissions = [], open, onClose }: Sidebar
       />
       <aside
         id="primary-navigation"
-        className={`fixed left-0 top-0 z-40 flex h-screen w-80 flex-col border-r border-border/60 bg-surface/90 px-6 py-6 shadow-2xl backdrop-blur transition-transform ${
+        className={`fixed inset-y-0 left-0 z-40 flex h-dvh min-h-screen w-80 flex-col border-r border-border/60 bg-surface/90 px-6 py-6 shadow-2xl backdrop-blur transition-transform ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

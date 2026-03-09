@@ -235,20 +235,20 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
               CRM Reports
             </p>
-            <h1 className="font-display text-3xl text-text">Revenue intelligence</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted">
+            <h1 className="font-display text-5xl text-text">Revenue intelligence</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
               Track conversion, pipeline, and customer momentum across every assigned lead and
               scheduled task.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
               <label htmlFor="reports-owner" className="sr-only">
                 Owner
               </label>
@@ -258,7 +258,7 @@ export default function Page() {
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
                 disabled={!isAdmin}
-                className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -267,7 +267,7 @@ export default function Page() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
               <label htmlFor="reports-month" className="sr-only">
                 Month
               </label>
@@ -277,7 +277,7 @@ export default function Page() {
                 name="reports-month"
                 value={monthFilter}
                 onChange={(event) => setMonthFilter(event.target.value)}
-                className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
+                className="bg-transparent text-sm font-semibold text-text outline-none"
               />
             </div>
           </div>
@@ -293,40 +293,40 @@ export default function Page() {
           </div>
         ) : (
           <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+            <div className="rounded-3xl border border-border bg-surface p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                 Total leads
               </p>
-              <p className="mt-3 text-2xl font-semibold text-text">{metrics.totalLeads}</p>
+              <p className="mt-4 text-5xl font-semibold text-text">{metrics.totalLeads}</p>
               <p className="mt-1 text-xs text-muted">{metrics.activeLeads} active</p>
             </div>
-            <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+            <div className="rounded-3xl border border-border bg-surface p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                 Conversion rate
               </p>
-              <p className="mt-3 text-2xl font-semibold text-text">
+              <p className="mt-4 text-5xl font-semibold text-text">
                 {metrics.conversionRate.toFixed(1)}%
               </p>
               <p className="mt-1 text-xs text-muted">
                 {metrics.wonLeads} won / {metrics.lostLeads} lost
               </p>
             </div>
-            <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+            <div className="rounded-3xl border border-border bg-surface p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                 Revenue won
               </p>
-              <p className="mt-3 text-2xl font-semibold text-text">
+              <p className="mt-4 text-5xl font-semibold text-text">
                 {formatCurrency(metrics.revenueWon)}
               </p>
               <p className="mt-1 text-xs text-muted">
                 Pipeline {formatCurrency(metrics.pipelineValue)}
               </p>
             </div>
-            <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">
+            <div className="rounded-3xl border border-border bg-surface p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
                 Customers
               </p>
-              <p className="mt-3 text-2xl font-semibold text-text">{metrics.customers}</p>
+              <p className="mt-4 text-5xl font-semibold text-text">{metrics.customers}</p>
               <p className="mt-1 text-xs text-muted">{metrics.activeCustomers} active</p>
             </div>
           </div>

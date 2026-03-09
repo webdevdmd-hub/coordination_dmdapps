@@ -75,15 +75,20 @@ export default function Page() {
       return matchesStatus && matchesSearch;
     });
   }, [statusFilter, search]);
+  const invoiceStatusFilterOptions = ['all', 'draft', 'sent', 'paid', 'overdue'] as const;
+  const selectedInvoiceStatusIndex = Math.max(
+    0,
+    invoiceStatusFilterOptions.indexOf(statusFilter),
+  );
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border/60 bg-surface/80 p-6 shadow-soft">
+      <section className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Invoices</p>
-            <h1 className="font-display text-3xl text-text">Billing pipeline</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Invoices</p>
+            <h1 className="font-display text-5xl text-text">Billing pipeline</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
               Approved quotations move into invoicing. Track payments and overdue activity here.
             </p>
           </div>
@@ -104,21 +109,21 @@ export default function Page() {
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Drafts</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.draft}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Drafts</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.draft}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Sent</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.sent}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Sent</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.sent}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Paid</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.paid}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Paid</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.paid}</p>
           </div>
-          <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted">Overdue</p>
-            <p className="mt-3 text-2xl font-semibold text-text">{totals.overdue}</p>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Overdue</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.overdue}</p>
           </div>
         </div>
       </section>
@@ -136,21 +141,34 @@ export default function Page() {
                 className="w-48 bg-transparent text-sm text-text outline-none placeholder:text-muted/70"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-bg/70 p-1">
-              {(['all', 'draft', 'sent', 'paid', 'overdue'] as const).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setStatusFilter(status)}
-                  className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition ${
-                    statusFilter === status
-                      ? 'bg-accent/80 text-text'
-                      : 'text-muted hover:text-text'
-                  }`}
-                >
-                  {status === 'all' ? 'All' : status}
-                </button>
-              ))}
+            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+                style={{
+                  width: `calc((100% - 0.5rem) / ${invoiceStatusFilterOptions.length})`,
+                  transform: `translateX(calc(${selectedInvoiceStatusIndex} * 100%))`,
+                }}
+              />
+              <div
+                className="relative z-[1] grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${invoiceStatusFilterOptions.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {invoiceStatusFilterOptions.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {status === 'all' ? 'All' : status}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <button

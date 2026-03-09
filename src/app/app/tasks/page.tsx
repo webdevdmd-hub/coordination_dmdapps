@@ -53,6 +53,7 @@ const taskViewOptions: Array<{ value: TaskViewMode; label: string }> = [
   { value: 'cards', label: 'Cards' },
   { value: 'kanban', label: 'Kanban' },
 ];
+const taskStatusFilterOptions = ['all', 'todo', 'in-progress', 'review', 'done'] as const;
 
 const statusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: 'todo', label: 'To Do' },
@@ -133,6 +134,7 @@ export default function Page() {
   const [viewMode, setViewMode] = useState<TaskViewMode>('list');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
+  const [isOwnerMenuOpen, setIsOwnerMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -535,9 +537,17 @@ export default function Page() {
     [filteredTasks],
   );
 
-  const selectedViewIndex = Math.max(
-    0,
-    taskViewOptions.findIndex((option) => option.value === viewMode),
+  const selectedOwnerLabel = useMemo(
+    () => ownerOptions.find((option) => option.id === ownerFilter)?.name ?? 'All users',
+    [ownerOptions, ownerFilter],
+  );
+  const selectedViewIndex = useMemo(
+    () => Math.max(0, taskViewOptions.findIndex((option) => option.value === viewMode)),
+    [viewMode],
+  );
+  const selectedStatusIndex = useMemo(
+    () => Math.max(0, taskStatusFilterOptions.indexOf(statusFilter)),
+    [statusFilter],
   );
 
   const renderBoardTaskCard = (
@@ -1307,42 +1317,88 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="p-2 sm:p-4">
+      <section className="space-y-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Tasks</p>
-            <h1 className="mt-2 font-display text-5xl font-semibold text-text">Team task board</h1>
+            <h1 className="mt-2 font-display text-5xl text-text">Team task board</h1>
             <p className="mt-3 max-w-2xl text-lg text-muted">
               Track tasks across modules with role-based shared visibility and due-date focus.
             </p>
           </div>
-          <div className="flex w-full flex-wrap items-center justify-end gap-3 lg:w-auto">
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-xs text-muted">
-              <label htmlFor="task-owner" className="sr-only">
-                Owner
-              </label>
-              <select
-                id="task-owner"
-                name="task-owner"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
+          <div className="flex flex-wrap items-center gap-3">
+            <div
+              className="relative"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setIsOwnerMenuOpen(false);
+                }
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setIsOwnerMenuOpen((prev) => !prev)}
                 disabled={!canViewAllTasks && !canViewDepartmentTasks}
-                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/80"
+                className="flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80 disabled:cursor-not-allowed disabled:text-muted/80"
+                aria-haspopup="listbox"
+                aria-expanded={isOwnerMenuOpen}
               >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
+                <span className="truncate">{selectedOwnerLabel}</span>
+                <svg
+                  viewBox="0 0 20 20"
+                  className={`h-4 w-4 shrink-0 text-muted transition ${isOwnerMenuOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m5 7.5 5 5 5-5" />
+                </svg>
+              </button>
+              {isOwnerMenuOpen ? (
+                <div className="absolute left-0 top-[calc(100%+0.45rem)] z-30 w-full overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_14px_32px_rgba(15,23,42,0.2)]">
+                  <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Task owner filter">
+                    {ownerOptions.map((option) => {
+                      const isActive = ownerFilter === option.id;
+                      return (
+                        <li key={option.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOwnerFilter(option.id);
+                              setIsOwnerMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
+                              isActive
+                                ? 'bg-[#00B67A]/12 text-[#00B67A]'
+                                : 'text-text hover:bg-[var(--surface-soft)]'
+                            }`}
+                            role="option"
+                            aria-selected={isActive}
+                          >
+                            <span className="truncate">{option.name}</span>
+                            {isActive ? (
+                              <span className="text-xs font-semibold uppercase tracking-[0.14em]">
+                                Selected
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
-            <div className="relative grid grid-cols-3 rounded-2xl border border-border bg-surface p-1">
+            <div className="relative grid grid-cols-3 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 top-1 rounded-xl bg-text shadow-[0_6px_16px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
                 style={{
-                  width: 'calc((100% - 0.5rem) / 3)',
-                  transform: `translateX(calc(${selectedViewIndex} * (100% + 0.25rem)))`,
+                  width: 'calc((100% - 1rem) / 3)',
+                  transform: `translateX(calc(${selectedViewIndex} * 100%))`,
                 }}
               />
               {taskViewOptions.map((option) => (
@@ -1351,7 +1407,9 @@ export default function Page() {
                   type="button"
                   onClick={() => setViewMode(option.value)}
                   className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-                    viewMode === option.value ? 'text-bg' : 'text-muted'
+                    viewMode === option.value
+                      ? 'text-white'
+                      : 'text-muted hover:text-text'
                   }`}
                 >
                   {option.label}
@@ -1371,23 +1429,23 @@ export default function Page() {
 
         <div className="mt-8 grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">To do</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.todo}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">To do</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.todo}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">In progress</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.inProgress}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">In progress</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.inProgress}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Review</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.review}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Review</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.review}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted/80">Completed</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.done}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Completed</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.done}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
         </div>
@@ -1405,23 +1463,36 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/80"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
-              {(['all', 'todo', 'in-progress', 'review', 'done'] as const).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setStatusFilter(status)}
-                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
-                    statusFilter === status
-                      ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
-                      : 'text-muted hover:text-text'
-                  }`}
-                >
-                  {status === 'all'
-                    ? 'All'
-                    : status.replace('-', ' ').replace(/\b\w/g, (value) => value.toUpperCase())}
-                </button>
-              ))}
+            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+                style={{
+                  width: `calc((100% - 0.5rem) / ${taskStatusFilterOptions.length})`,
+                  transform: `translateX(calc(${selectedStatusIndex} * 100%))`,
+                }}
+              />
+              <div
+                className="relative z-[1] grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${taskStatusFilterOptions.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {taskStatusFilterOptions.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {status === 'all'
+                      ? 'All'
+                      : status.replace('-', ' ').replace(/\b\w/g, (value) => value.toUpperCase())}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

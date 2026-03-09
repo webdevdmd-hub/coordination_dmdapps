@@ -1,7 +1,17 @@
-import { ModuleShell } from '@/components/ui/ModuleShell';
-
 export default function Page() {
   return (
-    <ModuleShell title="Compliance" description="Track audits, policies, and regulatory tasks." />
+    <div className="space-y-8">
+      <section className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Operations</p>
+            <h1 className="font-display text-5xl text-text">Compliance</h1>
+            <p className="mt-3 max-w-2xl text-lg text-muted">
+              Track audits, policies, and regulatory tasks.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

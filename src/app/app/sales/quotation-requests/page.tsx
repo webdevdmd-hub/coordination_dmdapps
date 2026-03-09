@@ -103,6 +103,7 @@ export default function Page() {
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
   const [allUsers, setAllUsers] = useState<Array<{ id: string; departmentId?: string; active: boolean }>>([]);
   const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -308,6 +309,20 @@ export default function Page() {
       completed: requests.filter((request) => request.status === 'completed').length,
     };
   }, [requests]);
+
+  const selectedViewIndex = viewMode === 'cards' ? 1 : 0;
+  const requestStatusFilterOptions = [
+    'all',
+    'new',
+    'review',
+    'approved',
+    'rejected',
+    'completed',
+  ] as const;
+  const selectedRequestStatusIndex = Math.max(
+    0,
+    requestStatusFilterOptions.indexOf(statusFilter),
+  );
 
   const activeRequest = useMemo(
     () => requests.find((request) => request.id === activeRequestId) ?? null,
@@ -701,19 +716,47 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft md:p-8">
+      <section className="space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               Quotation Requests
             </p>
-            <h1 className="font-display text-6xl text-text">Request control for leads</h1>
-            <p className="mt-2 max-w-3xl text-2xl text-muted">
+            <h1 className="font-display text-5xl text-text">Request control for leads</h1>
+            <p className="mt-3 max-w-3xl text-lg text-muted">
               Track every quotation request, delegate technical tasks, and keep the lead timeline in
               sync.
             </p>
           </div>
-          <div className="flex w-full items-center gap-2 md:w-auto">
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 1rem) / 2)',
+                  transform: `translateX(calc(${selectedViewIndex} * 100%))`,
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                  viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                  viewMode === 'cards' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                Cards
+              </button>
+            </div>
             <button
               type="button"
               disabled={!canView}
@@ -727,27 +770,27 @@ export default function Page() {
         <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-5">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.newCount}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.newCount}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
               In review
             </p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.review}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.review}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Approved</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.approved}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.approved}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Rejected</p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.rejected}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.rejected}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
               Completed
             </p>
-            <p className="mt-4 text-6xl font-semibold text-text">{totals.completed}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.completed}</p>
           </div>
         </div>
       </section>
@@ -777,21 +820,34 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70 md:w-48"
               />
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-border bg-[var(--surface-muted)] p-2 md:w-auto md:flex md:flex-wrap md:items-center md:rounded-full md:p-1">
-              {(['all', 'new', 'review', 'approved', 'rejected', 'completed'] as const).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setStatusFilter(status)}
-                  className={`w-full shrink-0 whitespace-nowrap rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] transition md:w-auto md:rounded-full ${
-                    statusFilter === status
-                      ? 'bg-[#00B67A] text-white'
-                      : 'text-muted hover:text-text'
-                  }`}
-                >
-                  {status === 'all' ? 'All' : status}
-                </button>
-              ))}
+            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+                style={{
+                  width: `calc((100% - 0.5rem) / ${requestStatusFilterOptions.length})`,
+                  transform: `translateX(calc(${selectedRequestStatusIndex} * 100%))`,
+                }}
+              />
+              <div
+                className="relative z-[1] grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${requestStatusFilterOptions.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {requestStatusFilterOptions.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {status === 'all' ? 'All' : status}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted/80">
@@ -799,7 +855,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className={viewMode === 'cards' ? 'mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3' : 'mt-6 space-y-4'}>
           {!canView ? (
             <div className="col-span-full rounded-2xl border border-border bg-[var(--surface-soft)] p-4 text-sm text-muted">
               You do not have permission to view quotation requests.
@@ -823,7 +879,9 @@ export default function Page() {
                   key={request.id}
                   type="button"
                   onClick={() => setActiveRequestId(request.id)}
-                  className="rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-[#00B67A]/40"
+                  className={`rounded-3xl border border-border bg-surface p-4 text-left shadow-soft transition hover:-translate-y-[1px] hover:border-[#00B67A]/40 ${
+                    viewMode === 'list' ? 'w-full' : ''
+                  }`}
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
