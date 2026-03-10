@@ -12,6 +12,10 @@ type Role = {
   name: string;
   description?: string;
   permissions: PermissionKey[];
+  departmentScope?: {
+    viewUsersDepartmentIds?: string[];
+    assignTasksDepartmentIds?: string[];
+  };
 };
 
 type NewRole = {
@@ -24,6 +28,11 @@ type EditRole = {
   description: string;
 };
 
+type DepartmentScopeDraft = {
+  viewUsersDepartmentIds: string[];
+  assignTasksDepartmentIds: string[];
+};
+
 const emptyNewRole: NewRole = {
   name: '',
   description: '',
@@ -34,11 +43,33 @@ const emptyEditRole: EditRole = {
   description: '',
 };
 
+const emptyDepartmentScopeDraft: DepartmentScopeDraft = {
+  viewUsersDepartmentIds: [],
+  assignTasksDepartmentIds: [],
+};
+
 const togglePermission = (list: PermissionKey[], value: PermissionKey) => {
   if (list.includes(value)) {
     return list.filter((item) => item !== value);
   }
   return [...list, value];
+};
+
+const permissionLabels: Partial<Record<PermissionKey, string>> = {
+  department_view_users_other_departments: 'Can View Users (Role-wise)',
+  department_assign_tasks_other_departments: 'Can Assign Tasks (Role-wise)',
+  task_assign: 'Can Assign Tasks (Own Department)',
+};
+
+const formatPermissionLabel = (permission: PermissionKey) => {
+  const direct = permissionLabels[permission];
+  if (direct) {
+    return direct;
+  }
+  return permission
+    .split('_')
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
 };
 
 const permissionGroups: Array<
@@ -94,6 +125,13 @@ const permissionGroups: Array<
   {
     title: 'Tasks',
     keys: ['task_create', 'task_view', 'task_edit', 'task_delete', 'task_assign'],
+  },
+  {
+    title: 'Role Permissions',
+    keys: [
+      'department_view_users_other_departments',
+      'department_assign_tasks_other_departments',
+    ],
   },
   {
     title: 'Sales',
@@ -199,6 +237,10 @@ export default function Page() {
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [permissionDraft, setPermissionDraft] = useState<PermissionKey[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
+  const [departmentScopeDraft, setDepartmentScopeDraft] = useState<DepartmentScopeDraft>(
+    emptyDepartmentScopeDraft,
+  );
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -221,12 +263,62 @@ export default function Page() {
     refreshRoles();
   }, [refreshRoles]);
 
+  useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        const response = await fetch('/api/admin/roles', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('Unable to load roles.');
+        }
+        const payload = (await response.json()) as {
+          roles?: Array<{ key?: unknown; name?: unknown }>;
+        };
+        const options = Array.from(
+          new Set(
+            (payload.roles ?? [])
+              .map((item) => (typeof item.key === 'string' ? item.key.trim() : ''))
+              .filter((item) => item.length > 0),
+          ),
+        ).sort((a, b) => a.localeCompare(b));
+        setDepartmentOptions(options);
+      } catch {
+        setDepartmentOptions([]);
+      }
+    };
+    loadDepartments();
+  }, []);
+
   const selectedRole = useMemo(
     () => roles.find((role) => role.id === selectedRoleId) ?? null,
     [roles, selectedRoleId],
   );
 
   const isAdminRole = selectedRole?.key === 'admin';
+  const isDepartmentViewEnabled = permissionDraft.includes(
+    'department_view_users_other_departments',
+  );
+  const isDepartmentAssignEnabled = permissionDraft.includes(
+    'department_assign_tasks_other_departments',
+  );
+
+  const toggleDepartmentScope = (
+    key: keyof DepartmentScopeDraft,
+    departmentId: string,
+    enabled: boolean,
+  ) => {
+    setDepartmentScopeDraft((prev) => {
+      const current = new Set(prev[key]);
+      if (enabled) {
+        current.add(departmentId);
+      } else {
+        current.delete(departmentId);
+      }
+      return {
+        ...prev,
+        [key]: Array.from(current),
+      };
+    });
+  };
 
   useEffect(() => {
     if (roles.length === 0) {
@@ -240,13 +332,19 @@ export default function Page() {
   useEffect(() => {
     if (!selectedRole) {
       setPermissionDraft([]);
+      setDepartmentScopeDraft(emptyDepartmentScopeDraft);
       return;
     }
     if (selectedRole.key === 'admin') {
       setPermissionDraft(ALL_PERMISSIONS);
+      setDepartmentScopeDraft(emptyDepartmentScopeDraft);
       return;
     }
     setPermissionDraft(selectedRole.permissions ?? []);
+    setDepartmentScopeDraft({
+      viewUsersDepartmentIds: selectedRole.departmentScope?.viewUsersDepartmentIds ?? [],
+      assignTasksDepartmentIds: selectedRole.departmentScope?.assignTasksDepartmentIds ?? [],
+    });
   }, [selectedRole]);
 
   const handleCreateRole = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -297,6 +395,14 @@ export default function Page() {
         body: JSON.stringify({
           id: selectedRole.id,
           permissions: permissionDraft,
+          departmentScope: {
+            viewUsersDepartmentIds: isDepartmentViewEnabled
+              ? departmentScopeDraft.viewUsersDepartmentIds
+              : [],
+            assignTasksDepartmentIds: isDepartmentAssignEnabled
+              ? departmentScopeDraft.assignTasksDepartmentIds
+              : [],
+          },
         }),
       });
       if (!response.ok) {
@@ -364,6 +470,98 @@ export default function Page() {
       setIsUpdatingRole(false);
     }
   };
+
+  const roleWiseAccessPanel = (
+    <div className="rounded-2xl border border-border/60 bg-bg/50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+        Role-Wise Access
+      </p>
+      {!isDepartmentViewEnabled && !isDepartmentAssignEnabled ? (
+        <p className="mt-3 text-sm text-muted">
+          Enable `Can View Users (Role-wise)` or `Can Assign Tasks (Role-wise)` above to configure role selection.
+        </p>
+      ) : departmentOptions.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">No roles found to scope.</p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {isDepartmentViewEnabled ? (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                Can View Users (Role-wise)
+              </p>
+              <div className="mt-2 grid gap-2 md:grid-cols-3">
+                {departmentOptions.map((departmentId) => {
+                  const roleLabel =
+                    roles.find((role) => role.key === departmentId)?.name ?? departmentId;
+                  return (
+                    <label
+                      key={`view-${departmentId}`}
+                      className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted"
+                    >
+                      <span className="font-semibold uppercase tracking-[0.18em]">
+                        {roleLabel}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={departmentScopeDraft.viewUsersDepartmentIds.includes(departmentId)}
+                        disabled={isAdminRole}
+                        onChange={(event) =>
+                          toggleDepartmentScope(
+                            'viewUsersDepartmentIds',
+                            departmentId,
+                            event.target.checked,
+                          )
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          {isDepartmentAssignEnabled ? (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                Can Assign Tasks (Role-wise)
+              </p>
+              <div className="mt-2 grid gap-2 md:grid-cols-3">
+                {departmentOptions.map((departmentId) => {
+                  const roleLabel =
+                    roles.find((role) => role.key === departmentId)?.name ?? departmentId;
+                  return (
+                    <label
+                      key={`assign-${departmentId}`}
+                      className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted"
+                    >
+                      <span className="font-semibold uppercase tracking-[0.18em]">
+                        {roleLabel}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={departmentScopeDraft.assignTasksDepartmentIds.includes(
+                          departmentId,
+                        )}
+                        disabled={isAdminRole}
+                        onChange={(event) =>
+                          toggleDepartmentScope(
+                            'assignTasksDepartmentIds',
+                            departmentId,
+                            event.target.checked,
+                          )
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <ModuleShell
@@ -459,7 +657,7 @@ export default function Page() {
                                         className="grid grid-cols-[1fr_auto] items-center rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted"
                                       >
                                         <span className="font-semibold uppercase tracking-[0.2em]">
-                                          {permission}
+                                          {formatPermissionLabel(permission)}
                                         </span>
                                         <input
                                           type="checkbox"
@@ -487,7 +685,7 @@ export default function Page() {
                                 className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-xs text-muted"
                               >
                                 <span className="font-semibold uppercase tracking-[0.2em]">
-                                  {permission}
+                                  {formatPermissionLabel(permission)}
                                 </span>
                                 <input
                                   type="checkbox"
@@ -502,6 +700,7 @@ export default function Page() {
                             ))}
                           </div>
                         )}
+                        {group.title === 'Role Permissions' ? roleWiseAccessPanel : null}
                       </div>
                     ))}
                   </div>

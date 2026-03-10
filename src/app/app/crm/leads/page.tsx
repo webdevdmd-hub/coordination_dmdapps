@@ -17,7 +17,11 @@ import { createLead } from '@/core/use-cases/createLead';
 import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
-import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
+import {
+  filterUsersByDepartmentScope,
+  getDepartmentUserIds,
+  hasDepartmentScope,
+} from '@/lib/departmentScope';
 
 const leadStatusClass: Record<LeadStatus, string> = {
   new: 'bg-[var(--surface-muted)] text-muted border border-border',
@@ -71,19 +75,33 @@ export default function Page() {
   const canViewAllLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view_all']);
   const canViewDepartmentLeads =
     !!user && hasDepartmentScope(user.permissions, 'lead_view_department');
+  const canViewOtherDepartmentUsers =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
+
+  const visibleUsers = useMemo(
+    () =>
+      filterUsersByDepartmentScope(
+        user,
+        users,
+        canViewOtherDepartmentUsers,
+        user?.departmentScope?.viewUsersDepartmentIds,
+      ),
+    [user, users, canViewOtherDepartmentUsers],
+  );
 
   const ownerOptions = useMemo(() => {
     const map = new Map<string, string>();
     if (user) {
       map.set(user.id, user.fullName);
     }
-    users.forEach((profile) => map.set(profile.id, profile.fullName));
+    visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     if (!canViewAllLeads && !canViewDepartmentLeads) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [user, users, canViewAllLeads, canViewDepartmentLeads]);
+  }, [user, visibleUsers, canViewAllLeads, canViewDepartmentLeads]);
 
   const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 

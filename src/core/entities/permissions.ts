@@ -31,6 +31,8 @@ export type PermissionKey =
   | 'task_edit'
   | 'task_delete'
   | 'task_assign'
+  | 'department_view_users_other_departments'
+  | 'department_assign_tasks_other_departments'
   | 'customer_create'
   | 'customer_view'
   | 'customer_view_all'
@@ -108,6 +110,8 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'task_edit',
   'task_delete',
   'task_assign',
+  'department_view_users_other_departments',
+  'department_assign_tasks_other_departments',
   'customer_create',
   'customer_view',
   'customer_view_all',

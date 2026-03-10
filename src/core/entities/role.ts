@@ -6,5 +6,9 @@ export type Role = {
   name: string;
   description?: string;
   permissions: PermissionKey[];
+  departmentScope?: {
+    viewUsersDepartmentIds?: string[];
+    assignTasksDepartmentIds?: string[];
+  };
   createdAt: string;
 };

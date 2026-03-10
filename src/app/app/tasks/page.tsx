@@ -17,7 +17,11 @@ import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
-import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
+import {
+  filterUsersByDepartmentScope,
+  getDepartmentUserIds,
+  hasDepartmentScope,
+} from '@/lib/departmentScope';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import {
   areSameRecipientSets,
@@ -157,6 +161,12 @@ export default function Page() {
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'task_delete']);
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
+  const canViewOtherDepartmentUsers =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
+  const canAssignOtherDepartmentTasks =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canEditAssignment = canAssign && (!selectedTask || isAdmin);
 
   const emptyTask = (assignedTo: string): TaskFormState => ({
@@ -254,24 +264,39 @@ export default function Page() {
     return (task.assignedUsers ?? []).includes(user.id);
   };
 
+  const visibleUsers = useMemo(
+    () =>
+      filterUsersByDepartmentScope(
+        user,
+        users,
+        canViewOtherDepartmentUsers,
+        user?.departmentScope?.viewUsersDepartmentIds,
+      ),
+    [user, users, canViewOtherDepartmentUsers],
+  );
+
   const ownerOptions = useMemo(() => {
     const map = new Map<string, string>();
     if (user) {
       map.set(user.id, user.fullName);
     }
-    users.forEach((profile) => map.set(profile.id, profile.fullName));
+    visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     if (!canViewAllTasks && !canViewDepartmentTasks) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllTasks, canViewDepartmentTasks, user, users]);
+  }, [canViewAllTasks, canViewDepartmentTasks, user, visibleUsers]);
 
   const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const assignableUsers = useMemo(() => {
-    return filterAssignableUsers(users, roles, 'task_assign');
-  }, [users, roles]);
+    return filterAssignableUsers(users, roles, 'task_assign', {
+      currentUser: user,
+      allowOtherDepartments: canAssignOtherDepartmentTasks,
+      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+    });
+  }, [users, roles, user, canAssignOtherDepartmentTasks]);
 
   const ownerNameMap = useMemo(() => {
     const map = new Map<string, string>();

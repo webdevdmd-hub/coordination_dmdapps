@@ -29,7 +29,11 @@ import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
-import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
+import {
+  filterUsersByDepartmentScope,
+  getDepartmentUserIds,
+  hasDepartmentScope,
+} from '@/lib/departmentScope';
 import {
   areSameRecipientSets,
   buildRecipientList,
@@ -275,6 +279,12 @@ export default function Page() {
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEditTasks = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canAssignTasks = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
+  const canViewOtherDepartmentUsers =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
+  const canAssignOtherDepartmentTasks =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canReassignProjectTasks = isAdmin;
   const canRequestSalesOrder = !!user &&
     hasPermission(user.permissions, [
@@ -333,18 +343,29 @@ export default function Page() {
     return map;
   }, [user, users]);
 
+  const visibleUsers = useMemo(
+    () =>
+      filterUsersByDepartmentScope(
+        user,
+        users,
+        canViewOtherDepartmentUsers,
+        user?.departmentScope?.viewUsersDepartmentIds,
+      ),
+    [user, users, canViewOtherDepartmentUsers],
+  );
+
   const ownerOptions = useMemo(() => {
     const map = new Map<string, string>();
     if (user) {
       map.set(user.id, user.fullName);
     }
-    users.forEach((profile) => map.set(profile.id, profile.fullName));
+    visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     if (!canViewAllProjects && !canViewDepartmentProjects) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllProjects, canViewDepartmentProjects, user, users]);
+  }, [canViewAllProjects, canViewDepartmentProjects, user, visibleUsers]);
 
   const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
@@ -352,11 +373,15 @@ export default function Page() {
     if (!canAssignTasks) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
-    return filterAssignableUsers(users, roles, 'task_assign').map((entry) => ({
+    return filterAssignableUsers(users, roles, 'task_assign', {
+      currentUser: user,
+      allowOtherDepartments: canAssignOtherDepartmentTasks,
+      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+    }).map((entry) => ({
       id: entry.id,
       name: entry.fullName,
     }));
-  }, [user, users, roles, canAssignTasks]);
+  }, [user, users, roles, canAssignTasks, canAssignOtherDepartmentTasks]);
 
   const timelineItems = useMemo(
     () => [...timelineBaseItems, ...timelineExtraItems],

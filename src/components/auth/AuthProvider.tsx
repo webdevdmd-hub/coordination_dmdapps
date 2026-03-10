@@ -17,6 +17,10 @@ type UserProfile = {
   phone?: string;
   avatarUrl?: string;
   departmentId?: string;
+  departmentScope?: {
+    viewUsersDepartmentIds?: string[];
+    assignTasksDepartmentIds?: string[];
+  };
   role: UserRole;
   permissions: PermissionKey[];
   active: boolean;
@@ -64,32 +68,80 @@ const toPermissions = (value: unknown): PermissionKey[] => {
   }, []);
 };
 
-const getRolePermissions = async (roleKey: string): Promise<PermissionKey[]> => {
+const toDepartmentIds = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+};
+
+const getRoleAccess = async (
+  roleKey: string,
+): Promise<{
+  permissions: PermissionKey[];
+  departmentScope?: {
+    viewUsersDepartmentIds?: string[];
+    assignTasksDepartmentIds?: string[];
+  };
+}> => {
   if (!roleKey) {
-    return [];
+    return { permissions: [] };
   }
   if (roleKey === 'admin') {
-    return ALL_PERMISSIONS;
+    return { permissions: ALL_PERMISSIONS };
   }
   const db = getFirebaseDb();
   const snapshot = await getDocs(query(collection(db, 'roles'), where('key', '==', roleKey)));
   if (!snapshot.empty) {
-    const data = snapshot.docs[0]?.data() as { permissions?: PermissionKey[]; key?: string };
+    const data = snapshot.docs[0]?.data() as {
+      permissions?: PermissionKey[];
+      key?: string;
+      departmentScope?: {
+        viewUsersDepartmentIds?: unknown;
+        assignTasksDepartmentIds?: unknown;
+      };
+    };
     if (data.key === 'admin') {
-      return ALL_PERMISSIONS;
+      return { permissions: ALL_PERMISSIONS };
     }
-    return toPermissions(data.permissions);
+    return {
+      permissions: toPermissions(data.permissions),
+      departmentScope: {
+        viewUsersDepartmentIds: toDepartmentIds(data.departmentScope?.viewUsersDepartmentIds),
+        assignTasksDepartmentIds: toDepartmentIds(data.departmentScope?.assignTasksDepartmentIds),
+      },
+    };
   }
 
   const docSnap = await getDoc(doc(db, 'roles', roleKey));
   if (!docSnap.exists()) {
-    return [];
+    return { permissions: [] };
   }
-  const data = docSnap.data() as { permissions?: PermissionKey[]; key?: string };
+  const data = docSnap.data() as {
+    permissions?: PermissionKey[];
+    key?: string;
+    departmentScope?: {
+      viewUsersDepartmentIds?: unknown;
+      assignTasksDepartmentIds?: unknown;
+    };
+  };
   if (data.key === 'admin') {
-    return ALL_PERMISSIONS;
+    return { permissions: ALL_PERMISSIONS };
   }
-  return toPermissions(data.permissions);
+  return {
+    permissions: toPermissions(data.permissions),
+    departmentScope: {
+      viewUsersDepartmentIds: toDepartmentIds(data.departmentScope?.viewUsersDepartmentIds),
+      assignTasksDepartmentIds: toDepartmentIds(data.departmentScope?.assignTasksDepartmentIds),
+    },
+  };
 };
 
 const toUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
@@ -102,7 +154,8 @@ const toUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile | 
   const data = snap.data();
   const rawRole = typeof data.role === 'string' ? data.role : 'agent';
   const roleKey = rawRole.trim().toLowerCase();
-  const rolePermissions = await getRolePermissions(roleKey);
+  const roleAccess = await getRoleAccess(roleKey);
+  const rolePermissions = roleAccess.permissions;
   const isAdmin = roleKey === 'admin' || rolePermissions.includes('admin');
   const role = (isAdmin ? 'admin' : rawRole) as UserRole;
   const fullName = typeof data.fullName === 'string' ? data.fullName : 'User';
@@ -110,15 +163,14 @@ const toUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile | 
   const phone = typeof data.phone === 'string' ? data.phone : '';
   const avatarUrl = typeof data.avatarUrl === 'string' ? data.avatarUrl : '';
   const active = Boolean(data.active ?? true);
-  const departmentId = typeof data.departmentId === 'string' ? data.departmentId : '';
   return {
     id: snap.id,
     fullName,
     email,
     phone,
     avatarUrl,
-    departmentId,
     role,
+    departmentScope: isAdmin ? undefined : roleAccess.departmentScope,
     permissions: isAdmin ? ALL_PERMISSIONS : Array.from(new Set(rolePermissions)),
     active,
   };

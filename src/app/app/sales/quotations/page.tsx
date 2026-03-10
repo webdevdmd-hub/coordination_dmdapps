@@ -16,7 +16,11 @@ import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
-import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
+import {
+  filterUsersByDepartmentScope,
+  getDepartmentUserIds,
+  hasDepartmentScope,
+} from '@/lib/departmentScope';
 
 const statusOptions: Array<{ value: QuotationStatus; label: string }> = [
   { value: 'draft', label: 'Draft' },
@@ -113,6 +117,9 @@ export default function Page() {
     !!user && hasPermission(user.permissions, ['admin', 'quotation_view_all']);
   const canViewDepartmentQuotations =
     !!user && hasDepartmentScope(user.permissions, 'quotation_view_department');
+  const canViewOtherDepartmentUsers =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'quotation_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'quotation_delete']);
@@ -176,18 +183,29 @@ export default function Page() {
     return map;
   }, [user, users]);
 
+  const visibleUsers = useMemo(
+    () =>
+      filterUsersByDepartmentScope(
+        user,
+        users,
+        canViewOtherDepartmentUsers,
+        user?.departmentScope?.viewUsersDepartmentIds,
+      ),
+    [user, users, canViewOtherDepartmentUsers],
+  );
+
   const ownerOptions = useMemo(() => {
     const map = new Map<string, string>();
     if (user) {
       map.set(user.id, user.fullName);
     }
-    users.forEach((profile) => map.set(profile.id, profile.fullName));
+    visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     if (!canViewAllQuotations && !canViewDepartmentQuotations) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllQuotations, canViewDepartmentQuotations, user, users]);
+  }, [canViewAllQuotations, canViewDepartmentQuotations, user, visibleUsers]);
 
   const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 

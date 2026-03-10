@@ -14,7 +14,11 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { emitNotificationEventSafe } from '@/lib/notifications';
-import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
+import {
+  filterUsersByDepartmentScope,
+  getDepartmentUserIds,
+  hasDepartmentScope,
+} from '@/lib/departmentScope';
 
 type CalendarFormState = {
   title: string;
@@ -213,6 +217,12 @@ export default function Page() {
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canCreateItems = canCreate || canCreateTasks;
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'calendar_assign']);
+  const canViewOtherDepartmentUsers =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
+  const canAssignOtherDepartmentTasks =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
 
   const ownerNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -223,24 +233,39 @@ export default function Page() {
     return map;
   }, [user, users]);
 
+  const visibleUsers = useMemo(
+    () =>
+      filterUsersByDepartmentScope(
+        user,
+        users,
+        canViewOtherDepartmentUsers,
+        user?.departmentScope?.viewUsersDepartmentIds,
+      ),
+    [user, users, canViewOtherDepartmentUsers],
+  );
+
   const ownerOptions = useMemo(() => {
     const map = new Map<string, string>();
     if (user) {
       map.set(user.id, user.fullName);
     }
-    users.forEach((profile) => map.set(profile.id, profile.fullName));
+    visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const base = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     if (!canViewAllCalendar && !canViewDepartmentCalendar) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...base];
-  }, [canViewAllCalendar, canViewDepartmentCalendar, user, users]);
+  }, [canViewAllCalendar, canViewDepartmentCalendar, user, visibleUsers]);
 
   const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
 
   const assignableUsers = useMemo(() => {
-    return filterAssignableUsers(users, roles, 'calendar_assign');
-  }, [users, roles]);
+    return filterAssignableUsers(users, roles, 'calendar_assign', {
+      currentUser: user,
+      allowOtherDepartments: canAssignOtherDepartmentTasks,
+      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+    });
+  }, [users, roles, user, canAssignOtherDepartmentTasks]);
 
   useEffect(() => {
     if (!user) {

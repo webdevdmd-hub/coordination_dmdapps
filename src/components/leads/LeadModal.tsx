@@ -23,6 +23,7 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
+import { filterUsersByDepartmentScope } from '@/lib/departmentScope';
 
 type LeadModalProps = {
   lead: Lead | null;
@@ -175,6 +176,9 @@ export function LeadModal({
 
   const canAssignCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_assign']);
+  const canAssignOtherDepartmentTasks =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
 
   const activityDotClass = (activity: LeadActivity) => {
     const note = activity.note.toLowerCase();
@@ -330,11 +334,17 @@ export function LeadModal({
           return;
         }
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
+        const scopedUsers = filterUsersByDepartmentScope(
+          user,
+          users,
+          canAssignOtherDepartmentTasks,
+          user?.departmentScope?.assignTasksDepartmentIds,
+        );
         const grouped = new Map<
           string,
           { roleKey: string; roleName: string; users: Array<{ id: string; name: string }> }
         >();
-        users.forEach((userItem) => {
+        scopedUsers.forEach((userItem) => {
           if (!userItem.active) {
             return;
           }
@@ -373,7 +383,7 @@ export function LeadModal({
     return () => {
       isActive = false;
     };
-  }, [lead]);
+  }, [lead, user, canAssignOtherDepartmentTasks]);
 
   const rfqRecipientsById = useMemo(() => {
     const map = new Map<string, { id: string; name: string; roleKey: string }>();
@@ -390,8 +400,13 @@ export function LeadModal({
       assignableCustomerUsers,
       assignableCustomerRoles,
       'customer_assign',
+      {
+        currentUser: user,
+        allowOtherDepartments: canAssignOtherDepartmentTasks,
+        allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+      },
     );
-  }, [assignableCustomerUsers, assignableCustomerRoles]);
+  }, [assignableCustomerUsers, assignableCustomerRoles, user, canAssignOtherDepartmentTasks]);
 
   useEffect(() => {
     if (!isRfqModalOpen || !lead) {

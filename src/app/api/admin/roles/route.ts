@@ -17,6 +17,10 @@ type UpdateRoleRequest = {
   permissions?: PermissionKey[];
   name?: string;
   description?: string;
+  departmentScope?: {
+    viewUsersDepartmentIds?: string[];
+    assignTasksDepartmentIds?: string[];
+  };
 };
 
 const toErrorResponse = (message: string, status = 400) =>
@@ -69,6 +73,20 @@ const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
     ),
   );
 
+const toDepartmentIds = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+};
+
 export async function GET(request: Request) {
   const authError = await requireAdmin(request);
   if (authError) {
@@ -86,12 +104,26 @@ export async function GET(request: Request) {
           id: doc.id,
           ...data,
           permissions: ALL_PERMISSIONS,
+          departmentScope: {
+            viewUsersDepartmentIds: undefined,
+            assignTasksDepartmentIds: undefined,
+          },
         };
       }
       return {
         id: doc.id,
         ...data,
         permissions: toKnownPermissions(data.permissions),
+        departmentScope: {
+          viewUsersDepartmentIds: toDepartmentIds(
+            (data.departmentScope as { viewUsersDepartmentIds?: unknown } | undefined)
+              ?.viewUsersDepartmentIds,
+          ),
+          assignTasksDepartmentIds: toDepartmentIds(
+            (data.departmentScope as { assignTasksDepartmentIds?: unknown } | undefined)
+              ?.assignTasksDepartmentIds,
+          ),
+        },
       };
     });
     return NextResponse.json({ roles }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
@@ -123,7 +155,6 @@ export async function POST(request: Request) {
     typeof payload.description === 'string' && payload.description.trim().length > 0
       ? payload.description.trim()
       : undefined;
-
   if (!key) {
     return toErrorResponse('Role name is invalid.');
   }
@@ -145,7 +176,6 @@ export async function POST(request: Request) {
     if (description) {
       payload.description = description;
     }
-
     const docRef = await db.collection('roles').add(payload);
 
     return NextResponse.json({ id: docRef.id }, { status: 201 });
@@ -174,6 +204,9 @@ export async function PATCH(request: Request) {
   if (payload.permissions !== undefined && !Array.isArray(payload.permissions)) {
     return toErrorResponse('Permissions must be an array.');
   }
+  if (payload.departmentScope !== undefined && typeof payload.departmentScope !== 'object') {
+    return toErrorResponse('Department scope must be an object.');
+  }
 
   const updates: Record<string, unknown> = {};
   if (typeof payload.name === 'string') {
@@ -193,6 +226,13 @@ export async function PATCH(request: Request) {
   }
   if (typeof payload.description === 'string') {
     updates.description = payload.description.trim();
+  }
+  if (payload.departmentScope !== undefined) {
+    updates.departmentScope = {
+      viewUsersDepartmentIds: toDepartmentIds(payload.departmentScope.viewUsersDepartmentIds) ?? [],
+      assignTasksDepartmentIds:
+        toDepartmentIds(payload.departmentScope.assignTasksDepartmentIds) ?? [],
+    };
   }
   if (Object.keys(updates).length === 0) {
     return toErrorResponse('No updates provided.');

@@ -11,7 +11,6 @@ type CreateUserRequest = {
   fullName: string;
   email: string;
   role: UserRole;
-  departmentId?: string;
   active?: boolean;
   password: string;
 };
@@ -92,8 +91,6 @@ export async function POST(request: Request) {
   const uid = payload.uid?.trim() || undefined;
   const active = payload.active !== false;
   const roleKey = await resolveRoleKey(payload.role);
-  const departmentId =
-    payload.departmentId === undefined ? '' : String(payload.departmentId).trim();
   const auth = getFirebaseAdminAuth();
   const db = getFirebaseAdminDb();
 
@@ -111,7 +108,6 @@ export async function POST(request: Request) {
         fullName,
         email,
         role: roleKey,
-        departmentId,
         active,
         createdAt: new Date().toISOString(),
       });
@@ -187,9 +183,6 @@ export async function PATCH(request: Request) {
   }
   if (payload.role !== undefined) {
     updates.role = await resolveRoleKey(payload.role);
-  }
-  if (payload.departmentId !== undefined) {
-    updates.departmentId = String(payload.departmentId).trim();
   }
   if (payload.active !== undefined) {
     updates.active = payload.active;

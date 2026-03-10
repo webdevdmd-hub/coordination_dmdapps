@@ -19,7 +19,11 @@ import { getFirebaseAuth } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries } from '@/lib/roles';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
-import { getDepartmentUserIds, hasDepartmentScope } from '@/lib/departmentScope';
+import {
+  filterUsersByDepartmentScope,
+  getDepartmentUserIds,
+  hasDepartmentScope,
+} from '@/lib/departmentScope';
 
 type EligibleUser = {
   id: string;
@@ -101,7 +105,7 @@ export default function Page() {
   const [requests, setRequests] = useState<QuotationRequest[]>([]);
   const [tasksByRequest, setTasksByRequest] = useState<Record<string, QuotationRequestTask[]>>({});
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
-  const [allUsers, setAllUsers] = useState<Array<{ id: string; departmentId?: string; active: boolean }>>([]);
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; role: string; active: boolean }>>([]);
   const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
   const [search, setSearch] = useState('');
@@ -132,6 +136,9 @@ export default function Page() {
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_delete']);
   const canAssign =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_assign']);
+  const canAssignOtherDepartmentTasks =
+    !!user &&
+    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canRequestSalesOrder =
     !!user && hasPermission(user.permissions, ['admin', 'sales_order_request_create']);
   const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
@@ -152,6 +159,13 @@ export default function Page() {
           return;
         }
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
+        const assignableScope = filterUsersByDepartmentScope(
+          user,
+          users,
+          canAssignOtherDepartmentTasks,
+          user?.departmentScope?.assignTasksDepartmentIds,
+        );
+        const assignableUserIds = new Set(assignableScope.map((entry) => entry.id));
         const filtered = users
           .filter((userItem) => userItem.active)
           .map((userItem) => {
@@ -164,6 +178,9 @@ export default function Page() {
               return null;
             }
             if (!role.permissions.includes('quotation_request_assign')) {
+              return null;
+            }
+            if (!assignableUserIds.has(userItem.id)) {
               return null;
             }
             return {
@@ -179,7 +196,7 @@ export default function Page() {
         setAllUsers(
           users.map((entry) => ({
             id: entry.id,
-            departmentId: entry.departmentId,
+            role: entry.role,
             active: entry.active,
           })),
         );
@@ -194,7 +211,7 @@ export default function Page() {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [user, canAssignOtherDepartmentTasks]);
 
   useEffect(() => {
     if (!user || !canViewProjects) {
