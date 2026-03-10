@@ -345,12 +345,12 @@ export default function Page() {
     }),
     [requests],
   );
-  const salesOrderStatusFilterOptions = [
+  const salesOrderStatusFilterOptions: ReadonlyArray<SalesOrderRequestStatus | 'all'> = [
     'pending_approval',
     'approved',
     'rejected',
     'all',
-  ] as const;
+  ];
   const selectedSalesOrderStatusIndex = Math.max(
     0,
     salesOrderStatusFilterOptions.indexOf(statusFilter),
