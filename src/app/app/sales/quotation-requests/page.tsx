@@ -19,6 +19,7 @@ import { getFirebaseAuth } from '@/frameworks/firebase/client';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries } from '@/lib/roles';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
+import { filterAssignableUsers } from '@/lib/assignees';
 import {
   filterUsersByRole,
   hasRoleScope,
