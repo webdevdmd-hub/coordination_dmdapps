@@ -4,6 +4,7 @@ import { ALL_PERMISSIONS } from '@/core/entities/permissions';
 import type { PermissionKey } from '@/core/entities/permissions';
 import { getFirebaseAdminDb } from '@/frameworks/firebase/admin';
 import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
+import { normalizeRoleRelations, RoleRelations } from '@/lib/roleVisibility';
 
 export const runtime = 'nodejs';
 
@@ -17,10 +18,7 @@ type UpdateRoleRequest = {
   permissions?: PermissionKey[];
   name?: string;
   description?: string;
-  departmentScope?: {
-    viewUsersDepartmentIds?: string[];
-    assignTasksDepartmentIds?: string[];
-  };
+  roleRelations?: RoleRelations;
 };
 
 const toErrorResponse = (message: string, status = 400) =>
@@ -57,6 +55,20 @@ const normalizePermission = (permission: string) =>
         ? 'sales_order_request_view'
         : permission === 'po_request_approve'
           ? 'sales_order_request_approve'
+          : permission === 'lead_view_department'
+            ? 'lead_view_same_role'
+            : permission === 'calendar_view_department'
+              ? 'calendar_view_same_role'
+              : permission === 'task_view_department'
+                ? 'task_view_same_role'
+                : permission === 'customer_view_department'
+                  ? 'customer_view_same_role'
+                  : permission === 'project_view_department'
+                    ? 'project_view_same_role'
+                    : permission === 'quotation_view_department'
+                      ? 'quotation_view_same_role'
+                      : permission === 'quotation_request_view_department'
+                        ? 'quotation_request_view_same_role'
           : permission;
 const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
   Array.from(
@@ -72,20 +84,6 @@ const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
         : [],
     ),
   );
-
-const toDepartmentIds = (value: unknown): string[] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  return Array.from(
-    new Set(
-      value
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0),
-    ),
-  );
-};
 
 export async function GET(request: Request) {
   const authError = await requireAdmin(request);
@@ -104,26 +102,14 @@ export async function GET(request: Request) {
           id: doc.id,
           ...data,
           permissions: ALL_PERMISSIONS,
-          departmentScope: {
-            viewUsersDepartmentIds: undefined,
-            assignTasksDepartmentIds: undefined,
-          },
+          roleRelations: undefined,
         };
       }
       return {
         id: doc.id,
         ...data,
         permissions: toKnownPermissions(data.permissions),
-        departmentScope: {
-          viewUsersDepartmentIds: toDepartmentIds(
-            (data.departmentScope as { viewUsersDepartmentIds?: unknown } | undefined)
-              ?.viewUsersDepartmentIds,
-          ),
-          assignTasksDepartmentIds: toDepartmentIds(
-            (data.departmentScope as { assignTasksDepartmentIds?: unknown } | undefined)
-              ?.assignTasksDepartmentIds,
-          ),
-        },
+        roleRelations: normalizeRoleRelations(data.roleRelations),
       };
     });
     return NextResponse.json({ roles }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
@@ -204,10 +190,9 @@ export async function PATCH(request: Request) {
   if (payload.permissions !== undefined && !Array.isArray(payload.permissions)) {
     return toErrorResponse('Permissions must be an array.');
   }
-  if (payload.departmentScope !== undefined && typeof payload.departmentScope !== 'object') {
-    return toErrorResponse('Department scope must be an object.');
+  if (payload.roleRelations !== undefined && typeof payload.roleRelations !== 'object') {
+    return toErrorResponse('Role relations must be an object.');
   }
-
   const updates: Record<string, unknown> = {};
   if (typeof payload.name === 'string') {
     const name = payload.name.trim();
@@ -227,12 +212,8 @@ export async function PATCH(request: Request) {
   if (typeof payload.description === 'string') {
     updates.description = payload.description.trim();
   }
-  if (payload.departmentScope !== undefined) {
-    updates.departmentScope = {
-      viewUsersDepartmentIds: toDepartmentIds(payload.departmentScope.viewUsersDepartmentIds) ?? [],
-      assignTasksDepartmentIds:
-        toDepartmentIds(payload.departmentScope.assignTasksDepartmentIds) ?? [],
-    };
+  if (payload.roleRelations !== undefined) {
+    updates.roleRelations = normalizeRoleRelations(payload.roleRelations) ?? {};
   }
   if (Object.keys(updates).length === 0) {
     return toErrorResponse('No updates provided.');
@@ -266,3 +247,4 @@ export async function PATCH(request: Request) {
     return toErrorResponse('Unable to update role.', 500);
   }
 }
+

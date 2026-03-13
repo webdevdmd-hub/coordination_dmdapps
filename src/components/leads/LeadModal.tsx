@@ -23,7 +23,6 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
-import { filterUsersByDepartmentScope } from '@/lib/departmentScope';
 
 type LeadModalProps = {
   lead: Lead | null;
@@ -147,6 +146,7 @@ export function LeadModal({
   const [lockedRfqTags, setLockedRfqTags] = useState<Set<string>>(new Set());
   const [isLoadingLockedRfqTags, setIsLoadingLockedRfqTags] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [timelineUserNameMap, setTimelineUserNameMap] = useState<Record<string, string>>({});
   const [assignableCustomerUsers, setAssignableCustomerUsers] = useState<User[]>([]);
   const [assignableCustomerRoles, setAssignableCustomerRoles] = useState<RoleSummary[]>([]);
   const [rfqRecipientGroups, setRfqRecipientGroups] = useState<
@@ -176,9 +176,6 @@ export function LeadModal({
 
   const canAssignCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_assign']);
-  const canAssignOtherDepartmentTasks =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
 
   const activityDotClass = (activity: LeadActivity) => {
     const note = activity.note.toLowerCase();
@@ -258,6 +255,33 @@ export function LeadModal({
   }, [lead]);
 
   useEffect(() => {
+    if (!lead) {
+      setTimelineUserNameMap({});
+      return;
+    }
+    let isActive = true;
+    const loadTimelineUsers = async () => {
+      try {
+        const result = await firebaseUserRepository.listAll();
+        if (!isActive) {
+          return;
+        }
+        setTimelineUserNameMap(
+          Object.fromEntries(result.map((entry) => [entry.id, entry.fullName])),
+        );
+      } catch {
+        if (isActive) {
+          setTimelineUserNameMap({});
+        }
+      }
+    };
+    loadTimelineUsers();
+    return () => {
+      isActive = false;
+    };
+  }, [lead]);
+
+  useEffect(() => {
     if (!lead || !canAssignCustomers) {
       setAssignableCustomerUsers([]);
       setAssignableCustomerRoles([]);
@@ -334,12 +358,10 @@ export function LeadModal({
           return;
         }
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
-        const scopedUsers = filterUsersByDepartmentScope(
-          user,
-          users,
-          canAssignOtherDepartmentTasks,
-          user?.departmentScope?.assignTasksDepartmentIds,
-        );
+        const scopedUsers = filterAssignableUsers(users, roles, 'quotation_request_assign', {
+          currentUser: user,
+          moduleKey: 'quotationRequests',
+        });
         const grouped = new Map<
           string,
           { roleKey: string; roleName: string; users: Array<{ id: string; name: string }> }
@@ -383,7 +405,7 @@ export function LeadModal({
     return () => {
       isActive = false;
     };
-  }, [lead, user, canAssignOtherDepartmentTasks]);
+  }, [lead, user]);
 
   const rfqRecipientsById = useMemo(() => {
     const map = new Map<string, { id: string; name: string; roleKey: string }>();
@@ -402,11 +424,10 @@ export function LeadModal({
       'customer_assign',
       {
         currentUser: user,
-        allowOtherDepartments: canAssignOtherDepartmentTasks,
-        allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+        moduleKey: 'customers',
       },
     );
-  }, [assignableCustomerUsers, assignableCustomerRoles, user, canAssignOtherDepartmentTasks]);
+  }, [assignableCustomerUsers, assignableCustomerRoles, user]);
 
   useEffect(() => {
     if (!isRfqModalOpen || !lead) {
@@ -469,6 +490,16 @@ export function LeadModal({
   }
 
   const ownerName = ownerNameMap?.[lead.ownerId] ?? lead.ownerId;
+  const getTimelineActorName = (actorId?: string) => {
+    if (!actorId) {
+      return '-';
+    }
+    return (
+      timelineUserNameMap[actorId] ??
+      ownerNameMap?.[actorId] ??
+      (actorId === user?.id ? user.fullName : actorId)
+    );
+  };
   const isConverted = !!convertedCustomerId;
   const canRequestRfq =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_create']);
@@ -1446,8 +1477,7 @@ export function LeadModal({
                     <div>
                       <p className="font-semibold text-text">{activity.note}</p>
                       <p className="mt-1 text-sm text-muted">
-                        {formatTimelineDate(activity.date)} -{' '}
-                        {ownerNameMap?.[activity.createdBy] ?? activity.createdBy}
+                        {formatTimelineDate(activity.date)} - {getTimelineActorName(activity.createdBy)}
                       </p>
                     </div>
                   </div>
@@ -1774,3 +1804,6 @@ export function LeadModal({
     </Modal>
   );
 }
+
+
+

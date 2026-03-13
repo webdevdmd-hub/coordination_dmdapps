@@ -1,6 +1,7 @@
 import { PermissionKey } from '@/core/entities/permissions';
 import { User } from '@/core/entities/user';
 import { RoleSummary } from '@/lib/roles';
+import { canAssignAcrossRoles, RoleRelationModuleKey } from '@/lib/roleVisibility';
 
 export const filterAssignableUsers = (
   users: User[],
@@ -8,22 +9,18 @@ export const filterAssignableUsers = (
   requiredPermission: PermissionKey,
   options?: {
     currentUser?: Pick<User, 'id' | 'role'> | null;
-    allowOtherDepartments?: boolean;
-    allowedDepartmentIds?: string[];
+    moduleKey?: RoleRelationModuleKey;
   },
 ) => {
   const roleMap = new Map<string, RoleSummary>();
   const currentUser = options?.currentUser ?? null;
-  const allowOtherDepartments = options?.allowOtherDepartments ?? true;
-  const scopedDepartmentIds = new Set(
-    (options?.allowedDepartmentIds ?? [])
-      .map((item) => item.trim().toLowerCase())
-      .filter((item) => item.length > 0),
-  );
+  const moduleKey = options?.moduleKey;
   const currentRoleKey = (currentUser?.role ?? '').trim().toLowerCase();
   roles.forEach((role) => {
     roleMap.set(role.key.trim().toLowerCase(), role);
   });
+  const currentRole = currentRoleKey ? roleMap.get(currentRoleKey) : null;
+  const currentRoleIsAdmin = Boolean(currentRole?.permissions.includes('admin'));
   return users.filter((user) => {
     if (!user.active) {
       return false;
@@ -38,16 +35,6 @@ export const filterAssignableUsers = (
     if (!role.permissions.includes(requiredPermission)) {
       return false;
     }
-    if (allowOtherDepartments) {
-      if (scopedDepartmentIds.size === 0) {
-        return true;
-      }
-      if (currentUser && user.id === currentUser.id) {
-        return true;
-      }
-      const userRoleKey = (user.role ?? '').trim().toLowerCase();
-      return scopedDepartmentIds.has(userRoleKey);
-    }
     if (!currentUser) {
       return false;
     }
@@ -57,7 +44,19 @@ export const filterAssignableUsers = (
     if (!currentRoleKey) {
       return false;
     }
+    if (currentRoleIsAdmin) {
+      return true;
+    }
     const userRoleKey = (user.role ?? '').trim().toLowerCase();
-    return userRoleKey === currentRoleKey;
+    if (!moduleKey) {
+      return false;
+    }
+    return canAssignAcrossRoles(
+      currentRoleKey,
+      userRoleKey,
+      moduleKey,
+      currentRole?.roleRelations,
+      role.roleRelations,
+    );
   });
 };

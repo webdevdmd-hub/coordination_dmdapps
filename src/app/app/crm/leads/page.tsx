@@ -18,10 +18,9 @@ import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 
 const leadStatusClass: Record<LeadStatus, string> = {
   new: 'bg-[var(--surface-muted)] text-muted border border-border',
@@ -73,21 +72,12 @@ export default function Page() {
   const canCreateLead = !!user && hasPermission(user.permissions, ['admin', 'lead_create']);
   const canViewLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view']);
   const canViewAllLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view_all']);
-  const canViewDepartmentLeads =
-    !!user && hasDepartmentScope(user.permissions, 'lead_view_department');
-  const canViewOtherDepartmentUsers =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
+  const canViewSameRoleLeads =
+    !!user && hasRoleScope(user.permissions, 'lead_view_same_role');
 
   const visibleUsers = useMemo(
-    () =>
-      filterUsersByDepartmentScope(
-        user,
-        users,
-        canViewOtherDepartmentUsers,
-        user?.departmentScope?.viewUsersDepartmentIds,
-      ),
-    [user, users, canViewOtherDepartmentUsers],
+    () => filterUsersByRole(user, users, 'leads', user?.roleRelations),
+    [user, users],
   );
 
   const ownerOptions = useMemo(() => {
@@ -97,13 +87,19 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllLeads && !canViewDepartmentLeads) {
+    if (!canViewAllLeads && !canViewSameRoleLeads) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [user, visibleUsers, canViewAllLeads, canViewDepartmentLeads]);
+  }, [user, visibleUsers, canViewAllLeads, canViewSameRoleLeads]);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   const filteredLeads = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -174,9 +170,9 @@ export default function Page() {
           setLeads(result);
           return;
         }
-        if (canViewDepartmentLeads) {
+        if (canViewSameRoleLeads) {
           const allLeads = await firebaseLeadRepository.listAll();
-          const scoped = allLeads.filter((lead) => departmentUserIds.has(lead.ownerId));
+          const scoped = allLeads.filter((lead) => visibleUserIds.has(lead.ownerId));
           setLeads(ownerFilter === 'all' ? scoped : scoped.filter((lead) => lead.ownerId === ownerFilter));
           return;
         }
@@ -189,7 +185,7 @@ export default function Page() {
       }
     };
     loadLeads();
-  }, [user, ownerFilter, canViewAllLeads, canViewDepartmentLeads, departmentUserIds]);
+  }, [user, ownerFilter, canViewAllLeads, canViewSameRoleLeads, visibleUserIds]);
 
   useEffect(() => {
     const loadSources = async () => {
@@ -238,7 +234,7 @@ export default function Page() {
         setUsers([]);
         return;
       }
-      if (!canViewAllLeads && !canViewDepartmentLeads) {
+      if (!canViewAllLeads && !canViewSameRoleLeads) {
         setUsers([]);
         return;
       }
@@ -250,17 +246,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllLeads, canViewDepartmentLeads]);
+  }, [user, canViewAllLeads, canViewSameRoleLeads]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllLeads && !canViewDepartmentLeads) {
+    if (!canViewAllLeads && !canViewSameRoleLeads) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllLeads, canViewDepartmentLeads]);
+  }, [user, canViewAllLeads, canViewSameRoleLeads]);
 
   const handleCreateLead = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -475,7 +471,7 @@ export default function Page() {
                 name="lead-owner-header"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllLeads && !canViewDepartmentLeads}
+                disabled={!canViewAllLeads && !canViewSameRoleLeads}
                 className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -1002,3 +998,10 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+

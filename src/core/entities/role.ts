@@ -1,4 +1,5 @@
 import { PermissionKey } from '@/core/entities/permissions';
+import { RoleRelations } from '@/lib/roleVisibility';
 
 export type Role = {
   id: string;
@@ -6,9 +7,6 @@ export type Role = {
   name: string;
   description?: string;
   permissions: PermissionKey[];
-  departmentScope?: {
-    viewUsersDepartmentIds?: string[];
-    assignTasksDepartmentIds?: string[];
-  };
+  roleRelations?: RoleRelations;
   createdAt: string;
 };

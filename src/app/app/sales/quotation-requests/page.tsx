@@ -20,10 +20,9 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries } from '@/lib/roles';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 
 type EligibleUser = {
   id: string;
@@ -129,23 +128,30 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view']);
   const canViewAllRequests =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view_all']);
-  const canViewDepartmentRequests =
-    !!user && hasDepartmentScope(user.permissions, 'quotation_request_view_department');
+  const canViewSameRoleRequests =
+    !!user && hasRoleScope(user.permissions, 'quotation_request_view_same_role');
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_edit']);
   const canDelete =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_delete']);
   const canAssign =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_assign']);
-  const canAssignOtherDepartmentTasks =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canRequestSalesOrder =
     !!user && hasPermission(user.permissions, ['admin', 'sales_order_request_create']);
   const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
   const canViewAllProjects =
     !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, allUsers), [user, allUsers]);
+  const visibleUsers = useMemo(
+    () => filterUsersByRole(user, allUsers, 'quotationRequests', user?.roleRelations),
+    [user, allUsers],
+  );
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   useEffect(() => {
     let isActive = true;
@@ -159,12 +165,10 @@ export default function Page() {
           return;
         }
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
-        const assignableScope = filterUsersByDepartmentScope(
-          user,
-          users,
-          canAssignOtherDepartmentTasks,
-          user?.departmentScope?.assignTasksDepartmentIds,
-        );
+        const assignableScope = filterAssignableUsers(users, roles, 'quotation_request_assign', {
+          currentUser: user,
+          moduleKey: 'quotationRequests',
+        });
         const assignableUserIds = new Set(assignableScope.map((entry) => entry.id));
         const filtered = users
           .filter((userItem) => userItem.active)
@@ -211,7 +215,7 @@ export default function Page() {
     return () => {
       isActive = false;
     };
-  }, [user, canAssignOtherDepartmentTasks]);
+  }, [user]);
 
   useEffect(() => {
     if (!user || !canViewProjects) {
@@ -257,11 +261,11 @@ export default function Page() {
         const normalized = rawRequests.map((entry) => normalizeRequest(entry));
         const visible = canViewAllRequests
           ? normalized
-          : canViewDepartmentRequests
+          : canViewSameRoleRequests
             ? normalized.filter(
                 (request) =>
-                  departmentUserIds.has(request.requestedBy) ||
-                  request.recipients?.some((recipient) => departmentUserIds.has(recipient.id)),
+                  visibleUserIds.has(request.requestedBy) ||
+                  request.recipients?.some((recipient) => visibleUserIds.has(recipient.id)),
               )
             : normalized.filter(
                 (request) =>
@@ -302,7 +306,7 @@ export default function Page() {
     return () => {
       isActive = false;
     };
-  }, [user, canView, canViewAllRequests, canViewDepartmentRequests, departmentUserIds]);
+  }, [user, canView, canViewAllRequests, canViewSameRoleRequests, visibleUserIds]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1473,3 +1477,10 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+

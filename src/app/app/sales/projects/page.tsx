@@ -30,10 +30,9 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 import {
   areSameRecipientSets,
   buildRecipientList,
@@ -270,8 +269,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
   const canViewAllProjects =
     !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
-  const canViewDepartmentProjects =
-    !!user && hasDepartmentScope(user.permissions, 'project_view_department');
+  const canViewSameRoleProjects =
+    !!user && hasRoleScope(user.permissions, 'project_view_same_role');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'project_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'project_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'project_delete']);
@@ -279,12 +278,6 @@ export default function Page() {
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEditTasks = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canAssignTasks = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
-  const canViewOtherDepartmentUsers =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
-  const canAssignOtherDepartmentTasks =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canReassignProjectTasks = isAdmin;
   const canRequestSalesOrder = !!user &&
     hasPermission(user.permissions, [
@@ -344,14 +337,8 @@ export default function Page() {
   }, [user, users]);
 
   const visibleUsers = useMemo(
-    () =>
-      filterUsersByDepartmentScope(
-        user,
-        users,
-        canViewOtherDepartmentUsers,
-        user?.departmentScope?.viewUsersDepartmentIds,
-      ),
-    [user, users, canViewOtherDepartmentUsers],
+    () => filterUsersByRole(user, users, 'projects', user?.roleRelations),
+    [user, users],
   );
 
   const ownerOptions = useMemo(() => {
@@ -361,13 +348,19 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllProjects && !canViewDepartmentProjects) {
+    if (!canViewAllProjects && !canViewSameRoleProjects) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllProjects, canViewDepartmentProjects, user, visibleUsers]);
+  }, [canViewAllProjects, canViewSameRoleProjects, user, visibleUsers]);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   const assigneeOptions = useMemo(() => {
     if (!canAssignTasks) {
@@ -375,13 +368,12 @@ export default function Page() {
     }
     return filterAssignableUsers(users, roles, 'task_assign', {
       currentUser: user,
-      allowOtherDepartments: canAssignOtherDepartmentTasks,
-      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+      moduleKey: 'tasks',
     }).map((entry) => ({
       id: entry.id,
       name: entry.fullName,
     }));
-  }, [user, users, roles, canAssignTasks, canAssignOtherDepartmentTasks]);
+  }, [user, users, roles, canAssignTasks]);
 
   const timelineItems = useMemo(
     () => [...timelineBaseItems, ...timelineExtraItems],
@@ -389,7 +381,7 @@ export default function Page() {
   );
 
   useEffect(() => {
-    if (!user || !(canViewAllProjects || canViewDepartmentProjects || canAssignTasks)) {
+    if (!user || !(canViewAllProjects || canViewSameRoleProjects || canAssignTasks)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -408,17 +400,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllProjects, canViewDepartmentProjects, canAssignTasks]);
+  }, [user, canViewAllProjects, canViewSameRoleProjects, canAssignTasks]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllProjects && !canViewDepartmentProjects) {
+    if (!canViewAllProjects && !canViewSameRoleProjects) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllProjects, canViewDepartmentProjects]);
+  }, [user, canViewAllProjects, canViewSameRoleProjects]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -471,17 +463,17 @@ export default function Page() {
           setProjects(filtered);
           return;
         }
-        if (canViewDepartmentProjects) {
+        if (canViewSameRoleProjects) {
           const allProjects = await firebaseProjectRepository.listAll();
-          const departmentProjects = allProjects.filter((project) =>
-            departmentUserIds.has(project.assignedTo),
+          const sameRoleProjects = allProjects.filter((project) =>
+            visibleUserIds.has(project.assignedTo),
           );
           if (ownerFilter === 'all') {
-            setProjects(departmentProjects);
+            setProjects(sameRoleProjects);
             return;
           }
           const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = departmentProjects.filter(
+          const filtered = sameRoleProjects.filter(
             (project) =>
               project.assignedTo === ownerFilter ||
               (selectedRole ? project.sharedRoles.includes(selectedRole) : false),
@@ -502,10 +494,10 @@ export default function Page() {
     user,
     canView,
     canViewAllProjects,
-    canViewDepartmentProjects,
+    canViewSameRoleProjects,
     ownerFilter,
     userRoleMap,
-    departmentUserIds,
+    visibleUserIds,
   ]);
 
   useEffect(() => {
@@ -1540,7 +1532,7 @@ export default function Page() {
                 name="project-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllProjects && !canViewDepartmentProjects}
+                disabled={!canViewAllProjects && !canViewSameRoleProjects}
                 className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -2866,3 +2858,11 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

@@ -12,10 +12,9 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 
 type CustomerFormState = {
   companyName: string;
@@ -71,18 +70,12 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'customer_view']);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
-  const canViewDepartmentCustomers =
-    !!user && hasDepartmentScope(user.permissions, 'customer_view_department');
+  const canViewSameRoleCustomers =
+    !!user && hasRoleScope(user.permissions, 'customer_view_same_role');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'customer_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'customer_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'customer_delete']);
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'customer_assign']);
-  const canViewOtherDepartmentUsers =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
-  const canAssignOtherDepartmentTasks =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canOpenDetails = canEdit || canDelete;
 
   const emptyCustomer = (assignedTo: string): CustomerFormState => ({
@@ -119,14 +112,8 @@ export default function Page() {
   }, [user, users]);
 
   const visibleUsers = useMemo(
-    () =>
-      filterUsersByDepartmentScope(
-        user,
-        users,
-        canViewOtherDepartmentUsers,
-        user?.departmentScope?.viewUsersDepartmentIds,
-      ),
-    [user, users, canViewOtherDepartmentUsers],
+    () => filterUsersByRole(user, users, 'customers', user?.roleRelations),
+    [user, users],
   );
 
   const ownerOptions = useMemo(() => {
@@ -136,24 +123,29 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllCustomers && !canViewDepartmentCustomers) {
+    if (!canViewAllCustomers && !canViewSameRoleCustomers) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllCustomers, canViewDepartmentCustomers, user, visibleUsers]);
+  }, [canViewAllCustomers, canViewSameRoleCustomers, user, visibleUsers]);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'customer_assign', {
       currentUser: user,
-      allowOtherDepartments: canAssignOtherDepartmentTasks,
-      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+      moduleKey: 'customers',
     });
-  }, [users, roles, user, canAssignOtherDepartmentTasks]);
+  }, [users, roles, user]);
 
   useEffect(() => {
-    if (!user || !(canViewAllCustomers || canViewDepartmentCustomers || canAssign)) {
+    if (!user || !(canViewAllCustomers || canViewSameRoleCustomers || canAssign)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -172,17 +164,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllCustomers, canViewDepartmentCustomers, canAssign]);
+  }, [user, canViewAllCustomers, canViewSameRoleCustomers, canAssign]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllCustomers && !canViewDepartmentCustomers) {
+    if (!canViewAllCustomers && !canViewSameRoleCustomers) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllCustomers, canViewDepartmentCustomers]);
+  }, [user, canViewAllCustomers, canViewSameRoleCustomers]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -214,17 +206,17 @@ export default function Page() {
           setCustomers(filtered);
           return;
         }
-        if (canViewDepartmentCustomers) {
+        if (canViewSameRoleCustomers) {
           const allCustomers = await firebaseCustomerRepository.listAll();
-          const departmentCustomers = allCustomers.filter((customer) =>
-            departmentUserIds.has(customer.assignedTo),
+          const sameRoleCustomers = allCustomers.filter((customer) =>
+            visibleUserIds.has(customer.assignedTo),
           );
           if (ownerFilter === 'all') {
-            setCustomers(departmentCustomers);
+            setCustomers(sameRoleCustomers);
             return;
           }
           const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = departmentCustomers.filter(
+          const filtered = sameRoleCustomers.filter(
             (customer) =>
               customer.assignedTo === ownerFilter ||
               (selectedRole ? customer.sharedRoles.includes(selectedRole) : false),
@@ -245,10 +237,10 @@ export default function Page() {
     user,
     canView,
     canViewAllCustomers,
-    canViewDepartmentCustomers,
+    canViewSameRoleCustomers,
     ownerFilter,
     userRoleMap,
-    departmentUserIds,
+    visibleUserIds,
   ]);
 
   const totals = useMemo(() => {
@@ -466,7 +458,7 @@ export default function Page() {
                 name="customer-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCustomers && !canViewDepartmentCustomers}
+                disabled={!canViewAllCustomers && !canViewSameRoleCustomers}
                 className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -964,3 +956,11 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

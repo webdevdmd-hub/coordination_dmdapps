@@ -18,10 +18,9 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import {
   areSameRecipientSets,
@@ -155,18 +154,12 @@ export default function Page() {
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
   const canViewAllTasks = !!user && hasPermission(user.permissions, ['admin', 'task_view_all']);
-  const canViewDepartmentTasks =
-    !!user && hasDepartmentScope(user.permissions, 'task_view_department');
+  const canViewSameRoleTasks =
+    !!user && hasRoleScope(user.permissions, 'task_view_same_role');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'task_delete']);
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
-  const canViewOtherDepartmentUsers =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
-  const canAssignOtherDepartmentTasks =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
   const canEditAssignment = canAssign && (!selectedTask || isAdmin);
 
   const emptyTask = (assignedTo: string): TaskFormState => ({
@@ -265,14 +258,8 @@ export default function Page() {
   };
 
   const visibleUsers = useMemo(
-    () =>
-      filterUsersByDepartmentScope(
-        user,
-        users,
-        canViewOtherDepartmentUsers,
-        user?.departmentScope?.viewUsersDepartmentIds,
-      ),
-    [user, users, canViewOtherDepartmentUsers],
+    () => filterUsersByRole(user, users, 'tasks', user?.roleRelations),
+    [user, users],
   );
 
   const ownerOptions = useMemo(() => {
@@ -282,21 +269,26 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllTasks && !canViewDepartmentTasks) {
+    if (!canViewAllTasks && !canViewSameRoleTasks) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllTasks, canViewDepartmentTasks, user, visibleUsers]);
+  }, [canViewAllTasks, canViewSameRoleTasks, user, visibleUsers]);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'task_assign', {
       currentUser: user,
-      allowOtherDepartments: canAssignOtherDepartmentTasks,
-      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+      moduleKey: 'tasks',
     });
-  }, [users, roles, user, canAssignOtherDepartmentTasks]);
+  }, [users, roles, user]);
 
   const ownerNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -353,7 +345,7 @@ export default function Page() {
   }, [selectedTask]);
 
   useEffect(() => {
-    if (!user || !(canViewAllTasks || canViewDepartmentTasks || canAssign)) {
+    if (!user || !(canViewAllTasks || canViewSameRoleTasks || canAssign)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -372,7 +364,7 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllTasks, canViewDepartmentTasks, canAssign]);
+  }, [user, canViewAllTasks, canViewSameRoleTasks, canAssign]);
 
   useEffect(() => {
     if (!user) {
@@ -397,10 +389,10 @@ export default function Page() {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllTasks && !canViewDepartmentTasks) {
+    if (!canViewAllTasks && !canViewSameRoleTasks) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllTasks, canViewDepartmentTasks]);
+  }, [user, canViewAllTasks, canViewSameRoleTasks]);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -431,23 +423,21 @@ export default function Page() {
           setTasks(filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
           return;
         }
-        if (canViewDepartmentTasks) {
+        if (canViewSameRoleTasks) {
           const allTasks = await firebaseTaskRepository.listAll();
-          const departmentTasks = allTasks.filter((task) => {
-            if (departmentUserIds.has(task.assignedTo)) {
+          const sameRoleTasks = allTasks.filter((task) => {
+            if (visibleUserIds.has(task.assignedTo)) {
               return true;
             }
-            return (task.assignedUsers ?? []).some((assigneeId) =>
-              departmentUserIds.has(assigneeId),
-            );
+            return (task.assignedUsers ?? []).some((assigneeId) => visibleUserIds.has(assigneeId));
           });
           if (ownerFilter === 'all') {
             setTasks(
-              departmentTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) })),
+              sameRoleTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) })),
             );
             return;
           }
-          const filtered = departmentTasks.filter(
+          const filtered = sameRoleTasks.filter(
             (task) =>
               task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
           );
@@ -467,9 +457,9 @@ export default function Page() {
     user,
     canView,
     canViewAllTasks,
-    canViewDepartmentTasks,
+    canViewSameRoleTasks,
     ownerFilter,
-    departmentUserIds,
+    visibleUserIds,
   ]);
 
   useEffect(() => {
@@ -1363,7 +1353,7 @@ export default function Page() {
               <button
                 type="button"
                 onClick={() => setIsOwnerMenuOpen((prev) => !prev)}
-                disabled={!canViewAllTasks && !canViewDepartmentTasks}
+                disabled={!canViewAllTasks && !canViewSameRoleTasks}
                 className="flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80 disabled:cursor-not-allowed disabled:text-muted/80"
                 aria-haspopup="listbox"
                 aria-expanded={isOwnerMenuOpen}
@@ -1949,4 +1939,11 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+
 

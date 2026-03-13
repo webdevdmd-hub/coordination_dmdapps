@@ -17,10 +17,9 @@ import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 
 const statusOptions: Array<{ value: QuotationStatus; label: string }> = [
   { value: 'draft', label: 'Draft' },
@@ -115,11 +114,8 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_view']);
   const canViewAllQuotations =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_view_all']);
-  const canViewDepartmentQuotations =
-    !!user && hasDepartmentScope(user.permissions, 'quotation_view_department');
-  const canViewOtherDepartmentUsers =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
+  const canViewSameRoleQuotations =
+    !!user && hasRoleScope(user.permissions, 'quotation_view_same_role');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'quotation_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'quotation_delete']);
@@ -184,14 +180,8 @@ export default function Page() {
   }, [user, users]);
 
   const visibleUsers = useMemo(
-    () =>
-      filterUsersByDepartmentScope(
-        user,
-        users,
-        canViewOtherDepartmentUsers,
-        user?.departmentScope?.viewUsersDepartmentIds,
-      ),
-    [user, users, canViewOtherDepartmentUsers],
+    () => filterUsersByRole(user, users, 'quotations', user?.roleRelations),
+    [user, users],
   );
 
   const ownerOptions = useMemo(() => {
@@ -201,16 +191,22 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllQuotations && !canViewDepartmentQuotations) {
+    if (!canViewAllQuotations && !canViewSameRoleQuotations) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllQuotations, canViewDepartmentQuotations, user, visibleUsers]);
+  }, [canViewAllQuotations, canViewSameRoleQuotations, user, visibleUsers]);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   useEffect(() => {
-    if (!user || !(canViewAllQuotations || canViewDepartmentQuotations)) {
+    if (!user || !(canViewAllQuotations || canViewSameRoleQuotations)) {
       setUsers([]);
       return;
     }
@@ -223,17 +219,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllQuotations, canViewDepartmentQuotations]);
+  }, [user, canViewAllQuotations, canViewSameRoleQuotations]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllQuotations && !canViewDepartmentQuotations) {
+    if (!canViewAllQuotations && !canViewSameRoleQuotations) {
       setOwnerFilter(user.id);
     }
-  }, [user, canViewAllQuotations, canViewDepartmentQuotations]);
+  }, [user, canViewAllQuotations, canViewSameRoleQuotations]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -304,17 +300,17 @@ export default function Page() {
           setQuotations(filtered);
           return;
         }
-        if (canViewDepartmentQuotations) {
+        if (canViewSameRoleQuotations) {
           const allQuotes = await firebaseQuotationRepository.listAll();
-          const departmentQuotes = allQuotes.filter((quote) =>
-            departmentUserIds.has(quote.assignedTo),
+          const sameRoleQuotes = allQuotes.filter((quote) =>
+            visibleUserIds.has(quote.assignedTo),
           );
           if (ownerFilter === 'all') {
-            setQuotations(departmentQuotes);
+            setQuotations(sameRoleQuotes);
             return;
           }
           const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = departmentQuotes.filter(
+          const filtered = sameRoleQuotes.filter(
             (quote) =>
               quote.assignedTo === ownerFilter ||
               (selectedRole ? quote.sharedRoles.includes(selectedRole) : false),
@@ -335,10 +331,10 @@ export default function Page() {
     user,
     canView,
     canViewAllQuotations,
-    canViewDepartmentQuotations,
+    canViewSameRoleQuotations,
     ownerFilter,
     userRoleMap,
-    departmentUserIds,
+    visibleUserIds,
   ]);
 
   const filteredQuotations = useMemo(() => {
@@ -732,7 +728,7 @@ export default function Page() {
                 name="quote-owner"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllQuotations && !canViewDepartmentQuotations}
+                disabled={!canViewAllQuotations && !canViewSameRoleQuotations}
                 className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -1359,3 +1355,11 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

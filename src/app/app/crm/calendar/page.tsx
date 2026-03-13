@@ -15,10 +15,9 @@ import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { emitNotificationEventSafe } from '@/lib/notifications';
 import {
-  filterUsersByDepartmentScope,
-  getDepartmentUserIds,
-  hasDepartmentScope,
-} from '@/lib/departmentScope';
+  filterUsersByRole,
+  hasRoleScope,
+} from '@/lib/roleVisibility';
 
 type CalendarFormState = {
   title: string;
@@ -211,18 +210,12 @@ export default function Page() {
   const canView = !!user && hasPermission(user.permissions, ['admin', 'calendar_view']);
   const canViewAllCalendar =
     !!user && hasPermission(user.permissions, ['admin', 'calendar_view_all']);
-  const canViewDepartmentCalendar =
-    !!user && hasDepartmentScope(user.permissions, 'calendar_view_department');
+  const canViewSameRoleCalendar =
+    !!user && hasRoleScope(user.permissions, 'calendar_view_same_role');
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'calendar_create']);
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canCreateItems = canCreate || canCreateTasks;
   const canAssign = !!user && hasPermission(user.permissions, ['admin', 'calendar_assign']);
-  const canViewOtherDepartmentUsers =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_view_users_other_departments']);
-  const canAssignOtherDepartmentTasks =
-    !!user &&
-    hasPermission(user.permissions, ['admin', 'department_assign_tasks_other_departments']);
 
   const ownerNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -234,14 +227,8 @@ export default function Page() {
   }, [user, users]);
 
   const visibleUsers = useMemo(
-    () =>
-      filterUsersByDepartmentScope(
-        user,
-        users,
-        canViewOtherDepartmentUsers,
-        user?.departmentScope?.viewUsersDepartmentIds,
-      ),
-    [user, users, canViewOtherDepartmentUsers],
+    () => filterUsersByRole(user, users, 'calendar', user?.roleRelations),
+    [user, users],
   );
 
   const ownerOptions = useMemo(() => {
@@ -251,32 +238,37 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const base = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllCalendar && !canViewDepartmentCalendar) {
+    if (!canViewAllCalendar && !canViewSameRoleCalendar) {
       return user ? [{ id: user.id, name: user.fullName }] : [];
     }
     return [{ id: 'all', name: 'All users' }, ...base];
-  }, [canViewAllCalendar, canViewDepartmentCalendar, user, visibleUsers]);
+  }, [canViewAllCalendar, canViewSameRoleCalendar, user, visibleUsers]);
 
-  const departmentUserIds = useMemo(() => getDepartmentUserIds(user, users), [user, users]);
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'calendar_assign', {
       currentUser: user,
-      allowOtherDepartments: canAssignOtherDepartmentTasks,
-      allowedDepartmentIds: user?.departmentScope?.assignTasksDepartmentIds,
+      moduleKey: 'calendar',
     });
-  }, [users, roles, user, canAssignOtherDepartmentTasks]);
+  }, [users, roles, user]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllCalendar && !canViewDepartmentCalendar) {
+    if (!canViewAllCalendar && !canViewSameRoleCalendar) {
       setOwnerFilter(user.id);
       return;
     }
-  }, [user, canViewAllCalendar, canViewDepartmentCalendar]);
+  }, [user, canViewAllCalendar, canViewSameRoleCalendar]);
 
   const dateInputValue = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -490,7 +482,7 @@ export default function Page() {
 
   useEffect(() => {
     const loadUsers = async () => {
-      if (!user || !(canViewAllCalendar || canViewDepartmentCalendar || canAssign)) {
+      if (!user || !(canViewAllCalendar || canViewSameRoleCalendar || canAssign)) {
         setUsers([]);
         setRoles([]);
         return;
@@ -508,7 +500,7 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllCalendar, canViewDepartmentCalendar, canAssign]);
+  }, [user, canViewAllCalendar, canViewSameRoleCalendar, canAssign]);
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -533,13 +525,13 @@ export default function Page() {
           setEvents(result);
           return;
         }
-        if (canViewDepartmentCalendar) {
+        if (canViewSameRoleCalendar) {
           const allEvents = await firebaseCalendarRepository.listAll();
-          const departmentEvents = allEvents.filter((entry) => departmentUserIds.has(entry.ownerId));
+          const sameRoleEvents = allEvents.filter((entry) => visibleUserIds.has(entry.ownerId));
           setEvents(
             ownerFilter === 'all'
-              ? departmentEvents
-              : departmentEvents.filter((entry) => entry.ownerId === ownerFilter),
+              ? sameRoleEvents
+              : sameRoleEvents.filter((entry) => entry.ownerId === ownerFilter),
           );
           return;
         }
@@ -558,9 +550,9 @@ export default function Page() {
     user,
     canView,
     canViewAllCalendar,
-    canViewDepartmentCalendar,
+    canViewSameRoleCalendar,
     ownerFilter,
-    departmentUserIds,
+    visibleUserIds,
   ]);
 
   useEffect(() => {
@@ -916,7 +908,7 @@ export default function Page() {
                 name="calendar-owner-header"
                 value={ownerFilter}
                 onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCalendar && !canViewDepartmentCalendar}
+                disabled={!canViewAllCalendar && !canViewSameRoleCalendar}
                 className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
               >
                 {ownerOptions.map((option) => (
@@ -1855,3 +1847,10 @@ export default function Page() {
     </div>
   );
 }
+
+
+
+
+
+
+

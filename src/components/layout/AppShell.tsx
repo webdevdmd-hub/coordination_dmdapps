@@ -46,6 +46,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [isNavOpen]);
 
+  useEffect(() => {
+    const hideTasksScrollbar = pathname.startsWith('/app/tasks');
+    document.body.classList.toggle('tasks-page-scrollbar-hidden', hideTasksScrollbar);
+    return () => {
+      document.body.classList.remove('tasks-page-scrollbar-hidden');
+    };
+  }, [pathname]);
+
   const activeItem = (() => {
     if (pathname === '/app') {
       return 'Main Dashboard';
@@ -72,6 +80,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return undefined;
   })();
 
+  const isTasksRoute = pathname.startsWith('/app/tasks');
+
   return (
     <div className="min-h-screen bg-bg text-text">
       <div className="flex min-h-screen">
@@ -89,7 +99,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             isMenuOpen={isNavOpen}
             menuButtonRef={menuButtonRef}
           />
-          <main className="flex-1 px-6 pb-10 pt-8">{children}</main>
+          <main className={`flex-1 px-6 pb-10 pt-8 ${isTasksRoute ? 'overflow-hidden' : ''}`}>
+            {children}
+          </main>
         </div>
       </div>
     </div>

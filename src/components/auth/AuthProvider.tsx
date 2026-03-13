@@ -9,6 +9,7 @@ import { UserRole } from '@/core/entities/user';
 import { clearServerSession, establishServerSession } from '@/frameworks/firebase/auth';
 import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
 import { isFirebaseConfigured } from '@/frameworks/firebase/config';
+import { normalizeRoleRelations, RoleRelations } from '@/lib/roleVisibility';
 
 type UserProfile = {
   id: string;
@@ -16,13 +17,9 @@ type UserProfile = {
   email: string;
   phone?: string;
   avatarUrl?: string;
-  departmentId?: string;
-  departmentScope?: {
-    viewUsersDepartmentIds?: string[];
-    assignTasksDepartmentIds?: string[];
-  };
   role: UserRole;
   permissions: PermissionKey[];
+  roleRelations?: RoleRelations;
   active: boolean;
 };
 
@@ -60,6 +57,20 @@ const toPermissions = (value: unknown): PermissionKey[] => {
             ? 'sales_order_request_view'
             : item === 'po_request_approve'
               ? 'sales_order_request_approve'
+              : item === 'lead_view_department'
+                ? 'lead_view_same_role'
+                : item === 'calendar_view_department'
+                  ? 'calendar_view_same_role'
+                  : item === 'task_view_department'
+                    ? 'task_view_same_role'
+                    : item === 'customer_view_department'
+                      ? 'customer_view_same_role'
+                      : item === 'project_view_department'
+                        ? 'project_view_same_role'
+                        : item === 'quotation_view_department'
+                          ? 'quotation_view_same_role'
+                          : item === 'quotation_request_view_department'
+                            ? 'quotation_request_view_same_role'
               : item;
     if (permissionSet.has(normalized as PermissionKey)) {
       acc.push(normalized as PermissionKey);
@@ -68,29 +79,9 @@ const toPermissions = (value: unknown): PermissionKey[] => {
   }, []);
 };
 
-const toDepartmentIds = (value: unknown): string[] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  return Array.from(
-    new Set(
-      value
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0),
-    ),
-  );
-};
-
 const getRoleAccess = async (
   roleKey: string,
-): Promise<{
-  permissions: PermissionKey[];
-  departmentScope?: {
-    viewUsersDepartmentIds?: string[];
-    assignTasksDepartmentIds?: string[];
-  };
-}> => {
+): Promise<{ permissions: PermissionKey[]; roleRelations?: RoleRelations }> => {
   if (!roleKey) {
     return { permissions: [] };
   }
@@ -103,20 +94,14 @@ const getRoleAccess = async (
     const data = snapshot.docs[0]?.data() as {
       permissions?: PermissionKey[];
       key?: string;
-      departmentScope?: {
-        viewUsersDepartmentIds?: unknown;
-        assignTasksDepartmentIds?: unknown;
-      };
+      roleRelations?: unknown;
     };
     if (data.key === 'admin') {
       return { permissions: ALL_PERMISSIONS };
     }
     return {
       permissions: toPermissions(data.permissions),
-      departmentScope: {
-        viewUsersDepartmentIds: toDepartmentIds(data.departmentScope?.viewUsersDepartmentIds),
-        assignTasksDepartmentIds: toDepartmentIds(data.departmentScope?.assignTasksDepartmentIds),
-      },
+      roleRelations: normalizeRoleRelations(data.roleRelations),
     };
   }
 
@@ -127,20 +112,14 @@ const getRoleAccess = async (
   const data = docSnap.data() as {
     permissions?: PermissionKey[];
     key?: string;
-    departmentScope?: {
-      viewUsersDepartmentIds?: unknown;
-      assignTasksDepartmentIds?: unknown;
-    };
+    roleRelations?: unknown;
   };
   if (data.key === 'admin') {
     return { permissions: ALL_PERMISSIONS };
   }
   return {
     permissions: toPermissions(data.permissions),
-    departmentScope: {
-      viewUsersDepartmentIds: toDepartmentIds(data.departmentScope?.viewUsersDepartmentIds),
-      assignTasksDepartmentIds: toDepartmentIds(data.departmentScope?.assignTasksDepartmentIds),
-    },
+    roleRelations: normalizeRoleRelations(data.roleRelations),
   };
 };
 
@@ -170,8 +149,8 @@ const toUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile | 
     phone,
     avatarUrl,
     role,
-    departmentScope: isAdmin ? undefined : roleAccess.departmentScope,
     permissions: isAdmin ? ALL_PERMISSIONS : Array.from(new Set(rolePermissions)),
+    roleRelations: isAdmin ? undefined : roleAccess.roleRelations,
     active,
   };
 };
@@ -251,3 +230,4 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   return context ?? fallbackAuthContext;
 };
+
