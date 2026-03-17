@@ -8,12 +8,18 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { Customer, CustomerStatus } from '@/core/entities/customer';
 import { User } from '@/core/entities/user';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 
 type CustomerFormState = {
@@ -52,13 +58,11 @@ const statusStyles: Record<CustomerStatus, string> = {
 export default function Page() {
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [statusFilter, setStatusFilter] = useState<CustomerStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -68,10 +72,7 @@ export default function Page() {
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'customer_view']);
-  const canViewAllCustomers =
-    !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
-  const canViewSameRoleCustomers =
-    !!user && hasRoleScope(user.permissions, 'customer_view_same_role');
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'customers', user?.roleRelations);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'customer_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'customer_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'customer_delete']);
@@ -123,11 +124,11 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllCustomers && !canViewSameRoleCustomers) {
-      return user ? [{ id: user.id, name: user.fullName }] : [];
+    if (!hasUserVisibility) {
+      return [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllCustomers, canViewSameRoleCustomers, user, visibleUsers]);
+  }, [hasUserVisibility, user, visibleUsers]);
 
   const visibleUserIds = useMemo(() => {
     const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
@@ -137,6 +138,29 @@ export default function Page() {
     return ids;
   }, [visibleUsers, user]);
 
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+
+  const customersCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = isAdmin
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['customers', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, isAdmin, hasUserVisibility, visibleUserScope]);
+
+  const cachedCustomersEntry = customersCacheKey
+    ? getModuleCacheEntry<Customer[]>(customersCacheKey)
+    : null;
+  const [customers, setCustomers] = useState<Customer[]>(() => cachedCustomersEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedCustomersEntry);
+
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'customer_assign', {
       currentUser: user,
@@ -144,8 +168,36 @@ export default function Page() {
     });
   }, [users, roles, user]);
 
+  const syncCustomers = (next: Customer[]) => {
+    setCustomers(next);
+    if (customersCacheKey) {
+      setModuleCacheEntry(customersCacheKey, next);
+    }
+  };
+
+  const updateCustomers = (updater: (current: Customer[]) => Customer[]) => {
+    setCustomers((current) => {
+      const next = updater(current);
+      if (customersCacheKey) {
+        setModuleCacheEntry(customersCacheKey, next);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
-    if (!user || !(canViewAllCustomers || canViewSameRoleCustomers || canAssign)) {
+    const cachedEntry = customersCacheKey
+      ? getModuleCacheEntry<Customer[]>(customersCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setCustomers(cachedEntry.data);
+    setLoading(false);
+  }, [customersCacheKey]);
+
+  useEffect(() => {
+    if (!user || !(hasUserVisibility || canAssign)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -164,19 +216,20 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllCustomers, canViewSameRoleCustomers, canAssign]);
+  }, [user, hasUserVisibility, canAssign]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllCustomers && !canViewSameRoleCustomers) {
-      setOwnerFilter(user.id);
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
     }
-  }, [user, canViewAllCustomers, canViewSameRoleCustomers]);
+  }, [user, hasUserVisibility]);
 
   useEffect(() => {
+    let active = true;
     const loadCustomers = async () => {
       if (!user) {
         setCustomers([]);
@@ -188,59 +241,77 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      try {
-        if (canViewAllCustomers) {
-          const allCustomers = await firebaseCustomerRepository.listAll();
-          if (ownerFilter === 'all') {
-            setCustomers(allCustomers);
-            return;
-          }
-          const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = allCustomers.filter(
-            (customer) =>
-              customer.assignedTo === ownerFilter ||
-              (selectedRole ? customer.sharedRoles.includes(selectedRole) : false),
-          );
-          setCustomers(filtered);
+      const cachedEntry = customersCacheKey
+        ? getModuleCacheEntry<Customer[]>(customersCacheKey)
+        : null;
+      if (cachedEntry) {
+        setCustomers(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
           return;
         }
-        if (canViewSameRoleCustomers) {
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        let nextCustomers: Customer[] = [];
+        if (user.permissions.includes('admin')) {
+          const allCustomers = await firebaseCustomerRepository.listAll();
+          if (ownerFilter === 'all') {
+            nextCustomers = allCustomers;
+          } else {
+            const selectedRole = userRoleMap.get(ownerFilter);
+            nextCustomers = allCustomers.filter(
+              (customer) =>
+                customer.assignedTo === ownerFilter ||
+                (selectedRole ? customer.sharedRoles.includes(selectedRole) : false),
+            );
+          }
+        } else if (hasUserVisibility) {
           const allCustomers = await firebaseCustomerRepository.listAll();
           const sameRoleCustomers = allCustomers.filter((customer) =>
             visibleUserIds.has(customer.assignedTo),
           );
           if (ownerFilter === 'all') {
-            setCustomers(sameRoleCustomers);
-            return;
+            nextCustomers = sameRoleCustomers;
+          } else {
+            const selectedRole = userRoleMap.get(ownerFilter);
+            nextCustomers = sameRoleCustomers.filter(
+              (customer) =>
+                customer.assignedTo === ownerFilter ||
+                (selectedRole ? customer.sharedRoles.includes(selectedRole) : false),
+            );
           }
-          const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = sameRoleCustomers.filter(
-            (customer) =>
-              customer.assignedTo === ownerFilter ||
-              (selectedRole ? customer.sharedRoles.includes(selectedRole) : false),
-          );
-          setCustomers(filtered);
+        } else {
+          nextCustomers = await firebaseCustomerRepository.listForUser(user.id, user.role);
+        }
+        if (!active) {
           return;
         }
-        const result = await firebaseCustomerRepository.listForUser(user.id, user.role);
-        setCustomers(result);
+        syncCustomers(nextCustomers);
       } catch {
-        setError('Unable to load customers. Please try again.');
+        if (active) {
+          setError('Unable to load customers. Please try again.');
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
     loadCustomers();
+    return () => {
+      active = false;
+    };
   }, [
     user,
     canView,
-    canViewAllCustomers,
-    canViewSameRoleCustomers,
+    hasUserVisibility,
     ownerFilter,
     userRoleMap,
     visibleUserIds,
+    customersCacheKey,
   ]);
 
   const totals = useMemo(() => {
@@ -369,13 +440,13 @@ export default function Page() {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
-        setCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        updateCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       } else {
         const created = await firebaseCustomerRepository.create({
           ...updates,
           createdBy: user.id,
         });
-        setCustomers((prev) => [created, ...prev]);
+        updateCustomers((prev) => [created, ...prev]);
       }
       handleCloseModal();
     } catch {
@@ -408,7 +479,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseCustomerRepository.delete(selectedCustomer.id);
-      setCustomers((prev) => prev.filter((item) => item.id !== selectedCustomer.id));
+      updateCustomers((prev) => prev.filter((item) => item.id !== selectedCustomer.id));
       handleCloseModal();
     } catch {
       setError('Unable to delete customer. Please try again.');
@@ -429,7 +500,7 @@ export default function Page() {
         status: nextStatus,
         updatedAt: new Date().toISOString(),
       });
-      setCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      updateCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
     } catch {
       setError('Unable to update customer status.');
     }
@@ -449,25 +520,26 @@ export default function Page() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
-              <label htmlFor="customer-owner" className="sr-only">
-                Owner
-              </label>
-              <select
-                id="customer-owner"
-                name="customer-owner"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCustomers && !canViewSameRoleCustomers}
-                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-              >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {hasUserVisibility ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
+                <label htmlFor="customer-owner" className="sr-only">
+                  Owner
+                </label>
+                <select
+                  id="customer-owner"
+                  name="customer-owner"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                  className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none"
+                >
+                  {ownerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"

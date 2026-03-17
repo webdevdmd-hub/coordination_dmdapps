@@ -7,6 +7,12 @@ import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/fir
 import { useAuth } from '@/components/auth/AuthProvider';
 import { SalesOrderRequest } from '@/core/entities/salesOrderRequest';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { addSalesOrderTimelineEvent } from '@/lib/salesOrderTimeline';
 
@@ -52,13 +58,28 @@ const logStoreReceivedActivity = async (
 
 export default function Page() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<SalesOrderRequest[]>([]);
+  const storeCacheKey = 'store-sales-order-requests';
+  const cachedRequestsEntry = getModuleCacheEntry<SalesOrderRequest[]>(storeCacheKey);
+  const [requests, setRequests] = useState<SalesOrderRequest[]>(() => cachedRequestsEntry?.data ?? []);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'received'>('all');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !cachedRequestsEntry);
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const canView = !!user && hasPermission(user.permissions, ['admin', 'store']);
+
+  const syncRequests = (next: SalesOrderRequest[]) => {
+    setRequests(next);
+    setModuleCacheEntry(storeCacheKey, next);
+  };
+
+  const updateRequests = (updater: (current: SalesOrderRequest[]) => SalesOrderRequest[]) => {
+    setRequests((current) => {
+      const next = updater(current);
+      setModuleCacheEntry(storeCacheKey, next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!canView) {
@@ -68,7 +89,16 @@ export default function Page() {
     }
     let active = true;
     const load = async () => {
-      setIsLoading(true);
+      const cachedEntry = getModuleCacheEntry<SalesOrderRequest[]>(storeCacheKey);
+      if (cachedEntry) {
+        setRequests(cachedEntry.data);
+        setIsLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
       try {
         const all = await firebaseSalesOrderRequestRepository.listAll();
@@ -86,7 +116,7 @@ export default function Page() {
             const bTime = itemTime(b);
             return bTime.localeCompare(aTime);
           });
-        setRequests(sent);
+        syncRequests(sent);
       } catch {
         if (active) {
           setError('Unable to load Store handoff requests.');
@@ -124,7 +154,7 @@ export default function Page() {
         storeReceivedByName: user.fullName,
         updatedAt: now,
       });
-      setRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
+      updateRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
       await Promise.allSettled([logStoreReceivedActivity(request, user.id, user.fullName)]);
     } catch {
       setError('Unable to mark request as received.');

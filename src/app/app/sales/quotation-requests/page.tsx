@@ -16,13 +16,19 @@ import {
 } from '@/core/entities/quotationRequest';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getFirebaseAuth } from '@/frameworks/firebase/client';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries } from '@/lib/roles';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 
 type EligibleUser = {
@@ -102,14 +108,11 @@ const normalizeRequest = (raw: Record<string, unknown>): QuotationRequest => {
 
 export default function Page() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<QuotationRequest[]>([]);
-  const [tasksByRequest, setTasksByRequest] = useState<Record<string, QuotationRequestTask[]>>({});
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
   const [allUsers, setAllUsers] = useState<Array<{ id: string; role: string; active: boolean }>>([]);
   const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
   const [search, setSearch] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [activeSalesOrderTaskId, setActiveSalesOrderTaskId] = useState<string | null>(null);
@@ -127,10 +130,6 @@ export default function Page() {
   const [salesOrderSuccess, setSalesOrderSuccess] = useState<string | null>(null);
 
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view']);
-  const canViewAllRequests =
-    !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view_all']);
-  const canViewSameRoleRequests =
-    !!user && hasRoleScope(user.permissions, 'quotation_request_view_same_role');
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_edit']);
   const canDelete =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_delete']);
@@ -141,6 +140,11 @@ export default function Page() {
   const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
   const canViewAllProjects =
     !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
+  const hasUserVisibility = hasUserVisibilityAccess(
+    user,
+    'quotationRequests',
+    user?.roleRelations,
+  );
 
   const visibleUsers = useMemo(
     () => filterUsersByRole(user, allUsers, 'quotationRequests', user?.roleRelations),
@@ -153,10 +157,94 @@ export default function Page() {
     }
     return ids;
   }, [visibleUsers, user]);
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+  const quotationRequestsCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = user.permissions.includes('admin')
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['quotation-requests', user.id, scopeKey].join(':');
+  }, [user, hasUserVisibility, visibleUserScope]);
+  const cachedRequestsEntry = quotationRequestsCacheKey
+    ? getModuleCacheEntry<{
+        requests: QuotationRequest[];
+        tasksByRequest: Record<string, QuotationRequestTask[]>;
+      }>(quotationRequestsCacheKey)
+    : null;
+  const [requests, setRequests] = useState<QuotationRequest[]>(
+    () => cachedRequestsEntry?.data.requests ?? [],
+  );
+  const [tasksByRequest, setTasksByRequest] = useState<Record<string, QuotationRequestTask[]>>(
+    () => cachedRequestsEntry?.data.tasksByRequest ?? {},
+  );
+  const [isLoading, setIsLoading] = useState(() => !cachedRequestsEntry);
+
+  const syncRequestsState = (
+    nextRequests: QuotationRequest[],
+    nextTasksByRequest: Record<string, QuotationRequestTask[]>,
+  ) => {
+    setRequests(nextRequests);
+    setTasksByRequest(nextTasksByRequest);
+    if (quotationRequestsCacheKey) {
+      setModuleCacheEntry(quotationRequestsCacheKey, {
+        requests: nextRequests,
+        tasksByRequest: nextTasksByRequest,
+      });
+    }
+  };
+
+  const updateRequests = (updater: (current: QuotationRequest[]) => QuotationRequest[]) => {
+    setRequests((current) => {
+      const next = updater(current);
+      if (quotationRequestsCacheKey) {
+        setModuleCacheEntry(quotationRequestsCacheKey, {
+          requests: next,
+          tasksByRequest,
+        });
+      }
+      return next;
+    });
+  };
+
+  const updateTasksByRequest = (
+    updater: (current: Record<string, QuotationRequestTask[]>) => Record<string, QuotationRequestTask[]>,
+  ) => {
+    setTasksByRequest((current) => {
+      const next = updater(current);
+      if (quotationRequestsCacheKey) {
+        setModuleCacheEntry(quotationRequestsCacheKey, {
+          requests,
+          tasksByRequest: next,
+        });
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let isActive = true;
     const loadRecipients = async () => {
+      const recipientsCacheKey = user ? `quotation-requests-recipients:${user.id}` : null;
+      const cachedEntry = recipientsCacheKey
+        ? getModuleCacheEntry<{
+            eligibleUsers: EligibleUser[];
+            allUsers: Array<{ id: string; role: string; active: boolean }>;
+          }>(recipientsCacheKey)
+        : null;
+      if (cachedEntry) {
+        setEligibleUsers(cachedEntry.data.eligibleUsers);
+        setAllUsers(cachedEntry.data.allUsers);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
       try {
         const [roles, users] = await Promise.all([
           fetchRoleSummaries(),
@@ -197,14 +285,19 @@ export default function Page() {
           })
           .filter((value): value is EligibleUser => Boolean(value));
         filtered.sort((a, b) => a.name.localeCompare(b.name));
+        const allUsersList = users.map((entry) => ({
+          id: entry.id,
+          role: entry.role,
+          active: entry.active,
+        }));
         setEligibleUsers(filtered);
-        setAllUsers(
-          users.map((entry) => ({
-            id: entry.id,
-            role: entry.role,
-            active: entry.active,
-          })),
-        );
+        setAllUsers(allUsersList);
+        if (recipientsCacheKey) {
+          setModuleCacheEntry(recipientsCacheKey, {
+            eligibleUsers: filtered,
+            allUsers: allUsersList,
+          });
+        }
       } catch {
         if (isActive) {
           setEligibleUsers([]);
@@ -225,12 +318,21 @@ export default function Page() {
     }
     let isActive = true;
     const loadProjects = async () => {
+      const projectsCacheKey = ['quotation-requests-projects', user.id, canViewAllProjects ? 'all' : user.role].join(':');
+      const cachedEntry = getModuleCacheEntry<Project[]>(projectsCacheKey);
+      if (cachedEntry) {
+        setProjects(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
       try {
         const result = canViewAllProjects
           ? await firebaseProjectRepository.listAll()
           : await firebaseProjectRepository.listForUser(user.id, user.role);
         if (isActive) {
           setProjects(result);
+          setModuleCacheEntry(projectsCacheKey, result);
         }
       } catch {
         if (isActive) {
@@ -245,6 +347,21 @@ export default function Page() {
   }, [user, canViewProjects, canViewAllProjects]);
 
   useEffect(() => {
+    const cachedEntry = quotationRequestsCacheKey
+      ? getModuleCacheEntry<{
+          requests: QuotationRequest[];
+          tasksByRequest: Record<string, QuotationRequestTask[]>;
+        }>(quotationRequestsCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setRequests(cachedEntry.data.requests);
+    setTasksByRequest(cachedEntry.data.tasksByRequest);
+    setIsLoading(false);
+  }, [quotationRequestsCacheKey]);
+
+  useEffect(() => {
     if (!user || !canView) {
       setRequests([]);
       setTasksByRequest({});
@@ -253,16 +370,31 @@ export default function Page() {
     }
     let isActive = true;
     const loadRequests = async () => {
-      setIsLoading(true);
+      const cachedEntry = quotationRequestsCacheKey
+        ? getModuleCacheEntry<{
+            requests: QuotationRequest[];
+            tasksByRequest: Record<string, QuotationRequestTask[]>;
+          }>(quotationRequestsCacheKey)
+        : null;
+      if (cachedEntry) {
+        setRequests(cachedEntry.data.requests);
+        setTasksByRequest(cachedEntry.data.tasksByRequest);
+        setIsLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
       try {
         const rawRequests = (await firebaseQuotationRequestRepository.listAll()) as Array<
           Record<string, unknown>
         >;
         const normalized = rawRequests.map((entry) => normalizeRequest(entry));
-        const visible = canViewAllRequests
+        const visible = user.permissions.includes('admin')
           ? normalized
-          : canViewSameRoleRequests
+          : hasUserVisibility
             ? normalized.filter(
                 (request) =>
                   visibleUserIds.has(request.requestedBy) ||
@@ -276,7 +408,6 @@ export default function Page() {
         if (!isActive) {
           return;
         }
-        setRequests(visible);
         const tasksEntries = await Promise.all(
           visible.map(async (request) => {
             const tasks = (await firebaseQuotationRequestRepository.listTasks(
@@ -292,7 +423,7 @@ export default function Page() {
         tasksEntries.forEach(([id, tasks]) => {
           map[id] = tasks;
         });
-        setTasksByRequest(map);
+        syncRequestsState(visible, map);
       } catch {
         if (isActive) {
           setError('Unable to load quotation requests.');
@@ -307,7 +438,7 @@ export default function Page() {
     return () => {
       isActive = false;
     };
-  }, [user, canView, canViewAllRequests, canViewSameRoleRequests, visibleUserIds]);
+  }, [user, canView, hasUserVisibility, visibleUserIds, quotationRequestsCacheKey]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -567,7 +698,7 @@ export default function Page() {
       status: 'assigned',
       updatedAt: now,
     })) as QuotationRequestTask;
-    setTasksByRequest((prev) => ({
+    updateTasksByRequest((prev) => ({
       ...prev,
       [request.id]: (prev[request.id] ?? []).map((item) => (item.id === task.id ? updated : item)),
     }));
@@ -666,7 +797,7 @@ export default function Page() {
           quotationRequestTaskId: created.id,
         });
       }
-      setTasksByRequest((prev) => ({
+      updateTasksByRequest((prev) => ({
         ...prev,
         [request.id]: [created as QuotationRequestTask, ...(prev[request.id] ?? [])],
       }));
@@ -718,8 +849,8 @@ export default function Page() {
       return;
     }
     await firebaseQuotationRequestRepository.delete(requestId);
-    setRequests((prev) => prev.filter((item) => item.id !== requestId));
-    setTasksByRequest((prev) => {
+    updateRequests((prev) => prev.filter((item) => item.id !== requestId));
+    updateTasksByRequest((prev) => {
       const next = { ...prev };
       delete next[requestId];
       return next;

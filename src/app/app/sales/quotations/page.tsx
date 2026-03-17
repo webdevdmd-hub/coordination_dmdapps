@@ -15,10 +15,16 @@ import { Quotation, QuotationLineItem, QuotationStatus } from '@/core/entities/q
 import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { formatCurrency } from '@/lib/currency';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 
 const statusOptions: Array<{ value: QuotationStatus; label: string }> = [
@@ -91,7 +97,6 @@ const calculateTotals = (items: QuotationLineItem[], taxRate: number) => {
 
 export default function Page() {
   const { user } = useAuth();
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -99,7 +104,6 @@ export default function Page() {
   const [statusFilter, setStatusFilter] = useState<QuotationStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -112,10 +116,7 @@ export default function Page() {
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_view']);
-  const canViewAllQuotations =
-    !!user && hasPermission(user.permissions, ['admin', 'quotation_view_all']);
-  const canViewSameRoleQuotations =
-    !!user && hasRoleScope(user.permissions, 'quotation_view_same_role');
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'quotations', user?.roleRelations);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'quotation_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'quotation_delete']);
@@ -191,11 +192,11 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllQuotations && !canViewSameRoleQuotations) {
-      return user ? [{ id: user.id, name: user.fullName }] : [];
+    if (!hasUserVisibility) {
+      return [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllQuotations, canViewSameRoleQuotations, user, visibleUsers]);
+  }, [hasUserVisibility, user, visibleUsers]);
 
   const visibleUserIds = useMemo(() => {
     const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
@@ -204,32 +205,78 @@ export default function Page() {
     }
     return ids;
   }, [visibleUsers, user]);
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+  const quotationsCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = isAdmin
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['quotations', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, isAdmin, hasUserVisibility, visibleUserScope]);
+  const cachedQuotesEntry = quotationsCacheKey
+    ? getModuleCacheEntry<Quotation[]>(quotationsCacheKey)
+    : null;
+  const [quotations, setQuotations] = useState<Quotation[]>(() => cachedQuotesEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedQuotesEntry);
+
+  const syncQuotations = (next: Quotation[]) => {
+    setQuotations(next);
+    if (quotationsCacheKey) {
+      setModuleCacheEntry(quotationsCacheKey, next);
+    }
+  };
+
+  const updateQuotations = (updater: (current: Quotation[]) => Quotation[]) => {
+    setQuotations((current) => {
+      const next = updater(current);
+      if (quotationsCacheKey) {
+        setModuleCacheEntry(quotationsCacheKey, next);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
-    if (!user || !(canViewAllQuotations || canViewSameRoleQuotations)) {
+    if (!user || !hasUserVisibility) {
       setUsers([]);
       return;
     }
     const loadUsers = async () => {
+      const usersCacheKey = 'quotations-users';
+      const cachedEntry = getModuleCacheEntry<User[]>(usersCacheKey);
+      if (cachedEntry) {
+        setUsers(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
       try {
         const result = await firebaseUserRepository.listAll();
         setUsers(result);
+        setModuleCacheEntry(usersCacheKey, result);
       } catch {
         setUsers([]);
       }
     };
     loadUsers();
-  }, [user, canViewAllQuotations, canViewSameRoleQuotations]);
+  }, [user, hasUserVisibility]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllQuotations && !canViewSameRoleQuotations) {
-      setOwnerFilter(user.id);
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
     }
-  }, [user, canViewAllQuotations, canViewSameRoleQuotations]);
+  }, [user, hasUserVisibility]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -237,14 +284,24 @@ export default function Page() {
         setCustomers([]);
         return;
       }
+      const customersCacheKey = ['quotations-customers', user.id, isAdmin ? 'admin' : user.role].join(':');
+      const cachedEntry = getModuleCacheEntry<Customer[]>(customersCacheKey);
+      if (cachedEntry) {
+        setCustomers(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
       try {
         if (canViewAllCustomers || isAdmin) {
           const allCustomers = await firebaseCustomerRepository.listAll();
           setCustomers(allCustomers);
+          setModuleCacheEntry(customersCacheKey, allCustomers);
           return;
         }
         const result = await firebaseCustomerRepository.listForUser(user.id, user.role);
         setCustomers(result);
+        setModuleCacheEntry(customersCacheKey, result);
       } catch {
         setCustomers([]);
       }
@@ -258,17 +315,37 @@ export default function Page() {
         setProjects([]);
         return;
       }
+      const projectsListCacheKey = ['quotations-projects', user.id, canViewAllProjects ? 'all' : user.role].join(':');
+      const cachedEntry = getModuleCacheEntry<Project[]>(projectsListCacheKey);
+      if (cachedEntry) {
+        setProjects(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
       try {
         const result = canViewAllProjects
           ? await firebaseProjectRepository.listAll()
           : await firebaseProjectRepository.listForUser(user.id, user.role);
         setProjects(result);
+        setModuleCacheEntry(projectsListCacheKey, result);
       } catch {
         setProjects([]);
       }
     };
     loadProjects();
   }, [user, canViewProjects, canViewAllProjects]);
+
+  useEffect(() => {
+    const cachedEntry = quotationsCacheKey
+      ? getModuleCacheEntry<Quotation[]>(quotationsCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setQuotations(cachedEntry.data);
+    setLoading(false);
+  }, [quotationsCacheKey]);
 
   useEffect(() => {
     const loadQuotations = async () => {
@@ -282,44 +359,52 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      try {
-        if (canViewAllQuotations) {
-          const allQuotes = await firebaseQuotationRepository.listAll();
-          if (ownerFilter === 'all') {
-            setQuotations(allQuotes);
-            return;
-          }
-          const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = allQuotes.filter(
-            (quote) =>
-              quote.assignedTo === ownerFilter ||
-              (selectedRole ? quote.sharedRoles.includes(selectedRole) : false),
-          );
-          setQuotations(filtered);
+      const cachedEntry = quotationsCacheKey
+        ? getModuleCacheEntry<Quotation[]>(quotationsCacheKey)
+        : null;
+      if (cachedEntry) {
+        setQuotations(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
           return;
         }
-        if (canViewSameRoleQuotations) {
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        let nextQuotes: Quotation[] = [];
+        if (user.permissions.includes('admin')) {
+          const allQuotes = await firebaseQuotationRepository.listAll();
+          if (ownerFilter === 'all') {
+            nextQuotes = allQuotes;
+          } else {
+            const selectedRole = userRoleMap.get(ownerFilter);
+            nextQuotes = allQuotes.filter(
+              (quote) =>
+                quote.assignedTo === ownerFilter ||
+                (selectedRole ? quote.sharedRoles.includes(selectedRole) : false),
+            );
+          }
+        } else if (hasUserVisibility) {
           const allQuotes = await firebaseQuotationRepository.listAll();
           const sameRoleQuotes = allQuotes.filter((quote) =>
             visibleUserIds.has(quote.assignedTo),
           );
           if (ownerFilter === 'all') {
-            setQuotations(sameRoleQuotes);
-            return;
+            nextQuotes = sameRoleQuotes;
+          } else {
+            const selectedRole = userRoleMap.get(ownerFilter);
+            nextQuotes = sameRoleQuotes.filter(
+              (quote) =>
+                quote.assignedTo === ownerFilter ||
+                (selectedRole ? quote.sharedRoles.includes(selectedRole) : false),
+            );
           }
-          const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = sameRoleQuotes.filter(
-            (quote) =>
-              quote.assignedTo === ownerFilter ||
-              (selectedRole ? quote.sharedRoles.includes(selectedRole) : false),
-          );
-          setQuotations(filtered);
-          return;
+        } else {
+          nextQuotes = await firebaseQuotationRepository.listForUser(user.id, user.role);
         }
-        const result = await firebaseQuotationRepository.listForUser(user.id, user.role);
-        setQuotations(result);
+        syncQuotations(nextQuotes);
       } catch {
         setError('Unable to load quotations. Please try again.');
       } finally {
@@ -330,11 +415,11 @@ export default function Page() {
   }, [
     user,
     canView,
-    canViewAllQuotations,
-    canViewSameRoleQuotations,
+    hasUserVisibility,
     ownerFilter,
     userRoleMap,
     visibleUserIds,
+    quotationsCacheKey,
   ]);
 
   const filteredQuotations = useMemo(() => {
@@ -636,14 +721,14 @@ export default function Page() {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
-        setQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        updateQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         await syncProjectTimelineForQuotation(updated, previousStatus);
       } else {
         const created = await firebaseQuotationRepository.create({
           ...updates,
           createdBy: user.id,
         });
-        setQuotations((prev) => [created, ...prev]);
+        updateQuotations((prev) => [created, ...prev]);
         await syncProjectTimelineForQuotation(created);
       }
       handleCloseModal();
@@ -677,7 +762,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseQuotationRepository.delete(selectedQuotation.id);
-      setQuotations((prev) => prev.filter((item) => item.id !== selectedQuotation.id));
+      updateQuotations((prev) => prev.filter((item) => item.id !== selectedQuotation.id));
       handleCloseModal();
     } catch {
       setError('Unable to delete quotation. Please try again.');
@@ -698,7 +783,7 @@ export default function Page() {
         status: nextStatus,
         updatedAt: new Date().toISOString(),
       });
-      setQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      updateQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       await syncProjectTimelineForQuotation(updated, quote.status);
     } catch {
       setError('Unable to update quotation status.');
@@ -719,25 +804,26 @@ export default function Page() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
-              <label htmlFor="quote-owner" className="sr-only">
-                Owner
-              </label>
-              <select
-                id="quote-owner"
-                name="quote-owner"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllQuotations && !canViewSameRoleQuotations}
-                className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-              >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {hasUserVisibility ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
+                <label htmlFor="quote-owner" className="sr-only">
+                  Owner
+                </label>
+                <select
+                  id="quote-owner"
+                  name="quote-owner"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                  className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
+                >
+                  {ownerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"

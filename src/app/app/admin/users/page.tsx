@@ -6,6 +6,12 @@ import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { ModuleShell } from '@/components/ui/ModuleShell';
 import { PermissionKey } from '@/core/entities/permissions';
 import { User, UserRole } from '@/core/entities/user';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 
 type EditableUser = {
   id: string;
@@ -38,11 +44,16 @@ const emptyNewUser: NewUser = {
   password: '',
 };
 
+const USERS_CACHE_KEY = 'admin-users';
+const ROLES_CACHE_KEY = 'admin-user-roles';
+
 export default function Page() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [rolesLoading, setRolesLoading] = useState(true);
+  const cachedUsersEntry = getModuleCacheEntry<User[]>(USERS_CACHE_KEY);
+  const cachedRolesEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
+  const [users, setUsers] = useState<User[]>(() => cachedUsersEntry?.data ?? []);
+  const [roles, setRoles] = useState<Role[]>(() => cachedRolesEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedUsersEntry);
+  const [rolesLoading, setRolesLoading] = useState(() => !cachedRolesEntry);
   const [error, setError] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [newUser, setNewUser] = useState(emptyNewUser);
@@ -54,8 +65,35 @@ export default function Page() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<User | null>(null);
 
-  const refreshUsers = useCallback(async () => {
-    setLoading(true);
+  const syncUsers = useCallback((next: User[]) => {
+    setUsers(next);
+    setModuleCacheEntry(USERS_CACHE_KEY, next);
+  }, []);
+
+  const syncRoles = useCallback((next: Role[]) => {
+    setRoles(next);
+    setModuleCacheEntry(ROLES_CACHE_KEY, next);
+  }, []);
+
+  const updateUsers = useCallback((updater: (current: User[]) => User[]) => {
+    setUsers((current) => {
+      const next = updater(current);
+      setModuleCacheEntry(USERS_CACHE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const refreshUsers = useCallback(async (options?: { force?: boolean }) => {
+    const cachedEntry = getModuleCacheEntry<User[]>(USERS_CACHE_KEY);
+    if (cachedEntry && !options?.force) {
+      setUsers(cachedEntry.data);
+      setLoading(false);
+      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+        return;
+      }
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const response = await fetch('/api/admin/users', { cache: 'no-store' });
@@ -65,29 +103,38 @@ export default function Page() {
       const payload = (await response.json()) as { users?: User[] };
       const result = payload.users ?? [];
       const sorted = [...result].sort((a, b) => (a.fullName ?? '').localeCompare(b.fullName ?? ''));
-      setUsers(sorted);
+      syncUsers(sorted);
     } catch {
       setError('Unable to load users. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [syncUsers]);
 
-  const refreshRoles = useCallback(async () => {
-    setRolesLoading(true);
+  const refreshRoles = useCallback(async (options?: { force?: boolean }) => {
+    const cachedEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
+    if (cachedEntry && !options?.force) {
+      setRoles(cachedEntry.data);
+      setRolesLoading(false);
+      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+        return;
+      }
+    } else {
+      setRolesLoading(true);
+    }
     try {
       const response = await fetch('/api/admin/roles', { cache: 'no-store' });
       if (!response.ok) {
         throw new Error('Unable to load roles.');
       }
       const payload = (await response.json()) as { roles?: Role[] };
-      setRoles(payload.roles ?? []);
+      syncRoles(payload.roles ?? []);
     } catch {
       setError('Unable to load roles. Please try again.');
     } finally {
       setRolesLoading(false);
     }
-  }, []);
+  }, [syncRoles]);
 
   useEffect(() => {
     refreshUsers();
@@ -211,7 +258,7 @@ export default function Page() {
         } | null;
         throw new Error(payload?.error ?? 'Unable to delete user.');
       }
-      setUsers((prev) => prev.filter((user) => user.id !== deleteCandidate.id));
+      updateUsers((prev) => prev.filter((user) => user.id !== deleteCandidate.id));
       if (selectedUserId === deleteCandidate.id) {
         setSelectedUserId(null);
       }
@@ -262,7 +309,7 @@ export default function Page() {
       }
       setNewUser(emptyNewUser);
       setIsCreateOpen(false);
-      await refreshUsers();
+      await refreshUsers({ force: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to create user.';
       setError(message);
@@ -299,7 +346,7 @@ export default function Page() {
         throw new Error(payload?.error ?? 'Unable to update user.');
       }
       setIsEditOpen(false);
-      await refreshUsers();
+      await refreshUsers({ force: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to update user.';
       setError(message);
@@ -326,7 +373,7 @@ export default function Page() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={refreshUsers}
+              onClick={() => void refreshUsers({ force: true })}
               className="rounded-full border border-border/60 bg-surface-strong/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:text-text"
             >
               Refresh

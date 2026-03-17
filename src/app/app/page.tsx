@@ -15,6 +15,12 @@ import { Project } from '@/core/entities/project';
 import { Quotation } from '@/core/entities/quotation';
 import { Task } from '@/core/entities/task';
 import { formatCurrency } from '@/lib/currency';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { getFirstAccessiblePath } from '@/lib/navigationAccess';
 import { hasPermission } from '@/lib/permissions';
 
@@ -43,13 +49,7 @@ const isBeforeToday = (value?: string) => {
 export default function DashboardPage() {
   const router = useRouter();
   const { user, permissions, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
   const isAdmin = !!permissions?.includes('admin');
   const canViewLeads = hasPermission(permissions ?? [], ['admin', 'lead_view']);
@@ -62,6 +62,50 @@ export default function DashboardPage() {
     () => getFirstAccessiblePath(permissions ?? [], '/app'),
     [permissions],
   );
+
+  const dashboardCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    return ['dashboard', user.id, permissions?.includes('admin') ? 'admin' : user.role].join(':');
+  }, [user, permissions]);
+
+  const cachedDashboardEntry = dashboardCacheKey
+    ? getModuleCacheEntry<{
+        leads: Lead[];
+        tasks: Task[];
+        projects: Project[];
+        quotations: Quotation[];
+        calendarEvents: CalendarEvent[];
+      }>(dashboardCacheKey)
+    : null;
+  const [loading, setLoading] = useState(() => !cachedDashboardEntry);
+  const [leads, setLeads] = useState<Lead[]>(() => cachedDashboardEntry?.data.leads ?? []);
+  const [tasks, setTasks] = useState<Task[]>(() => cachedDashboardEntry?.data.tasks ?? []);
+  const [projects, setProjects] = useState<Project[]>(() => cachedDashboardEntry?.data.projects ?? []);
+  const [quotations, setQuotations] = useState(
+    () => cachedDashboardEntry?.data.quotations ?? [],
+  );
+  const [calendarEvents, setCalendarEvents] = useState(
+    () => cachedDashboardEntry?.data.calendarEvents ?? [],
+  );
+
+  const syncDashboard = (next: {
+    leads: Lead[];
+    tasks: Task[];
+    projects: Project[];
+    quotations: Quotation[];
+    calendarEvents: CalendarEvent[];
+  }) => {
+    setLeads(next.leads);
+    setTasks(next.tasks);
+    setProjects(next.projects);
+    setQuotations(next.quotations);
+    setCalendarEvents(next.calendarEvents);
+    if (dashboardCacheKey) {
+      setModuleCacheEntry(dashboardCacheKey, next);
+    }
+  };
 
   useEffect(() => {
     if (authLoading) {
@@ -79,7 +123,24 @@ export default function DashboardPage() {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const cachedEntry = dashboardCacheKey
+      ? getModuleCacheEntry<{
+          leads: Lead[];
+          tasks: Task[];
+          projects: Project[];
+          quotations: Quotation[];
+          calendarEvents: CalendarEvent[];
+        }>(dashboardCacheKey)
+      : null;
+    if (cachedEntry) {
+      syncDashboard(cachedEntry.data);
+      setLoading(false);
+      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+        return;
+      }
+    } else {
+      setLoading(true);
+    }
     setError(null);
     const load = async () => {
       try {
@@ -110,11 +171,13 @@ export default function DashboardPage() {
               : firebaseCalendarRepository.listByOwner(user.id)
             : Promise.resolve([] as CalendarEvent[]),
         ]);
-        setLeads(leadData);
-        setTasks(taskData);
-        setProjects(projectData);
-        setQuotations(quotationData);
-        setCalendarEvents(calendarData);
+        syncDashboard({
+          leads: leadData,
+          tasks: taskData,
+          projects: projectData,
+          quotations: quotationData,
+          calendarEvents: calendarData,
+        });
       } catch {
         setError('Unable to load dashboard data. Please try again.');
       } finally {
@@ -134,6 +197,7 @@ export default function DashboardPage() {
     canViewProjects,
     canViewQuotations,
     canViewCalendar,
+    dashboardCacheKey,
   ]);
 
   const metrics = useMemo(() => {

@@ -10,13 +10,19 @@ import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { CalendarCategory, CalendarEvent, CalendarItemType } from '@/core/entities/calendarEvent';
 import { TaskRecurrence } from '@/core/entities/task';
 import { User } from '@/core/entities/user';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { emitNotificationEventSafe } from '@/lib/notifications';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 
 type CalendarFormState = {
@@ -186,10 +192,8 @@ const getNextOccurrenceStart = (date: Date, recurrenceType: TaskRecurrence) => {
 
 export default function Page() {
   const { user } = useAuth();
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
@@ -208,10 +212,7 @@ export default function Page() {
   );
 
   const canView = !!user && hasPermission(user.permissions, ['admin', 'calendar_view']);
-  const canViewAllCalendar =
-    !!user && hasPermission(user.permissions, ['admin', 'calendar_view_all']);
-  const canViewSameRoleCalendar =
-    !!user && hasRoleScope(user.permissions, 'calendar_view_same_role');
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'calendar', user?.roleRelations);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'calendar_create']);
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canCreateItems = canCreate || canCreateTasks;
@@ -238,11 +239,11 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const base = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllCalendar && !canViewSameRoleCalendar) {
-      return user ? [{ id: user.id, name: user.fullName }] : [];
+    if (!hasUserVisibility) {
+      return [];
     }
     return [{ id: 'all', name: 'All users' }, ...base];
-  }, [canViewAllCalendar, canViewSameRoleCalendar, user, visibleUsers]);
+  }, [hasUserVisibility, user, visibleUsers]);
 
   const visibleUserIds = useMemo(() => {
     const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
@@ -252,6 +253,29 @@ export default function Page() {
     return ids;
   }, [visibleUsers, user]);
 
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+
+  const calendarCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = user.permissions.includes('admin')
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['calendar', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, hasUserVisibility, visibleUserScope]);
+
+  const cachedCalendarEntry = calendarCacheKey
+    ? getModuleCacheEntry<CalendarEvent[]>(calendarCacheKey)
+    : null;
+  const [events, setEvents] = useState<CalendarEvent[]>(() => cachedCalendarEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedCalendarEntry);
+
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'calendar_assign', {
       currentUser: user,
@@ -259,16 +283,44 @@ export default function Page() {
     });
   }, [users, roles, user]);
 
+  const syncEvents = (next: CalendarEvent[]) => {
+    setEvents(next);
+    if (calendarCacheKey) {
+      setModuleCacheEntry(calendarCacheKey, next);
+    }
+  };
+
+  const updateEvents = (updater: (current: CalendarEvent[]) => CalendarEvent[]) => {
+    setEvents((current) => {
+      const next = updater(current);
+      if (calendarCacheKey) {
+        setModuleCacheEntry(calendarCacheKey, next);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllCalendar && !canViewSameRoleCalendar) {
-      setOwnerFilter(user.id);
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
       return;
     }
-  }, [user, canViewAllCalendar, canViewSameRoleCalendar]);
+  }, [user, hasUserVisibility]);
+
+  useEffect(() => {
+    const cachedEntry = calendarCacheKey
+      ? getModuleCacheEntry<CalendarEvent[]>(calendarCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setEvents(cachedEntry.data);
+    setLoading(false);
+  }, [calendarCacheKey]);
 
   const dateInputValue = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -482,7 +534,7 @@ export default function Page() {
 
   useEffect(() => {
     const loadUsers = async () => {
-      if (!user || !(canViewAllCalendar || canViewSameRoleCalendar || canAssign)) {
+      if (!user || !(hasUserVisibility || canAssign)) {
         setUsers([]);
         setRoles([]);
         return;
@@ -500,9 +552,10 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllCalendar, canViewSameRoleCalendar, canAssign]);
+  }, [user, hasUserVisibility, canAssign]);
 
   useEffect(() => {
+    let active = true;
     const loadEvents = async () => {
       if (!user) {
         setEvents([]);
@@ -514,45 +567,63 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
+      const cachedEntry = calendarCacheKey
+        ? getModuleCacheEntry<CalendarEvent[]>(calendarCacheKey)
+        : null;
+      if (cachedEntry) {
+        setEvents(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setLoading(true);
+      }
       setError(null);
       try {
-        if (canViewAllCalendar) {
+        let nextEvents: CalendarEvent[] = [];
+        if (user.permissions.includes('admin')) {
           const useAll = ownerFilter === 'all';
-          const result = useAll
+          nextEvents = useAll
             ? await firebaseCalendarRepository.listAll()
             : await firebaseCalendarRepository.listByOwner(ownerFilter);
-          setEvents(result);
-          return;
-        }
-        if (canViewSameRoleCalendar) {
+        } else if (hasUserVisibility) {
           const allEvents = await firebaseCalendarRepository.listAll();
           const sameRoleEvents = allEvents.filter((entry) => visibleUserIds.has(entry.ownerId));
-          setEvents(
+          nextEvents =
             ownerFilter === 'all'
               ? sameRoleEvents
-              : sameRoleEvents.filter((entry) => entry.ownerId === ownerFilter),
+              : sameRoleEvents.filter((entry) => entry.ownerId === ownerFilter);
+        } else {
+          nextEvents = await firebaseCalendarRepository.listByOwner(
+            ownerFilter === 'all' ? user.id : ownerFilter,
           );
+        }
+        if (!active) {
           return;
         }
-        const result = await firebaseCalendarRepository.listByOwner(
-          ownerFilter === 'all' ? user.id : ownerFilter,
-        );
-        setEvents(result);
+        syncEvents(nextEvents);
       } catch {
-        setError('Unable to load calendar events. Please try again.');
+        if (active) {
+          setError('Unable to load calendar events. Please try again.');
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
     loadEvents();
+    return () => {
+      active = false;
+    };
   }, [
     user,
     canView,
-    canViewAllCalendar,
-    canViewSameRoleCalendar,
+    hasUserVisibility,
     ownerFilter,
     visibleUserIds,
+    calendarCacheKey,
   ]);
 
   useEffect(() => {
@@ -682,7 +753,7 @@ export default function Page() {
         const updated = await firebaseCalendarRepository.update(editingEvent.id, {
           ...calendarPayload,
         });
-        setEvents((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        updateEvents((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         await emitNotificationEventSafe({
           type: 'calendar.broadcast',
           title: 'Calendar Updated',
@@ -751,7 +822,7 @@ export default function Page() {
         const created = await firebaseCalendarRepository.create({
           ...calendarPayload,
         });
-        setEvents((prev) => [created, ...prev]);
+        updateEvents((prev) => [created, ...prev]);
         await emitNotificationEventSafe({
           type: 'calendar.broadcast',
           title: 'Calendar Updated',
@@ -804,7 +875,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseCalendarRepository.delete(editingEvent.id);
-      setEvents((prev) => prev.filter((item) => item.id !== editingEvent.id));
+      updateEvents((prev) => prev.filter((item) => item.id !== editingEvent.id));
       setIsCreateOpen(false);
     } catch {
       setError('Unable to delete the event. Please try again.');
@@ -839,7 +910,7 @@ export default function Page() {
         endDate: toDateKey(nextEnd),
         updatedAt: new Date().toISOString(),
       });
-      setEvents((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      updateEvents((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       await emitNotificationEventSafe({
         type: 'calendar.broadcast',
         title: 'Calendar Updated',
@@ -886,38 +957,39 @@ export default function Page() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <label htmlFor="calendar-owner-header" className="sr-only">
-                Owner
-              </label>
-              <select
-                id="calendar-owner-header"
-                name="calendar-owner-header"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllCalendar && !canViewSameRoleCalendar}
-                className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-              >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {hasUserVisibility ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <label htmlFor="calendar-owner-header" className="sr-only">
+                  Owner
+                </label>
+                <select
+                  id="calendar-owner-header"
+                  name="calendar-owner-header"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                  className="bg-transparent text-sm font-semibold text-text outline-none"
+                >
+                  {ownerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => openCreateModal()}

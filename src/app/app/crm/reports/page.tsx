@@ -10,6 +10,12 @@ import { CalendarEvent } from '@/core/entities/calendarEvent';
 import { Lead } from '@/core/entities/lead';
 import { User } from '@/core/entities/user';
 import { formatCurrency } from '@/lib/currency';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 
 const statusOrder: Array<{ key: Lead['status']; label: string }> = [
@@ -35,12 +41,9 @@ const uniqueCount = (values: string[]) => new Set(values.filter(Boolean)).size;
 
 export default function Page() {
   const { user } = useAuth();
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(() => toMonthInput(new Date()));
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = !!user?.permissions.includes('admin');
@@ -69,6 +72,40 @@ export default function Page() {
     return [{ id: 'all', name: 'All users' }, ...list];
   }, [isAdmin, user, users]);
 
+  const reportsCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    return ['crm-reports', user.id, isAdmin ? ownerFilter : user.id].join(':');
+  }, [user, isAdmin, ownerFilter]);
+
+  const cachedReportsEntry = reportsCacheKey
+    ? getModuleCacheEntry<{ leads: Lead[]; events: CalendarEvent[] }>(reportsCacheKey)
+    : null;
+  const [leads, setLeads] = useState<Lead[]>(() => cachedReportsEntry?.data.leads ?? []);
+  const [events, setEvents] = useState<CalendarEvent[]>(() => cachedReportsEntry?.data.events ?? []);
+  const [loading, setLoading] = useState(() => !cachedReportsEntry);
+
+  const syncReports = (next: { leads: Lead[]; events: CalendarEvent[] }) => {
+    setLeads(next.leads);
+    setEvents(next.events);
+    if (reportsCacheKey) {
+      setModuleCacheEntry(reportsCacheKey, next);
+    }
+  };
+
+  useEffect(() => {
+    const cachedEntry = reportsCacheKey
+      ? getModuleCacheEntry<{ leads: Lead[]; events: CalendarEvent[] }>(reportsCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setLeads(cachedEntry.data.leads);
+    setEvents(cachedEntry.data.events);
+    setLoading(false);
+  }, [reportsCacheKey]);
+
   useEffect(() => {
     if (!user || !isAdmin) {
       setUsers([]);
@@ -96,6 +133,7 @@ export default function Page() {
   }, [user, isAdmin]);
 
   useEffect(() => {
+    let active = true;
     const loadData = async () => {
       if (!user) {
         setLeads([]);
@@ -109,7 +147,19 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
+      const cachedEntry = reportsCacheKey
+        ? getModuleCacheEntry<{ leads: Lead[]; events: CalendarEvent[] }>(reportsCacheKey)
+        : null;
+      if (cachedEntry) {
+        setLeads(cachedEntry.data.leads);
+        setEvents(cachedEntry.data.events);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setLoading(true);
+      }
       setError(null);
       try {
         const useAll = isAdmin && ownerFilter === 'all';
@@ -125,16 +175,25 @@ export default function Page() {
           : Promise.resolve([] as CalendarEvent[]);
 
         const [leadResult, eventResult] = await Promise.all([leadPromise, eventPromise]);
-        setLeads(leadResult);
-        setEvents(eventResult);
+        if (!active) {
+          return;
+        }
+        syncReports({ leads: leadResult, events: eventResult });
       } catch {
-        setError('Unable to load CRM reports. Please try again.');
+        if (active) {
+          setError('Unable to load CRM reports. Please try again.');
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
     loadData();
-  }, [user, isAdmin, ownerFilter, canViewLeads, canViewCalendar]);
+    return () => {
+      active = false;
+    };
+  }, [user, isAdmin, ownerFilter, canViewLeads, canViewCalendar, reportsCacheKey]);
 
   const filteredLeads = useMemo(() => {
     if (!monthFilter) {

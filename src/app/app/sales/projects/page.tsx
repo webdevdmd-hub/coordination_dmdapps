@@ -26,12 +26,18 @@ import { Project, ProjectStatus } from '@/core/entities/project';
 import { Task, TaskPriority, TaskStatus } from '@/core/entities/task';
 import { User } from '@/core/entities/user';
 import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 import {
   areSameRecipientSets,
@@ -225,7 +231,6 @@ const activityDotClass = (activity: ProjectActivity) => {
 
 export default function Page() {
   const { user } = useAuth();
-  const [projects, setProjects] = useState<Project[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
@@ -233,7 +238,6 @@ export default function Page() {
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -267,10 +271,7 @@ export default function Page() {
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
-  const canViewAllProjects =
-    !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
-  const canViewSameRoleProjects =
-    !!user && hasRoleScope(user.permissions, 'project_view_same_role');
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'projects', user?.roleRelations);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'project_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'project_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'project_delete']);
@@ -348,11 +349,11 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllProjects && !canViewSameRoleProjects) {
-      return user ? [{ id: user.id, name: user.fullName }] : [];
+    if (!hasUserVisibility) {
+      return [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllProjects, canViewSameRoleProjects, user, visibleUsers]);
+  }, [hasUserVisibility, user, visibleUsers]);
 
   const visibleUserIds = useMemo(() => {
     const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
@@ -361,6 +362,26 @@ export default function Page() {
     }
     return ids;
   }, [visibleUsers, user]);
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+  const projectsCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = isAdmin
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['projects', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, isAdmin, hasUserVisibility, visibleUserScope]);
+  const cachedProjectsEntry = projectsCacheKey
+    ? getModuleCacheEntry<Project[]>(projectsCacheKey)
+    : null;
+  const [projects, setProjects] = useState<Project[]>(() => cachedProjectsEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedProjectsEntry);
 
   const assigneeOptions = useMemo(() => {
     if (!canAssignTasks) {
@@ -375,18 +396,53 @@ export default function Page() {
     }));
   }, [user, users, roles, canAssignTasks]);
 
+  const syncProjects = (next: Project[]) => {
+    setProjects(next);
+    if (projectsCacheKey) {
+      setModuleCacheEntry(projectsCacheKey, next);
+    }
+  };
+
+  const updateProjects = (updater: (current: Project[]) => Project[]) => {
+    setProjects((current) => {
+      const next = updater(current);
+      if (projectsCacheKey) {
+        setModuleCacheEntry(projectsCacheKey, next);
+      }
+      return next;
+    });
+  };
+
   const timelineItems = useMemo(
     () => [...timelineBaseItems, ...timelineExtraItems],
     [timelineBaseItems, timelineExtraItems],
   );
 
   useEffect(() => {
-    if (!user || !(canViewAllProjects || canViewSameRoleProjects || canAssignTasks)) {
+    if (!user || !(hasUserVisibility || canAssignTasks)) {
       setUsers([]);
       setRoles([]);
       return;
     }
     const loadUsers = async () => {
+      const usersCacheKey = 'projects-users';
+      const rolesCacheKey = 'projects-roles';
+      const cachedUsersEntry = getModuleCacheEntry<User[]>(usersCacheKey);
+      const cachedRolesEntry = getModuleCacheEntry<RoleSummary[]>(rolesCacheKey);
+      if (cachedUsersEntry) {
+        setUsers(cachedUsersEntry.data);
+      }
+      if (cachedRolesEntry) {
+        setRoles(cachedRolesEntry.data);
+      }
+      if (
+        cachedUsersEntry &&
+        cachedRolesEntry &&
+        isModuleCacheFresh(cachedUsersEntry, MODULE_CACHE_TTL_MS) &&
+        isModuleCacheFresh(cachedRolesEntry, MODULE_CACHE_TTL_MS)
+      ) {
+        return;
+      }
       try {
         const [result, roleSummaries] = await Promise.all([
           firebaseUserRepository.listAll(),
@@ -394,23 +450,25 @@ export default function Page() {
         ]);
         setUsers(result);
         setRoles(roleSummaries);
+        setModuleCacheEntry(usersCacheKey, result);
+        setModuleCacheEntry(rolesCacheKey, roleSummaries);
       } catch {
         setUsers([]);
         setRoles([]);
       }
     };
     loadUsers();
-  }, [user, canViewAllProjects, canViewSameRoleProjects, canAssignTasks]);
+  }, [user, hasUserVisibility, canAssignTasks]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllProjects && !canViewSameRoleProjects) {
-      setOwnerFilter(user.id);
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
     }
-  }, [user, canViewAllProjects, canViewSameRoleProjects]);
+  }, [user, hasUserVisibility]);
 
   useEffect(() => {
     const loadCustomers = async () => {
@@ -418,20 +476,41 @@ export default function Page() {
         setCustomers([]);
         return;
       }
+      const customersCacheKey = ['projects-customers', user.id, isAdmin ? 'admin' : user.role].join(':');
+      const cachedEntry = getModuleCacheEntry<Customer[]>(customersCacheKey);
+      if (cachedEntry) {
+        setCustomers(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
       try {
         if (canViewAllCustomers || isAdmin) {
           const allCustomers = await firebaseCustomerRepository.listAll();
           setCustomers(allCustomers);
+          setModuleCacheEntry(customersCacheKey, allCustomers);
           return;
         }
         const result = await firebaseCustomerRepository.listForUser(user.id, user.role);
         setCustomers(result);
+        setModuleCacheEntry(customersCacheKey, result);
       } catch {
         setCustomers([]);
       }
     };
     loadCustomers();
   }, [user, isAdmin, canViewAllCustomers]);
+
+  useEffect(() => {
+    const cachedEntry = projectsCacheKey
+      ? getModuleCacheEntry<Project[]>(projectsCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setProjects(cachedEntry.data);
+    setLoading(false);
+  }, [projectsCacheKey]);
 
   useEffect(() => {
     const loadProjects = async () => {
@@ -445,44 +524,52 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      try {
-        if (canViewAllProjects) {
-          const allProjects = await firebaseProjectRepository.listAll();
-          if (ownerFilter === 'all') {
-            setProjects(allProjects);
-            return;
-          }
-          const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = allProjects.filter(
-            (project) =>
-              project.assignedTo === ownerFilter ||
-              (selectedRole ? project.sharedRoles.includes(selectedRole) : false),
-          );
-          setProjects(filtered);
+      const cachedEntry = projectsCacheKey
+        ? getModuleCacheEntry<Project[]>(projectsCacheKey)
+        : null;
+      if (cachedEntry) {
+        setProjects(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
           return;
         }
-        if (canViewSameRoleProjects) {
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        let nextProjects: Project[] = [];
+        if (user.permissions.includes('admin')) {
+          const allProjects = await firebaseProjectRepository.listAll();
+          if (ownerFilter === 'all') {
+            nextProjects = allProjects;
+          } else {
+            const selectedRole = userRoleMap.get(ownerFilter);
+            nextProjects = allProjects.filter(
+              (project) =>
+                project.assignedTo === ownerFilter ||
+                (selectedRole ? project.sharedRoles.includes(selectedRole) : false),
+            );
+          }
+        } else if (hasUserVisibility) {
           const allProjects = await firebaseProjectRepository.listAll();
           const sameRoleProjects = allProjects.filter((project) =>
             visibleUserIds.has(project.assignedTo),
           );
           if (ownerFilter === 'all') {
-            setProjects(sameRoleProjects);
-            return;
+            nextProjects = sameRoleProjects;
+          } else {
+            const selectedRole = userRoleMap.get(ownerFilter);
+            nextProjects = sameRoleProjects.filter(
+              (project) =>
+                project.assignedTo === ownerFilter ||
+                (selectedRole ? project.sharedRoles.includes(selectedRole) : false),
+            );
           }
-          const selectedRole = userRoleMap.get(ownerFilter);
-          const filtered = sameRoleProjects.filter(
-            (project) =>
-              project.assignedTo === ownerFilter ||
-              (selectedRole ? project.sharedRoles.includes(selectedRole) : false),
-          );
-          setProjects(filtered);
-          return;
+        } else {
+          nextProjects = await firebaseProjectRepository.listForUser(user.id, user.role);
         }
-        const result = await firebaseProjectRepository.listForUser(user.id, user.role);
-        setProjects(result);
+        syncProjects(nextProjects);
       } catch {
         setError('Unable to load projects. Please try again.');
       } finally {
@@ -493,11 +580,11 @@ export default function Page() {
   }, [
     user,
     canView,
-    canViewAllProjects,
-    canViewSameRoleProjects,
+    hasUserVisibility,
     ownerFilter,
     userRoleMap,
     visibleUserIds,
+    projectsCacheKey,
   ]);
 
   useEffect(() => {
@@ -1368,7 +1455,7 @@ export default function Page() {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
-        setProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        updateProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         if (previous.assignedTo !== updated.assignedTo) {
           await emitNotificationEventSafe({
             type: 'project.assigned',
@@ -1434,7 +1521,7 @@ export default function Page() {
           ...updates,
           createdBy: user.id,
         });
-        setProjects((prev) => [created, ...prev]);
+        updateProjects((prev) => [created, ...prev]);
         await logProjectActivity(created.id, `Project created: ${created.name}.`);
         await emitNotificationEventSafe({
           type: 'project.assigned',
@@ -1480,7 +1567,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseProjectRepository.delete(selectedProject.id);
-      setProjects((prev) => prev.filter((item) => item.id !== selectedProject.id));
+      updateProjects((prev) => prev.filter((item) => item.id !== selectedProject.id));
       handleCloseModal();
     } catch {
       setError('Unable to delete project. Please try again.');
@@ -1501,7 +1588,7 @@ export default function Page() {
         status: nextStatus,
         updatedAt: new Date().toISOString(),
       });
-      setProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      updateProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
     } catch {
       setError('Unable to update project status.');
     }
@@ -1523,25 +1610,26 @@ export default function Page() {
             </p>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:items-center">
-            <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted md:w-auto">
-              <label htmlFor="project-owner" className="sr-only">
-                Owner
-              </label>
-              <select
-                id="project-owner"
-                name="project-owner"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllProjects && !canViewSameRoleProjects}
-                className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-              >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {hasUserVisibility ? (
+              <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted md:w-auto">
+                <label htmlFor="project-owner" className="sr-only">
+                  Owner
+                </label>
+                <select
+                  id="project-owner"
+                  name="project-owner"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                  className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none"
+                >
+                  {ownerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="relative col-span-1 grid w-full grid-cols-2 rounded-2xl border border-border bg-surface p-2 md:w-auto">
               <span
                 aria-hidden="true"

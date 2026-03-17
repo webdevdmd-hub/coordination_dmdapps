@@ -6,6 +6,12 @@ import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { ModuleShell } from '@/components/ui/ModuleShell';
 import { ALL_PERMISSIONS, PermissionKey } from '@/core/entities/permissions';
 import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
+import {
   ModuleRoleRelation,
   ROLE_RELATION_MODULE_LABELS,
   ROLE_RELATION_MODULES,
@@ -41,6 +47,8 @@ const emptyEditRole: EditRole = {
   name: '',
   description: '',
 };
+
+const ROLES_CACHE_KEY = 'admin-roles';
 
 const emptyRoleRelations = (): RoleRelations => ({});
 
@@ -100,7 +108,6 @@ const permissionGroups: Array<
         keys: [
           'lead_create',
           'lead_view',
-          'lead_view_all',
           'lead_edit',
           'lead_delete',
           'lead_source_manage',
@@ -136,7 +143,13 @@ const permissionGroups: Array<
   },
   {
     title: 'Tasks',
-    keys: ['task_create', 'task_view', 'task_edit', 'task_delete', 'task_assign'],
+    keys: [
+      'task_create',
+      'task_view',
+      'task_edit',
+      'task_delete',
+      'task_assign',
+    ],
   },
   {
     title: 'Sales',
@@ -232,7 +245,8 @@ const permissionGroups: Array<
 ];
 
 export default function Page() {
-  const [roles, setRoles] = useState<Role[]>([]);
+  const cachedRolesEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
+  const [roles, setRoles] = useState<Role[]>(() => cachedRolesEntry?.data ?? []);
   const [error, setError] = useState<string | null>(null);
   const [newRole, setNewRole] = useState<NewRole>(emptyNewRole);
   const [isCreating, setIsCreating] = useState(false);
@@ -248,7 +262,19 @@ export default function Page() {
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [saveDialogMode, setSaveDialogMode] = useState<'confirm' | 'success'>('confirm');
 
-  const refreshRoles = useCallback(async () => {
+  const syncRoles = useCallback((next: Role[]) => {
+    setRoles(next);
+    setModuleCacheEntry(ROLES_CACHE_KEY, next);
+  }, []);
+
+  const refreshRoles = useCallback(async (options?: { force?: boolean }) => {
+    const cachedEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
+    if (cachedEntry && !options?.force) {
+      setRoles(cachedEntry.data);
+      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+        return;
+      }
+    }
     setError(null);
     try {
       const response = await fetch('/api/admin/roles', { cache: 'no-store' });
@@ -257,11 +283,11 @@ export default function Page() {
       }
       const payload = (await response.json()) as { roles?: Role[] };
       const sorted = [...(payload.roles ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-      setRoles(sorted);
+      syncRoles(sorted);
     } catch {
       setError('Unable to load roles. Please try again.');
     }
-  }, []);
+  }, [syncRoles]);
 
   useEffect(() => {
     refreshRoles();
@@ -408,7 +434,7 @@ export default function Page() {
       }
       setNewRole(emptyNewRole);
       setIsCreateOpen(false);
-      await refreshRoles();
+      await refreshRoles({ force: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to create role.';
       setError(message);
@@ -440,7 +466,7 @@ export default function Page() {
         } | null;
         throw new Error(payload?.error ?? 'Unable to update permissions.');
       }
-      await refreshRoles();
+      await refreshRoles({ force: true });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
       return true;
@@ -524,7 +550,7 @@ export default function Page() {
         throw new Error(payload?.error ?? 'Unable to update role.');
       }
       setIsEditOpen(false);
-      await refreshRoles();
+      await refreshRoles({ force: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to update role.';
       setError(message);

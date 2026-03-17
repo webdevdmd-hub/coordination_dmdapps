@@ -15,11 +15,17 @@ import { Lead, LeadStatus } from '@/core/entities/lead';
 import { User } from '@/core/entities/user';
 import { createLead } from '@/core/use-cases/createLead';
 import { formatCurrency } from '@/lib/currency';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 
 const leadStatusClass: Record<LeadStatus, string> = {
@@ -47,12 +53,10 @@ export default function Page() {
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
-  const [leads, setLeads] = useState<Lead[]>([]);
   const [leadSources, setLeadSources] = useState<LeadSource[]>([]);
   const [isAddingSource, setIsAddingSource] = useState(false);
   const [newSourceName, setNewSourceName] = useState('');
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -71,9 +75,7 @@ export default function Page() {
   );
   const canCreateLead = !!user && hasPermission(user.permissions, ['admin', 'lead_create']);
   const canViewLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view']);
-  const canViewAllLeads = !!user && hasPermission(user.permissions, ['admin', 'lead_view_all']);
-  const canViewSameRoleLeads =
-    !!user && hasRoleScope(user.permissions, 'lead_view_same_role');
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'leads', user?.roleRelations);
 
   const visibleUsers = useMemo(
     () => filterUsersByRole(user, users, 'leads', user?.roleRelations),
@@ -87,11 +89,11 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllLeads && !canViewSameRoleLeads) {
-      return user ? [{ id: user.id, name: user.fullName }] : [];
+    if (!hasUserVisibility) {
+      return [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [user, visibleUsers, canViewAllLeads, canViewSameRoleLeads]);
+  }, [user, visibleUsers, hasUserVisibility]);
 
   const visibleUserIds = useMemo(() => {
     const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
@@ -100,6 +102,27 @@ export default function Page() {
     }
     return ids;
   }, [visibleUsers, user]);
+
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+
+  const leadsCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = user.permissions.includes('admin')
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['crm-leads', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, hasUserVisibility, visibleUserScope]);
+
+  const cachedLeadsEntry = leadsCacheKey ? getModuleCacheEntry<Lead[]>(leadsCacheKey) : null;
+  const [leads, setLeads] = useState<Lead[]>(() => cachedLeadsEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedLeadsEntry);
 
   const filteredLeads = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -147,7 +170,34 @@ export default function Page() {
       .slice(0, 2)
       .toUpperCase();
 
+  const syncLeads = (next: Lead[]) => {
+    setLeads(next);
+    if (leadsCacheKey) {
+      setModuleCacheEntry(leadsCacheKey, next);
+    }
+  };
+
+  const updateLeads = (updater: (current: Lead[]) => Lead[]) => {
+    setLeads((current) => {
+      const next = updater(current);
+      if (leadsCacheKey) {
+        setModuleCacheEntry(leadsCacheKey, next);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
+    const cachedEntry = leadsCacheKey ? getModuleCacheEntry<Lead[]>(leadsCacheKey) : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setLeads(cachedEntry.data);
+    setLoading(false);
+  }, [leadsCacheKey]);
+
+  useEffect(() => {
+    let active = true;
     const loadLeads = async () => {
       if (!user) {
         setLeads([]);
@@ -159,33 +209,55 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
+      const cachedEntry = leadsCacheKey ? getModuleCacheEntry<Lead[]>(leadsCacheKey) : null;
+      if (cachedEntry) {
+        setLeads(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setLoading(true);
+      }
       setError(null);
       try {
-        if (canViewAllLeads) {
-          const result =
+        let result: Lead[] = [];
+        if (user.permissions.includes('admin')) {
+          result =
             ownerFilter === 'all'
               ? await firebaseLeadRepository.listAll()
               : await firebaseLeadRepository.listByOwner(ownerFilter);
-          setLeads(result);
-          return;
-        }
-        if (canViewSameRoleLeads) {
+        } else if (hasUserVisibility) {
           const allLeads = await firebaseLeadRepository.listAll();
           const scoped = allLeads.filter((lead) => visibleUserIds.has(lead.ownerId));
-          setLeads(ownerFilter === 'all' ? scoped : scoped.filter((lead) => lead.ownerId === ownerFilter));
+          result =
+            ownerFilter === 'all'
+              ? scoped
+              : scoped.filter((lead) => lead.ownerId === ownerFilter);
+        } else {
+          result = await firebaseLeadRepository.listByOwner(
+            ownerFilter === 'all' ? user.id : ownerFilter,
+          );
+        }
+        if (!active) {
           return;
         }
-        const result = await firebaseLeadRepository.listByOwner(ownerFilter === 'all' ? user.id : ownerFilter);
-        setLeads(result);
+        syncLeads(result);
       } catch {
-        setError('Unable to load leads. Please try again.');
+        if (active) {
+          setError('Unable to load leads. Please try again.');
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
     loadLeads();
-  }, [user, ownerFilter, canViewAllLeads, canViewSameRoleLeads, visibleUserIds]);
+    return () => {
+      active = false;
+    };
+  }, [user, ownerFilter, hasUserVisibility, visibleUserIds, leadsCacheKey]);
 
   useEffect(() => {
     const loadSources = async () => {
@@ -234,7 +306,7 @@ export default function Page() {
         setUsers([]);
         return;
       }
-      if (!canViewAllLeads && !canViewSameRoleLeads) {
+      if (!hasUserVisibility) {
         setUsers([]);
         return;
       }
@@ -246,17 +318,17 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllLeads, canViewSameRoleLeads]);
+  }, [user, hasUserVisibility]);
 
   useEffect(() => {
     if (!user) {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllLeads && !canViewSameRoleLeads) {
-      setOwnerFilter(user.id);
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
     }
-  }, [user, canViewAllLeads, canViewSameRoleLeads]);
+  }, [user, hasUserVisibility]);
 
   const handleCreateLead = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -287,7 +359,7 @@ export default function Page() {
         nextStep: '',
         activities: [],
       });
-      setLeads((prev) => [created, ...prev]);
+      updateLeads((prev) => [created, ...prev]);
       setSearch('');
       setIsCreateOpen(false);
       setIsAddingSource(false);
@@ -301,7 +373,7 @@ export default function Page() {
         source: '',
       });
       const refreshed = await firebaseLeadRepository.listByOwner(user.id);
-      setLeads(refreshed);
+      syncLeads(refreshed);
       await emitNotificationEventSafe({
         type: 'lead.created',
         title: 'New Lead Created',
@@ -380,7 +452,7 @@ export default function Page() {
         ...updates,
         lastTouchedAt: new Date().toISOString(),
       });
-      setLeads((prev) => prev.map((lead) => (lead.id === id ? updated : lead)));
+      updateLeads((prev) => prev.map((lead) => (lead.id === id ? updated : lead)));
       if (syncSelected) {
         setSelectedLead(updated);
       }
@@ -439,7 +511,7 @@ export default function Page() {
     }
     try {
       await firebaseLeadRepository.delete(id);
-      setLeads((prev) => prev.filter((lead) => lead.id !== id));
+      updateLeads((prev) => prev.filter((lead) => lead.id !== id));
       if (selectedLead?.id === id) {
         setSelectedLead(null);
       }
@@ -462,25 +534,26 @@ export default function Page() {
             <h2 className="font-display text-5xl text-text">Leads</h2>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
-              <label htmlFor="lead-owner-header" className="sr-only">
-                User
-              </label>
-              <select
-                id="lead-owner-header"
-                name="lead-owner-header"
-                value={ownerFilter}
-                onChange={(event) => setOwnerFilter(event.target.value)}
-                disabled={!canViewAllLeads && !canViewSameRoleLeads}
-                className="bg-transparent text-sm font-semibold text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-              >
-                {ownerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {hasUserVisibility ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
+                <label htmlFor="lead-owner-header" className="sr-only">
+                  User
+                </label>
+                <select
+                  id="lead-owner-header"
+                  name="lead-owner-header"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                  className="bg-transparent text-sm font-semibold text-text outline-none"
+                >
+                  {ownerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"

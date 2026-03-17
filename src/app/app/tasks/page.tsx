@@ -14,12 +14,18 @@ import { Task, TaskPriority, TaskRecurrence, TaskStatus } from '@/core/entities/
 import { Project } from '@/core/entities/project';
 import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import {
   filterUsersByRole,
-  hasRoleScope,
+  hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import {
@@ -128,7 +134,6 @@ const buildAssignedRecipients = (
 
 export default function Page() {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -138,7 +143,6 @@ export default function Page() {
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [isOwnerMenuOpen, setIsOwnerMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -153,9 +157,7 @@ export default function Page() {
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
-  const canViewAllTasks = !!user && hasPermission(user.permissions, ['admin', 'task_view_all']);
-  const canViewSameRoleTasks =
-    !!user && hasRoleScope(user.permissions, 'task_view_same_role');
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'tasks', user?.roleRelations);
   const canCreate = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'task_delete']);
@@ -269,11 +271,11 @@ export default function Page() {
     }
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
     const list = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    if (!canViewAllTasks && !canViewSameRoleTasks) {
-      return user ? [{ id: user.id, name: user.fullName }] : [];
+    if (!hasUserVisibility) {
+      return [];
     }
     return [{ id: 'all', name: 'All users' }, ...list];
-  }, [canViewAllTasks, canViewSameRoleTasks, user, visibleUsers]);
+  }, [hasUserVisibility, user, visibleUsers]);
 
   const visibleUserIds = useMemo(() => {
     const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
@@ -282,6 +284,27 @@ export default function Page() {
     }
     return ids;
   }, [visibleUsers, user]);
+
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+
+  const tasksCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = isAdmin
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['tasks', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, isAdmin, hasUserVisibility, visibleUserScope]);
+
+  const cachedTasksEntry = tasksCacheKey ? getModuleCacheEntry<Task[]>(tasksCacheKey) : null;
+  const [tasks, setTasks] = useState<Task[]>(() => cachedTasksEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedTasksEntry);
 
   const assignableUsers = useMemo(() => {
     return filterAssignableUsers(users, roles, 'task_assign', {
@@ -344,8 +367,34 @@ export default function Page() {
     return items;
   }, [selectedTask]);
 
+  const syncTasks = (next: Task[]) => {
+    setTasks(next);
+    if (tasksCacheKey) {
+      setModuleCacheEntry(tasksCacheKey, next);
+    }
+  };
+
+  const updateTasks = (updater: (current: Task[]) => Task[]) => {
+    setTasks((current) => {
+      const next = updater(current);
+      if (tasksCacheKey) {
+        setModuleCacheEntry(tasksCacheKey, next);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
-    if (!user || !(canViewAllTasks || canViewSameRoleTasks || canAssign)) {
+    const cachedEntry = tasksCacheKey ? getModuleCacheEntry<Task[]>(tasksCacheKey) : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setTasks(cachedEntry.data);
+    setLoading(false);
+  }, [tasksCacheKey]);
+
+  useEffect(() => {
+    if (!user || !(hasUserVisibility || canAssign)) {
       setUsers([]);
       setRoles([]);
       return;
@@ -364,7 +413,7 @@ export default function Page() {
       }
     };
     loadUsers();
-  }, [user, canViewAllTasks, canViewSameRoleTasks, canAssign]);
+  }, [user, hasUserVisibility, canAssign]);
 
   useEffect(() => {
     if (!user) {
@@ -389,12 +438,13 @@ export default function Page() {
       setOwnerFilter('all');
       return;
     }
-    if (!canViewAllTasks && !canViewSameRoleTasks) {
-      setOwnerFilter(user.id);
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
     }
-  }, [user, canViewAllTasks, canViewSameRoleTasks]);
+  }, [user, hasUserVisibility]);
 
   useEffect(() => {
+    let active = true;
     const loadTasks = async () => {
       if (!user) {
         setTasks([]);
@@ -406,24 +456,32 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      try {
-        if (canViewAllTasks) {
-          const allTasks = await firebaseTaskRepository.listAll();
-          if (ownerFilter === 'all') {
-            setTasks(allTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
-            return;
-          }
-          const filtered = allTasks.filter((task) => {
-            const matchesOwner =
-              task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter);
-            return matchesOwner;
-          });
-          setTasks(filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
+      const cachedEntry = tasksCacheKey ? getModuleCacheEntry<Task[]>(tasksCacheKey) : null;
+      if (cachedEntry) {
+        setTasks(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
           return;
         }
-        if (canViewSameRoleTasks) {
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        let nextTasks: Task[] = [];
+        if (user.permissions.includes('admin')) {
+          const allTasks = await firebaseTaskRepository.listAll();
+          if (ownerFilter === 'all') {
+            nextTasks = allTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) }));
+          } else {
+            const filtered = allTasks.filter((task) => {
+              const matchesOwner =
+                task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter);
+              return matchesOwner;
+            });
+            nextTasks = filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) }));
+          }
+        } else if (hasUserVisibility) {
           const allTasks = await firebaseTaskRepository.listAll();
           const sameRoleTasks = allTasks.filter((task) => {
             if (visibleUserIds.has(task.assignedTo)) {
@@ -432,34 +490,49 @@ export default function Page() {
             return (task.assignedUsers ?? []).some((assigneeId) => visibleUserIds.has(assigneeId));
           });
           if (ownerFilter === 'all') {
-            setTasks(
-              sameRoleTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) })),
+            nextTasks = sameRoleTasks.map((task) => ({
+              ...task,
+              status: normalizeStatus(task.status),
+            }));
+          } else {
+            const filtered = sameRoleTasks.filter(
+              (task) =>
+                task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
             );
-            return;
+            nextTasks = filtered.map((task) => ({
+              ...task,
+              status: normalizeStatus(task.status),
+            }));
           }
-          const filtered = sameRoleTasks.filter(
-            (task) =>
-              task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
-          );
-          setTasks(filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
+        } else {
+          const result = await firebaseTaskRepository.listForUser(user.id, user.role);
+          nextTasks = result.map((task) => ({ ...task, status: normalizeStatus(task.status) }));
+        }
+        if (!active) {
           return;
         }
-        const result = await firebaseTaskRepository.listForUser(user.id, user.role);
-        setTasks(result.map((task) => ({ ...task, status: normalizeStatus(task.status) })));
+        syncTasks(nextTasks);
       } catch {
-        setError('Unable to load tasks. Please try again.');
+        if (active) {
+          setError('Unable to load tasks. Please try again.');
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
     loadTasks();
+    return () => {
+      active = false;
+    };
   }, [
     user,
     canView,
-    canViewAllTasks,
-    canViewSameRoleTasks,
+    hasUserVisibility,
     ownerFilter,
     visibleUserIds,
+    tasksCacheKey,
   ]);
 
   useEffect(() => {
@@ -1037,7 +1110,7 @@ export default function Page() {
             createdBy: user.id,
           });
         }
-        setTasks((prev) => prev.map((task) => (task.id === updated.id ? updated : task)));
+        updateTasks((prev) => prev.map((task) => (task.id === updated.id ? updated : task)));
       } else {
         const created = await firebaseTaskRepository.create({
           ...basePayload,
@@ -1045,7 +1118,7 @@ export default function Page() {
           sharedRoles: [],
           createdBy: user.id,
         });
-        setTasks((prev) => [created, ...prev]);
+        updateTasks((prev) => [created, ...prev]);
         const recipients = buildAssignedRecipients(
           created.assignedTo,
           created.assignedUsers ?? [],
@@ -1095,7 +1168,7 @@ export default function Page() {
         status: task.status === 'todo' ? 'in-progress' : task.status,
         updatedAt: startedAt,
       });
-      setTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
       const recipients = buildRecipientList(
         updated.createdBy,
         [updated.assignedTo, ...(updated.assignedUsers ?? [])],
@@ -1158,7 +1231,7 @@ export default function Page() {
         endDate: stoppedDate,
         updatedAt: stoppedAt,
       });
-      setTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
       const recipients = buildRecipientList(
         updated.createdBy,
         [updated.assignedTo, ...(updated.assignedUsers ?? [])],
@@ -1232,7 +1305,7 @@ export default function Page() {
         endDate: nextStatus === 'done' ? todayKey() : task.endDate,
         updatedAt,
       });
-      setTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
       const recipients = buildRecipientList(
         updated.createdBy,
         [updated.assignedTo, ...(updated.assignedUsers ?? [])],
@@ -1321,7 +1394,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseTaskRepository.delete(selectedTask.id);
-      setTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
+      updateTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
       handleCloseModal();
     } catch {
       setError('Unable to delete task. Please try again.');
@@ -1342,71 +1415,72 @@ export default function Page() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div
-              className="relative"
-              onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                  setIsOwnerMenuOpen(false);
-                }
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setIsOwnerMenuOpen((prev) => !prev)}
-                disabled={!canViewAllTasks && !canViewSameRoleTasks}
-                className="flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80 disabled:cursor-not-allowed disabled:text-muted/80"
-                aria-haspopup="listbox"
-                aria-expanded={isOwnerMenuOpen}
+            {hasUserVisibility ? (
+              <div
+                className="relative"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setIsOwnerMenuOpen(false);
+                  }
+                }}
               >
-                <span className="truncate">{selectedOwnerLabel}</span>
-                <svg
-                  viewBox="0 0 20 20"
-                  className={`h-4 w-4 shrink-0 text-muted transition ${isOwnerMenuOpen ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+                <button
+                  type="button"
+                  onClick={() => setIsOwnerMenuOpen((prev) => !prev)}
+                  className="flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80"
+                  aria-haspopup="listbox"
+                  aria-expanded={isOwnerMenuOpen}
                 >
-                  <path d="m5 7.5 5 5 5-5" />
-                </svg>
-              </button>
-              {isOwnerMenuOpen ? (
-                <div className="absolute left-0 top-[calc(100%+0.45rem)] z-30 w-full overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_14px_32px_rgba(15,23,42,0.2)]">
-                  <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Task owner filter">
-                    {ownerOptions.map((option) => {
-                      const isActive = ownerFilter === option.id;
-                      return (
-                        <li key={option.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOwnerFilter(option.id);
-                              setIsOwnerMenuOpen(false);
-                            }}
-                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
-                              isActive
-                                ? 'bg-[#00B67A]/12 text-[#00B67A]'
-                                : 'text-text hover:bg-[var(--surface-soft)]'
-                            }`}
-                            role="option"
-                            aria-selected={isActive}
-                          >
-                            <span className="truncate">{option.name}</span>
-                            {isActive ? (
-                              <span className="text-xs font-semibold uppercase tracking-[0.14em]">
-                                Selected
-                              </span>
-                            ) : null}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
+                  <span className="truncate">{selectedOwnerLabel}</span>
+                  <svg
+                    viewBox="0 0 20 20"
+                    className={`h-4 w-4 shrink-0 text-muted transition ${isOwnerMenuOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m5 7.5 5 5 5-5" />
+                  </svg>
+                </button>
+                {isOwnerMenuOpen ? (
+                  <div className="absolute left-0 top-[calc(100%+0.45rem)] z-30 w-full overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_14px_32px_rgba(15,23,42,0.2)]">
+                    <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Task owner filter">
+                      {ownerOptions.map((option) => {
+                        const isActive = ownerFilter === option.id;
+                        return (
+                          <li key={option.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOwnerFilter(option.id);
+                                setIsOwnerMenuOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
+                                isActive
+                                  ? 'bg-[#00B67A]/12 text-[#00B67A]'
+                                  : 'text-text hover:bg-[var(--surface-soft)]'
+                              }`}
+                              role="option"
+                              aria-selected={isActive}
+                            >
+                              <span className="truncate">{option.name}</span>
+                              {isActive ? (
+                                <span className="text-xs font-semibold uppercase tracking-[0.14em]">
+                                  Selected
+                                </span>
+                              ) : null}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="relative grid grid-cols-3 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"

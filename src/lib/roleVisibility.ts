@@ -9,6 +9,7 @@ export const ROLE_RELATION_MODULES = [
   'projects',
   'quotations',
   'quotationRequests',
+  'salesOrder',
 ] as const;
 
 export type RoleRelationModuleKey = (typeof ROLE_RELATION_MODULES)[number];
@@ -21,6 +22,7 @@ export const ROLE_RELATION_MODULE_LABELS: Record<RoleRelationModuleKey, string> 
   projects: 'Projects',
   quotations: 'Quotations',
   quotationRequests: 'Quotation Requests',
+  salesOrder: 'Sales Order',
 };
 
 export type ModuleRoleRelation = {
@@ -104,6 +106,20 @@ export const getViewableRoleKeys = (
     allowed.add(roleKey),
   );
   return allowed;
+};
+
+export const hasUserVisibilityAccess = (
+  currentUser: Pick<User, 'id' | 'role'> | null,
+  moduleKey?: RoleRelationModuleKey,
+  roleRelations?: RoleRelations,
+) => {
+  if (!currentUser) {
+    return false;
+  }
+  if ((currentUser.role ?? '').trim().toLowerCase() === 'admin') {
+    return true;
+  }
+  return getViewableRoleKeys(currentUser, moduleKey, roleRelations).size > 0;
 };
 
 export const filterUsersByRole = <T extends Pick<User, 'id' | 'role' | 'active'>>(

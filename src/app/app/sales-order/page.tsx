@@ -4,12 +4,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
+import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { SalesOrderRequest, SalesOrderRequestStatus } from '@/core/entities/salesOrderRequest';
+import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { emitNotificationEventSafe } from '@/lib/notifications';
+import {
+  getModuleCacheEntry,
+  isModuleCacheFresh,
+  MODULE_CACHE_TTL_MS,
+  setModuleCacheEntry,
+} from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { addSalesOrderTimelineEvent, listSalesOrderTimelineEvents } from '@/lib/salesOrderTimeline';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
 type SalesOrderActivity = {
   id: string;
@@ -200,7 +209,8 @@ const notifyRequester = async (
 
 export default function Page() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<SalesOrderRequest[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [ownerFilter, setOwnerFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<SalesOrderRequestStatus | 'all'>(
     'pending_approval',
   );
@@ -210,7 +220,6 @@ export default function Page() {
   const [timelineActivities, setTimelineActivities] = useState<SalesOrderActivity[]>([]);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejectRequest, setRejectRequest] = useState<SalesOrderRequest | null>(null);
@@ -224,6 +233,118 @@ export default function Page() {
       'sales_order_request_approve',
       'sales_order_request_approve',
     ]);
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'salesOrder', user?.roleRelations);
+  const visibleUsers = useMemo(
+    () => filterUsersByRole(user, users, 'salesOrder', user?.roleRelations),
+    [user, users],
+  );
+  const visibleUserIds = useMemo(() => {
+    const ids = new Set<string>(visibleUsers.map((profile) => profile.id));
+    if (user) {
+      ids.add(user.id);
+    }
+    return ids;
+  }, [visibleUsers, user]);
+  const visibleUserScope = useMemo(
+    () => Array.from(visibleUserIds).sort().join(','),
+    [visibleUserIds],
+  );
+  const salesOrderCacheKey = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+    const scopeKey = user.permissions.includes('admin')
+      ? 'admin'
+      : hasUserVisibility
+        ? `visible:${visibleUserScope}`
+        : `self:${user.id}`;
+    return ['sales-order', user.id, ownerFilter, scopeKey].join(':');
+  }, [user, ownerFilter, hasUserVisibility, visibleUserScope]);
+  const cachedRequestsEntry = salesOrderCacheKey
+    ? getModuleCacheEntry<SalesOrderRequest[]>(salesOrderCacheKey)
+    : null;
+  const [requests, setRequests] = useState<SalesOrderRequest[]>(() => cachedRequestsEntry?.data ?? []);
+  const [isLoading, setIsLoading] = useState(() => !cachedRequestsEntry);
+  const ownerOptions = useMemo(() => {
+    if (!hasUserVisibility || !user) {
+      return [];
+    }
+    const map = new Map<string, string>();
+    map.set(user.id, user.fullName);
+    visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
+    return [{ id: 'all', name: 'All users' }, ...Array.from(map.entries()).map(([id, name]) => ({ id, name }))];
+  }, [hasUserVisibility, user, visibleUsers]);
+
+  const syncRequests = (next: SalesOrderRequest[]) => {
+    setRequests(next);
+    if (salesOrderCacheKey) {
+      setModuleCacheEntry(salesOrderCacheKey, next);
+    }
+  };
+
+  const updateRequests = (updater: (current: SalesOrderRequest[]) => SalesOrderRequest[]) => {
+    setRequests((current) => {
+      const next = updater(current);
+      if (salesOrderCacheKey) {
+        setModuleCacheEntry(salesOrderCacheKey, next);
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!user || !hasUserVisibility) {
+      setUsers([]);
+      return;
+    }
+    let active = true;
+    const loadUsers = async () => {
+      const usersCacheKey = 'sales-order-users';
+      const cachedEntry = getModuleCacheEntry<User[]>(usersCacheKey);
+      if (cachedEntry) {
+        setUsers(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      }
+      try {
+        const result = await firebaseUserRepository.listAll();
+        if (active) {
+          setUsers(result);
+          setModuleCacheEntry(usersCacheKey, result);
+        }
+      } catch {
+        if (active) {
+          setUsers([]);
+        }
+      }
+    };
+    loadUsers();
+    return () => {
+      active = false;
+    };
+  }, [user, hasUserVisibility]);
+
+  useEffect(() => {
+    if (!user) {
+      setOwnerFilter('all');
+      return;
+    }
+    if (!hasUserVisibility) {
+      setOwnerFilter('all');
+    }
+  }, [user, hasUserVisibility]);
+
+  useEffect(() => {
+    const cachedEntry = salesOrderCacheKey
+      ? getModuleCacheEntry<SalesOrderRequest[]>(salesOrderCacheKey)
+      : null;
+    if (!cachedEntry) {
+      return;
+    }
+    setRequests(cachedEntry.data);
+    setIsLoading(false);
+  }, [salesOrderCacheKey]);
 
   useEffect(() => {
     if (!canView) {
@@ -233,15 +354,35 @@ export default function Page() {
     }
     let active = true;
     const load = async () => {
-      setIsLoading(true);
+      const cachedEntry = salesOrderCacheKey
+        ? getModuleCacheEntry<SalesOrderRequest[]>(salesOrderCacheKey)
+        : null;
+      if (cachedEntry) {
+        setRequests(cachedEntry.data);
+        setIsLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
       try {
         const result = await firebaseSalesOrderRequestRepository.listAll();
         if (!active) {
           return;
         }
-        result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        setRequests(result);
+        const visible = user?.permissions.includes('admin')
+          ? result
+          : hasUserVisibility
+            ? result.filter((item) => visibleUserIds.has(item.requestedBy))
+            : result.filter((item) => item.requestedBy === user?.id);
+        const filteredByOwner =
+          ownerFilter === 'all'
+            ? visible
+            : visible.filter((item) => item.requestedBy === ownerFilter);
+        filteredByOwner.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        syncRequests(filteredByOwner);
       } catch {
         if (active) {
           setError('Unable to load Sales Order Reqs.');
@@ -256,7 +397,7 @@ export default function Page() {
     return () => {
       active = false;
     };
-  }, [canView]);
+  }, [canView, user, hasUserVisibility, visibleUserIds, ownerFilter, salesOrderCacheKey]);
 
   useEffect(() => {
     if (!selectedRequest) {
@@ -407,7 +548,7 @@ export default function Page() {
         ...handoff,
         updatedAt: now,
       });
-      setRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
+      updateRequests((prev) => prev.map((item) => (item.id === request.id ? updated : item)));
       setSelectedRequest((prev) => (prev?.id === request.id ? updated : prev));
       await Promise.allSettled([
         logPoDecisionActivity(request, user.id, status, rejectionReason),
@@ -468,33 +609,55 @@ export default function Page() {
               Review Sales Order Reqs and complete approval decisions.
             </p>
           </div>
-          <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
-              style={{
-                width: 'calc((100% - 1rem) / 2)',
-                transform: viewMode === 'card' ? 'translateX(100%)' : 'translateX(0)',
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-                viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
-              }`}
-            >
-              List
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('card')}
-              className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-                viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
-              }`}
-            >
-              Cards
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {hasUserVisibility ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
+                <label htmlFor="sales-order-owner-header" className="sr-only">
+                  User
+                </label>
+                <select
+                  id="sales-order-owner-header"
+                  name="sales-order-owner-header"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                  className="bg-transparent text-sm font-semibold text-text outline-none"
+                >
+                  {ownerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+                style={{
+                  width: 'calc((100% - 1rem) / 2)',
+                  transform: viewMode === 'card' ? 'translateX(100%)' : 'translateX(0)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                  viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('card')}
+                className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
+                  viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
+                }`}
+              >
+                Cards
+              </button>
+            </div>
           </div>
         </div>
       </section>
