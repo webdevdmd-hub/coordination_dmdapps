@@ -20,7 +20,11 @@ export const filterAssignableUsers = (
     roleMap.set(role.key.trim().toLowerCase(), role);
   });
   const currentRole = currentRoleKey ? roleMap.get(currentRoleKey) : null;
-  const currentRoleIsAdmin = Boolean(currentRole?.permissions.includes('admin'));
+  const currentRoleIsAdmin =
+    currentRoleKey === 'admin' || Boolean(currentRole?.permissions.includes('admin'));
+  if (currentRoleIsAdmin) {
+    return users.filter((user) => user.active);
+  }
   return users.filter((user) => {
     if (!user.active) {
       return false;
@@ -43,9 +47,6 @@ export const filterAssignableUsers = (
     }
     if (!currentRoleKey) {
       return false;
-    }
-    if (currentRoleIsAdmin) {
-      return true;
     }
     const userRoleKey = (user.role ?? '').trim().toLowerCase();
     if (!moduleKey) {
