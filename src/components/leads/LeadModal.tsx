@@ -610,11 +610,42 @@ export function LeadModal({
         setIsConvertOpen(false);
         return;
       }
+      const contactNameParts = convertForm.contactPerson.trim().split(/\s+/).filter(Boolean);
+      const firstName = contactNameParts[0] ?? '';
+      const lastName = contactNameParts.slice(1).join(' ');
       const created = await firebaseCustomerRepository.create({
         companyName: convertForm.companyName.trim(),
         contactPerson: convertForm.contactPerson.trim(),
         email: convertForm.email.trim(),
         phone: convertForm.phone.trim(),
+        firstName,
+        lastName,
+        displayName: convertForm.companyName.trim(),
+        workPhone: convertForm.phone.trim(),
+        mobile: '',
+        customerLanguage: 'English',
+        currency: 'AED - UAE Dirham',
+        taxTreatment: '',
+        placeOfSupply: '',
+        paymentTerms: '',
+        enablePortal: false,
+        billingAddress: {
+          addressLine1: '',
+          addressLine2: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          country: '',
+        },
+        shippingAddress: {
+          addressLine1: '',
+          addressLine2: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          country: '',
+        },
+        remarks: '',
         source: convertForm.source.trim(),
         status: convertForm.status,
         assignedTo: convertForm.assignedTo || lead.ownerId,

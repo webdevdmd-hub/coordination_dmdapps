@@ -335,15 +335,17 @@ export default function Page() {
 
   const totalConfiguredRelations = useMemo(
     () =>
-      Object.values(roleRelationsDraft).reduce(
-        (sum, relation) =>
-          sum +
-          (relation.canViewRoles?.length ?? 0) +
-          (relation.canAssignToRoles?.length ?? 0) +
-          (relation.canBeAssignedByRoles?.length ?? 0),
-        0,
-      ),
-    [roleRelationsDraft],
+      isAdminRole
+        ? ROLE_RELATION_MODULES.length * availableRoleOptions.length * 3
+        : Object.values(roleRelationsDraft).reduce(
+            (sum, relation) =>
+              sum +
+              (relation.canViewRoles?.length ?? 0) +
+              (relation.canAssignToRoles?.length ?? 0) +
+              (relation.canBeAssignedByRoles?.length ?? 0),
+            0,
+          ),
+    [availableRoleOptions.length, isAdminRole, roleRelationsDraft],
   );
 
   const activePermissionCount = permissionDraft.length;
@@ -558,6 +560,14 @@ export default function Page() {
       setIsUpdatingRole(false);
     }
   };
+
+  const isRoleRelationEnabled = (
+    moduleKey: RoleRelationModuleKey,
+    relationKey: keyof ModuleRoleRelation,
+    roleKey: string,
+  ) =>
+    isAdminRole ||
+    Boolean(roleRelationsDraft[moduleKey]?.[relationKey]?.includes(roleKey));
 
   return (
     <ModuleShell
@@ -838,79 +848,81 @@ export default function Page() {
                       </div>
                     ))}
                   </div>
-                  <div className="rounded-[26px] border border-border/60 bg-transparent p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      Module Role Access
-                    </p>
-                    <p className="mt-2 text-sm text-muted">
-                      Same-role and cross-role visibility/assignment are both controlled here. Add
-                      the current role as well if users in that role should see or assign to each
-                      other.
-                    </p>
-                    <div className="mt-4 space-y-4">
-                      {ROLE_RELATION_MODULES.map((moduleKey) => (
-                        <div
-                          key={moduleKey}
-                          className="rounded-2xl border border-border/60 bg-transparent p-4"
-                        >
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-                            {ROLE_RELATION_MODULE_LABELS[moduleKey]}
-                          </p>
-                          {availableRoleOptions.length === 0 ? (
-                            <p className="mt-3 text-sm text-muted">
-                              No other roles available for cross-role access.
+                  {!isAdminRole ? (
+                    <div className="rounded-[26px] border border-border/60 bg-transparent p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                        Module Role Access
+                      </p>
+                      <p className="mt-2 text-sm text-muted">
+                        Same-role and cross-role visibility/assignment are both controlled here. Add
+                        the current role as well if users in that role should see or assign to each
+                        other.
+                      </p>
+                      <div className="mt-4 space-y-4">
+                        {ROLE_RELATION_MODULES.map((moduleKey) => (
+                          <div
+                            key={moduleKey}
+                            className="rounded-2xl border border-border/60 bg-transparent p-4"
+                          >
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                              {ROLE_RELATION_MODULE_LABELS[moduleKey]}
                             </p>
-                          ) : (
-                            <div className="mt-3 grid gap-4 xl:grid-cols-3">
-                              {([
-                                ['canViewRoles', 'Can View Users'],
-                                ['canAssignToRoles', 'Can Assign To'],
-                                ['canBeAssignedByRoles', 'Can Be Assigned By'],
-                              ] as Array<[keyof ModuleRoleRelation, string]>).map(
-                                ([relationKey, label]) => (
-                                  <div key={relationKey}>
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">
-                                      {label}
-                                    </p>
-                                    <div className="mt-2 space-y-2">
-                                      {availableRoleOptions.map((roleOption) => (
-                                        <label
-                                          key={`${moduleKey}-${relationKey}-${roleOption.key}`}
-                                          className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/80 px-3 py-2 text-xs text-muted transition hover:border-border hover:bg-hover/10"
-                                        >
-                                          <span className="font-semibold uppercase tracking-[0.18em] text-text">
-                                            {roleOption.name}
-                                          </span>
-                                          <input
-                                            type="checkbox"
-                                            checked={Boolean(
-                                              roleRelationsDraft[moduleKey]?.[relationKey]?.includes(
-                                                roleOption.key,
-                                              ),
-                                            )}
-                                            disabled={isAdminRole}
-                                            onChange={(event) =>
-                                              toggleRoleRelation(
+                            {availableRoleOptions.length === 0 ? (
+                              <p className="mt-3 text-sm text-muted">
+                                No other roles available for cross-role access.
+                              </p>
+                            ) : (
+                              <div className="mt-3 grid gap-4 xl:grid-cols-3">
+                                {([
+                                  ['canViewRoles', 'Can View Users'],
+                                  ['canAssignToRoles', 'Can Assign To'],
+                                  ['canBeAssignedByRoles', 'Can Be Assigned By'],
+                                ] as Array<[keyof ModuleRoleRelation, string]>).map(
+                                  ([relationKey, label]) => (
+                                    <div key={relationKey}>
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">
+                                        {label}
+                                      </p>
+                                      <div className="mt-2 space-y-2">
+                                        {availableRoleOptions.map((roleOption) => (
+                                          <label
+                                            key={`${moduleKey}-${relationKey}-${roleOption.key}`}
+                                            className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/80 px-3 py-2 text-xs text-muted transition hover:border-border hover:bg-hover/10"
+                                          >
+                                            <span className="font-semibold uppercase tracking-[0.18em] text-text">
+                                              {roleOption.name}
+                                            </span>
+                                            <input
+                                              type="checkbox"
+                                              checked={isRoleRelationEnabled(
                                                 moduleKey,
                                                 relationKey,
                                                 roleOption.key,
-                                                event.target.checked,
-                                              )
-                                            }
-                                            className="h-4 w-4"
-                                          />
-                                        </label>
-                                      ))}
+                                              )}
+                                              disabled={isAdminRole}
+                                              onChange={(event) =>
+                                                toggleRoleRelation(
+                                                  moduleKey,
+                                                  relationKey,
+                                                  roleOption.key,
+                                                  event.target.checked,
+                                                )
+                                              }
+                                              className="h-4 w-4"
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                ),
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                                  ),
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                   <div className="flex flex-col gap-4 rounded-[26px] border border-border/60 bg-[linear-gradient(135deg,rgba(6,151,107,0.08),rgba(255,255,255,0.9)_24%,rgba(148,163,184,0.08))] p-4 shadow-soft dark:bg-[linear-gradient(135deg,rgba(6,151,107,0.12),rgba(15,23,42,0.92)_26%,rgba(30,41,59,0.4))] sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">

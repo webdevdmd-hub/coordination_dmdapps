@@ -6,7 +6,11 @@ import { firebaseCustomerRepository } from '@/adapters/repositories/firebaseCust
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
-import { Customer, CustomerStatus } from '@/core/entities/customer';
+import {
+  Customer,
+  CustomerAddress,
+  CustomerStatus,
+} from '@/core/entities/customer';
 import { User } from '@/core/entities/user';
 import {
   getModuleCacheEntry,
@@ -27,11 +31,71 @@ type CustomerFormState = {
   contactPerson: string;
   email: string;
   phone: string;
+  salutation: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  displayNameSecondary: string;
+  vatNumber: string;
+  website: string;
+  workPhone: string;
+  mobile: string;
+  customerLanguage: string;
+  currency: string;
+  taxTreatment: string;
+  placeOfSupply: string;
+  paymentTerms: string;
+  enablePortal: boolean;
+  billingAddress: CustomerAddress;
+  shippingAddress: CustomerAddress;
+  useBillingAsShipping: boolean;
+  remarks: string;
   source: string;
   status: CustomerStatus;
   assignedTo: string;
   sharedRoles: string[];
 };
+
+const emptyAddress = (): CustomerAddress => ({
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  country: '',
+});
+
+const parseContactName = (value: string) => {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: '', lastName: '' };
+  }
+  return {
+    firstName: parts[0] ?? '',
+    lastName: parts.slice(1).join(' '),
+  };
+};
+
+const buildContactPerson = (firstName: string, lastName: string, fallback: string) => {
+  const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ').trim();
+  return fullName || fallback.trim();
+};
+
+const buildCompanyName = (companyName: string, contactPerson: string) => {
+  const trimmedCompanyName = companyName.trim();
+  if (trimmedCompanyName) {
+    return trimmedCompanyName;
+  }
+  return contactPerson.trim();
+};
+
+const addressesMatch = (left?: CustomerAddress, right?: CustomerAddress) =>
+  (left?.addressLine1 ?? '') === (right?.addressLine1 ?? '') &&
+  (left?.addressLine2 ?? '') === (right?.addressLine2 ?? '') &&
+  (left?.city ?? '') === (right?.city ?? '') &&
+  (left?.state ?? '') === (right?.state ?? '') &&
+  (left?.zipCode ?? '') === (right?.zipCode ?? '') &&
+  (left?.country ?? '') === (right?.country ?? '');
 
 const statusOptions: Array<{ value: CustomerStatus; label: string }> = [
   { value: 'active', label: 'Active' },
@@ -69,6 +133,7 @@ export default function Page() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerFormTab, setCustomerFormTab] = useState<'details' | 'billing'>('details');
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'customer_view']);
@@ -84,6 +149,25 @@ export default function Page() {
     contactPerson: '',
     email: '',
     phone: '',
+    salutation: '',
+    firstName: '',
+    lastName: '',
+    displayName: '',
+    displayNameSecondary: '',
+    vatNumber: '',
+    website: '',
+    workPhone: '',
+    mobile: '',
+    customerLanguage: 'English',
+    currency: 'AED - UAE Dirham',
+    taxTreatment: '',
+    placeOfSupply: '',
+    paymentTerms: '',
+    enablePortal: false,
+    billingAddress: emptyAddress(),
+    shippingAddress: emptyAddress(),
+    useBillingAsShipping: true,
+    remarks: '',
     source: '',
     status: 'active',
     assignedTo,
@@ -327,7 +411,7 @@ export default function Page() {
       const matchesStatus = statusFilter === 'all' ? true : customer.status === statusFilter;
       const matchesSearch =
         term.length === 0 ||
-        [customer.companyName, customer.contactPerson, customer.email].some((value) =>
+        [customer.companyName, customer.contactPerson, customer.displayName ?? '', customer.email].some((value) =>
           value.toLowerCase().includes(term),
         );
       return matchesStatus && matchesSearch;
@@ -359,21 +443,44 @@ export default function Page() {
     }
     setSelectedCustomer(null);
     setFormState(emptyCustomer(user.id));
+    setCustomerFormTab('details');
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (customer: Customer) => {
+    const parsedContactName = parseContactName(customer.contactPerson);
     setSelectedCustomer(customer);
     setFormState({
       companyName: customer.companyName,
       contactPerson: customer.contactPerson,
       email: customer.email,
       phone: customer.phone,
+      salutation: customer.salutation ?? '',
+      firstName: customer.firstName ?? parsedContactName.firstName,
+      lastName: customer.lastName ?? parsedContactName.lastName,
+      displayName: customer.displayName ?? customer.companyName,
+      displayNameSecondary: customer.displayNameSecondary ?? '',
+      vatNumber: customer.vatNumber ?? '',
+      website: customer.website ?? '',
+      workPhone: customer.workPhone ?? customer.phone,
+      mobile: customer.mobile ?? '',
+      customerLanguage: customer.customerLanguage ?? 'English',
+      currency: customer.currency ?? 'AED - UAE Dirham',
+      taxTreatment: customer.taxTreatment ?? '',
+      placeOfSupply: customer.placeOfSupply ?? '',
+      paymentTerms: customer.paymentTerms ?? '',
+      enablePortal: customer.enablePortal ?? false,
+      billingAddress: customer.billingAddress ?? emptyAddress(),
+      shippingAddress: customer.shippingAddress ?? customer.billingAddress ?? emptyAddress(),
+      useBillingAsShipping:
+        !customer.shippingAddress || addressesMatch(customer.billingAddress, customer.shippingAddress),
+      remarks: customer.remarks ?? '',
       source: customer.source,
       status: customer.status,
       assignedTo: customer.assignedTo,
       sharedRoles: customer.sharedRoles ?? [],
     });
+    setCustomerFormTab('details');
     setIsEditOpen(true);
   };
 
@@ -397,6 +504,7 @@ export default function Page() {
   const handleCloseModal = () => {
     setIsCreateOpen(false);
     setIsEditOpen(false);
+    setCustomerFormTab('details');
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -405,8 +513,17 @@ export default function Page() {
       setError('You must be signed in to save customers.');
       return;
     }
-    if (!formState.companyName.trim() || !formState.contactPerson.trim() || !formState.email) {
-      setError('Company, contact, and email are required.');
+    const nextContactPerson = buildContactPerson(
+      formState.firstName,
+      formState.lastName,
+      formState.contactPerson,
+    );
+    const nextCompanyName = buildCompanyName(
+      formState.companyName,
+      nextContactPerson,
+    );
+    if (!nextCompanyName || !nextContactPerson || !formState.email.trim()) {
+      setError('Company, primary contact, and email are required.');
       return;
     }
     const isEditing = !!selectedCustomer;
@@ -424,12 +541,54 @@ export default function Page() {
     }
 
     const updates = {
-      ...formState,
-      companyName: formState.companyName.trim(),
-      contactPerson: formState.contactPerson.trim(),
+      companyName: nextCompanyName,
+      contactPerson: nextContactPerson,
       email: formState.email.trim(),
-      phone: formState.phone.trim(),
+      phone: (formState.mobile || formState.workPhone || formState.phone).trim(),
+      salutation: formState.salutation.trim(),
+      firstName: formState.firstName.trim(),
+      lastName: formState.lastName.trim(),
+      displayName: (formState.displayName || nextCompanyName).trim(),
+      displayNameSecondary: formState.displayNameSecondary.trim(),
+      vatNumber: formState.vatNumber.trim(),
+      website: formState.website.trim(),
+      workPhone: formState.workPhone.trim(),
+      mobile: formState.mobile.trim(),
+      customerLanguage: formState.customerLanguage.trim(),
+      currency: formState.currency.trim(),
+      taxTreatment: formState.taxTreatment.trim(),
+      placeOfSupply: formState.placeOfSupply.trim(),
+      paymentTerms: formState.paymentTerms.trim(),
+      billingAddress: {
+        addressLine1: formState.billingAddress.addressLine1.trim(),
+        addressLine2: formState.billingAddress.addressLine2.trim(),
+        city: formState.billingAddress.city.trim(),
+        state: formState.billingAddress.state.trim(),
+        zipCode: formState.billingAddress.zipCode.trim(),
+        country: formState.billingAddress.country.trim(),
+      },
+      shippingAddress: formState.useBillingAsShipping
+        ? {
+            addressLine1: formState.billingAddress.addressLine1.trim(),
+            addressLine2: formState.billingAddress.addressLine2.trim(),
+            city: formState.billingAddress.city.trim(),
+            state: formState.billingAddress.state.trim(),
+            zipCode: formState.billingAddress.zipCode.trim(),
+            country: formState.billingAddress.country.trim(),
+          }
+        : {
+            addressLine1: formState.shippingAddress.addressLine1.trim(),
+            addressLine2: formState.shippingAddress.addressLine2.trim(),
+            city: formState.shippingAddress.city.trim(),
+            state: formState.shippingAddress.state.trim(),
+            zipCode: formState.shippingAddress.zipCode.trim(),
+            country: formState.shippingAddress.country.trim(),
+          },
+      remarks: formState.remarks.trim(),
       source: formState.source.trim(),
+      status: formState.status,
+      assignedTo: formState.assignedTo,
+      sharedRoles: formState.sharedRoles,
     };
 
     setIsSaving(true);
@@ -504,6 +663,27 @@ export default function Page() {
     } catch {
       setError('Unable to update customer status.');
     }
+  };
+
+  const updateField = <K extends keyof CustomerFormState,>(
+    key: K,
+    value: CustomerFormState[K],
+  ) => {
+    setFormState((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateAddress = (
+    addressKey: 'billingAddress' | 'shippingAddress',
+    field: keyof CustomerAddress,
+    value: string,
+  ) => {
+    setFormState((prev) => ({
+      ...prev,
+      [addressKey]: {
+        ...prev[addressKey],
+        [field]: value,
+      },
+    }));
   };
 
   return (
@@ -855,7 +1035,7 @@ export default function Page() {
           onClick={handleCloseModal}
         >
           <DraggablePanel
-            className="w-full max-w-3xl rounded-3xl border border-border/60 bg-surface/95 p-6 shadow-floating"
+            className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-border/60 bg-surface/95 p-6 shadow-floating"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4">
@@ -877,130 +1057,396 @@ export default function Page() {
             </div>
 
             <form className="mt-6 space-y-5" onSubmit={handleSave}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Company name
-                  </label>
-                  <input
-                    required
-                    value={formState.companyName}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, companyName: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Contact person
-                  </label>
-                  <input
-                    required
-                    value={formState.contactPerson}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, contactPerson: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={formState.email}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, email: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Phone
-                  </label>
-                  <input
-                    value={formState.phone}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, phone: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Source
-                  </label>
-                  <input
-                    value={formState.source}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, source: event.target.value }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Status
-                  </label>
-                  <select
-                    value={formState.status}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        status: event.target.value as CustomerStatus,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  >
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Assigned to
-                  </label>
-                  {canAssign ? (
-                    <select
-                      value={formState.assignedTo}
-                      onChange={(event) =>
-                        setFormState((prev) => ({ ...prev, assignedTo: event.target.value }))
-                      }
-                      disabled={!canAssign}
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-                    >
-                      {!canAssign ? (
-                        <option value={formState.assignedTo}>
-                          {ownerNameMap.get(formState.assignedTo) ?? formState.assignedTo}
-                        </option>
-                      ) : assignableUsers.length === 0 ? (
-                        <option value="" disabled>
-                          No eligible assignees
-                        </option>
-                      ) : (
-                        assignableUsers.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.fullName}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  ) : (
-                    <input
-                      value={ownerNameMap.get(formState.assignedTo) ?? formState.assignedTo}
-                      readOnly
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
-                    />
-                  )}
-                </div>
+              <div className="grid grid-cols-2 rounded-2xl border border-border/60 bg-bg/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => setCustomerFormTab('details')}
+                  className={`rounded-2xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] transition ${
+                    customerFormTab === 'details' ? 'bg-text text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  Customer details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomerFormTab('billing')}
+                  className={`rounded-2xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] transition ${
+                    customerFormTab === 'billing' ? 'bg-text text-white' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  Billing & shipping
+                </button>
               </div>
+
+              {customerFormTab === 'details' ? (
+                <div className="space-y-6">
+                  <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Identity</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Company name</label>
+                        <input
+                          value={formState.companyName}
+                          onChange={(event) => updateField('companyName', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Display name</label>
+                        <input
+                          value={formState.displayName}
+                          onChange={(event) => updateField('displayName', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Display name (secondary)
+                        </label>
+                        <input
+                          value={formState.displayNameSecondary}
+                          onChange={(event) => updateField('displayNameSecondary', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">VAT number</label>
+                        <input
+                          value={formState.vatNumber}
+                          onChange={(event) => updateField('vatNumber', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Website</label>
+                        <input
+                          value={formState.website}
+                          onChange={(event) => updateField('website', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Primary contact</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-4">
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Salutation</label>
+                        <input
+                          value={formState.salutation}
+                          onChange={(event) => updateField('salutation', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">First name</label>
+                        <input
+                          required
+                          value={formState.firstName}
+                          onChange={(event) => updateField('firstName', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Last name</label>
+                        <input
+                          value={formState.lastName}
+                          onChange={(event) => updateField('lastName', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Customer language
+                        </label>
+                        <input
+                          value={formState.customerLanguage}
+                          onChange={(event) => updateField('customerLanguage', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Email</label>
+                        <input
+                          type="email"
+                          required
+                          value={formState.email}
+                          onChange={(event) => updateField('email', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Work phone</label>
+                        <input
+                          value={formState.workPhone}
+                          onChange={(event) => updateField('workPhone', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Mobile</label>
+                        <input
+                          value={formState.mobile}
+                          onChange={(event) => updateField('mobile', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Legacy phone</label>
+                        <input
+                          value={formState.phone}
+                          onChange={(event) => updateField('phone', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Commercial settings</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Currency</label>
+                        <input
+                          value={formState.currency}
+                          onChange={(event) => updateField('currency', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Tax treatment</label>
+                        <input
+                          value={formState.taxTreatment}
+                          onChange={(event) => updateField('taxTreatment', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Place of supply</label>
+                        <input
+                          value={formState.placeOfSupply}
+                          onChange={(event) => updateField('placeOfSupply', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Payment terms</label>
+                        <input
+                          value={formState.paymentTerms}
+                          onChange={(event) => updateField('paymentTerms', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Source</label>
+                        <input
+                          value={formState.source}
+                          onChange={(event) => updateField('source', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Status</label>
+                        <select
+                          value={formState.status}
+                          onChange={(event) => updateField('status', event.target.value as CustomerStatus)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        >
+                          {statusOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="md:col-span-2 flex items-center gap-3 rounded-2xl border border-border/60 bg-bg/60 px-4 py-3 text-sm text-text">
+                        <input
+                          id="enable-portal"
+                          type="checkbox"
+                          checked={formState.enablePortal}
+                          onChange={(event) => updateField('enablePortal', event.target.checked)}
+                        />
+                        <label htmlFor="enable-portal">Allow portal access for this customer</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Billing address</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 1</label>
+                        <textarea
+                          value={formState.billingAddress.addressLine1}
+                          onChange={(event) => updateAddress('billingAddress', 'addressLine1', event.target.value)}
+                          className="mt-2 min-h-[100px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 2</label>
+                        <input
+                          value={formState.billingAddress.addressLine2}
+                          onChange={(event) => updateAddress('billingAddress', 'addressLine2', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">City</label>
+                        <input
+                          value={formState.billingAddress.city}
+                          onChange={(event) => updateAddress('billingAddress', 'city', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">State</label>
+                        <input
+                          value={formState.billingAddress.state}
+                          onChange={(event) => updateAddress('billingAddress', 'state', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Zip code</label>
+                        <input
+                          value={formState.billingAddress.zipCode}
+                          onChange={(event) => updateAddress('billingAddress', 'zipCode', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Country</label>
+                        <input
+                          value={formState.billingAddress.country}
+                          onChange={(event) => updateAddress('billingAddress', 'country', event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Shipping address</p>
+                      <label className="flex items-center gap-2 text-sm text-text">
+                        <input
+                          type="checkbox"
+                          checked={formState.useBillingAsShipping}
+                          onChange={(event) => updateField('useBillingAsShipping', event.target.checked)}
+                        />
+                        <span>Same as billing</span>
+                      </label>
+                    </div>
+                    {!formState.useBillingAsShipping ? (
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 1</label>
+                          <textarea
+                            value={formState.shippingAddress.addressLine1}
+                            onChange={(event) => updateAddress('shippingAddress', 'addressLine1', event.target.value)}
+                            className="mt-2 min-h-[100px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 2</label>
+                          <input
+                            value={formState.shippingAddress.addressLine2}
+                            onChange={(event) => updateAddress('shippingAddress', 'addressLine2', event.target.value)}
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">City</label>
+                          <input
+                            value={formState.shippingAddress.city}
+                            onChange={(event) => updateAddress('shippingAddress', 'city', event.target.value)}
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">State</label>
+                          <input
+                            value={formState.shippingAddress.state}
+                            onChange={(event) => updateAddress('shippingAddress', 'state', event.target.value)}
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Zip code</label>
+                          <input
+                            value={formState.shippingAddress.zipCode}
+                            onChange={(event) => updateAddress('shippingAddress', 'zipCode', event.target.value)}
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Country</label>
+                          <input
+                            value={formState.shippingAddress.country}
+                            onChange={(event) => updateAddress('shippingAddress', 'country', event.target.value)}
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-muted">
+                        Shipping details will mirror the billing address when you save.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Ownership & notes</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Assigned to</label>
+                        {canAssign ? (
+                          <select
+                            value={formState.assignedTo}
+                            onChange={(event) => updateField('assignedTo', event.target.value)}
+                            disabled={!canAssign}
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                          >
+                            {!canAssign ? (
+                              <option value={formState.assignedTo}>
+                                {ownerNameMap.get(formState.assignedTo) ?? formState.assignedTo}
+                              </option>
+                            ) : assignableUsers.length === 0 ? (
+                              <option value="" disabled>
+                                No eligible assignees
+                              </option>
+                            ) : (
+                              assignableUsers.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.fullName}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        ) : (
+                          <input
+                            value={ownerNameMap.get(formState.assignedTo) ?? formState.assignedTo}
+                            readOnly
+                            className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
+                          />
+                        )}
+                      </div>
+                      <div />
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Remarks</label>
+                        <textarea
+                          value={formState.remarks}
+                          onChange={(event) => updateField('remarks', event.target.value)}
+                          className="mt-2 min-h-[120px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center justify-end gap-3">
                 {selectedCustomer && canDelete ? (
