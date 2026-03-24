@@ -254,11 +254,17 @@ export default function Page() {
           return;
         }
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
-        const assignableScope = filterAssignableUsers(users, roles, 'quotation_request_assign', {
-          currentUser: user,
-          moduleKey: 'quotationRequests',
-        });
-        const assignableUserIds = new Set(assignableScope.map((entry) => entry.id));
+        const isAdmin = Boolean(user?.permissions.includes('admin'));
+        const assignableUserIds = new Set(
+          (
+            isAdmin
+              ? users.filter((userItem) => userItem.active)
+              : filterAssignableUsers(users, roles, 'quotation_request_assign', {
+                  currentUser: user,
+                  moduleKey: 'quotationRequests',
+                })
+          ).map((entry) => entry.id),
+        );
         const filtered = users
           .filter((userItem) => userItem.active)
           .map((userItem) => {
@@ -267,10 +273,10 @@ export default function Page() {
             if (!role) {
               return null;
             }
-            if (role.key === 'admin' || role.permissions.includes('admin')) {
-              return null;
-            }
-            if (!role.permissions.includes('quotation_request_assign')) {
+            if (
+              !role.permissions.includes('quotation_request_assign') &&
+              !role.permissions.includes('admin')
+            ) {
               return null;
             }
             if (!assignableUserIds.has(userItem.id)) {

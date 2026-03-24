@@ -358,10 +358,13 @@ export function LeadModal({
           return;
         }
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
-        const scopedUsers = filterAssignableUsers(users, roles, 'quotation_request_assign', {
-          currentUser: user,
-          moduleKey: 'quotationRequests',
-        });
+        const isAdmin = Boolean(user?.permissions.includes('admin'));
+        const scopedUsers = isAdmin
+          ? users.filter((userItem) => userItem.active)
+          : filterAssignableUsers(users, roles, 'quotation_request_assign', {
+              currentUser: user,
+              moduleKey: 'quotationRequests',
+            });
         const grouped = new Map<
           string,
           { roleKey: string; roleName: string; users: Array<{ id: string; name: string }> }
@@ -375,10 +378,18 @@ export function LeadModal({
           if (!role) {
             return;
           }
-          if (role.key === 'admin' || role.permissions.includes('admin')) {
+          if (
+            !isAdmin &&
+            !role.permissions.includes('quotation_request_assign') &&
+            !role.permissions.includes('admin')
+          ) {
             return;
           }
-          if (!role.permissions.includes('quotation_request_assign')) {
+          if (
+            isAdmin &&
+            !role.permissions.includes('quotation_request_assign') &&
+            !role.permissions.includes('admin')
+          ) {
             return;
           }
           const entry = grouped.get(role.key) ?? {
