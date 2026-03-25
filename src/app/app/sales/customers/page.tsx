@@ -6,6 +6,7 @@ import { firebaseCustomerRepository } from '@/adapters/repositories/firebaseCust
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import {
   Customer,
   CustomerAddress,
@@ -701,24 +702,12 @@ export default function Page() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {hasUserVisibility ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
-                <label htmlFor="customer-owner" className="sr-only">
-                  Owner
-                </label>
-                <select
-                  id="customer-owner"
-                  name="customer-owner"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Customer owner filter"
+              />
             ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
@@ -794,28 +783,17 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70"
               />
             </div>
-            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 sm:w-auto">
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
-                style={{
-                  width: `calc((100% - 0.5rem) / ${customerStatusFilterOptions.length})`,
-                  transform: `translateX(calc(${selectedCustomerStatusIndex} * 100%))`,
-                }}
-              />
-              <div
-                className="relative z-[1] grid gap-2"
-                style={{
-                  gridTemplateColumns: `repeat(${customerStatusFilterOptions.length}, minmax(0, 1fr))`,
-                }}
-              >
+            <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-1 sm:w-auto sm:rounded-2xl">
+              <div className="relative z-[1] grid grid-cols-2 gap-1 sm:grid-cols-none sm:gap-2">
                 {customerStatusFilterOptions.map((status) => (
                   <button
                     key={status}
                     type="button"
                     onClick={() => setStatusFilter(status)}
-                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
-                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
+                    className={`rounded-md px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-[0.08em] transition sm:rounded-xl sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.18em] ${
+                      statusFilter === status
+                        ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
+                        : 'text-muted hover:text-text'
                     }`}
                   >
                     {status === 'all'
@@ -826,12 +804,6 @@ export default function Page() {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="rounded-2xl border border-border bg-surface px-5 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted transition hover:-translate-y-[1px] hover:bg-[var(--surface-soft)]"
-          >
-            Export list
-          </button>
         </div>
 
         {!canView ? (

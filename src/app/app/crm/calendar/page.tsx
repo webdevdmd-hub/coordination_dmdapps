@@ -7,6 +7,7 @@ import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepo
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { CalendarCategory, CalendarEvent, CalendarItemType } from '@/core/entities/calendarEvent';
 import { TaskRecurrence } from '@/core/entities/task';
 import { User } from '@/core/entities/user';
@@ -391,6 +392,14 @@ export default function Page() {
   );
   const viewSegmentWidth = 120;
   const categorySegmentWidth = 150;
+  const mobileViewOptions = useMemo(
+    () => calendarViewModes.map((option) => ({ id: option.value, name: option.label })),
+    [],
+  );
+  const mobileCategoryOptions = useMemo(
+    () => calendarCategoryFilters.map((option) => ({ id: option.value, name: option.label })),
+    [],
+  );
 
   const visibleRange = useMemo(() => {
     if (viewMode === 'day') {
@@ -527,6 +536,122 @@ export default function Page() {
       list,
     }));
   }, [displayEvents, currentMonth]);
+
+  const monthDatesInView = useMemo(
+    () => monthDays.filter((date) => date.getMonth() === currentMonth.getMonth()),
+    [monthDays, currentMonth],
+  );
+
+  const renderMobileDateStack = (
+    dates: Date[],
+    options?: { maxVisible?: number; emptyLabel?: string; includeWeekday?: boolean },
+  ) => {
+    const maxVisible = options?.maxVisible ?? 4;
+    const emptyLabel = options?.emptyLabel ?? 'No events scheduled';
+    const includeWeekday = options?.includeWeekday ?? true;
+
+    return (
+      <div className="space-y-3 sm:hidden">
+        {dates.map((date) => {
+          const dateKey = toDateKey(date);
+          const dayEventsList = eventsByDate.get(dateKey) ?? [];
+          const longLabel = date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            ...(includeWeekday ? { weekday: 'long' as const } : {}),
+          });
+
+          return (
+            <div
+              key={dateKey}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => handleDrop(dateKey, event)}
+              className="rounded-2xl border border-border/60 bg-bg/70 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-text">{longLabel}</p>
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-muted">
+                    {dayEventsList.length} {dayEventsList.length === 1 ? 'item' : 'items'}
+                  </p>
+                </div>
+                {canCreateItems ? (
+                  <button
+                    type="button"
+                    onClick={() => openCreateModal(dateKey)}
+                    className="rounded-full border border-border/60 bg-surface px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted transition hover:bg-hover/70"
+                  >
+                    Add
+                  </button>
+                ) : null}
+              </div>
+
+              {dayEventsList.length === 0 ? (
+                <div className="mt-3 rounded-2xl border border-dashed border-border/60 bg-surface/70 px-4 py-3 text-sm text-muted">
+                  {emptyLabel}
+                </div>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {dayEventsList.slice(0, maxVisible).map((eventItem) => {
+                    const style = categoryStyles.get(eventItem.category);
+                    const ownerName = ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
+
+                    return (
+                      <button
+                        key={`${eventItem.occurrenceKey}-${dateKey}`}
+                        type="button"
+                        draggable={hasPermission(user?.permissions ?? [], [
+                          'admin',
+                          'calendar_edit',
+                        ])}
+                        onDragStart={(event) => handleDragStart(eventItem.id, event)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEditModalById(eventItem.id);
+                        }}
+                        className="w-full rounded-2xl border border-border/60 bg-surface px-4 py-3 text-left"
+                        style={{ borderLeftColor: style?.text ?? '#111827', borderLeftWidth: 3 }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-text">
+                              {eventItem.title}
+                            </p>
+                            <p className="mt-1 text-xs text-muted">{ownerName}</p>
+                            {formatEventTimeRange(eventItem) ? (
+                              <p className="mt-1 text-xs text-muted">
+                                {formatEventTimeRange(eventItem)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <span
+                            className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]"
+                            style={{
+                              backgroundColor: style?.bg ?? '#E5E7EB',
+                              color: style?.text ?? '#111827',
+                              borderColor: style?.text ?? '#111827',
+                            }}
+                          >
+                            {eventItem.category.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {dayEventsList.length > maxVisible ? (
+                    <div className="rounded-xl border border-border/60 bg-surface/70 px-3 py-2 text-xs text-muted">
+                      +{dayEventsList.length - maxVisible} more
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const dayEvents = useMemo(() => {
     return eventsByDate.get(selectedDate) ?? [];
@@ -943,58 +1068,34 @@ export default function Page() {
   };
 
   return (
-    <div className="space-y-8">
-      <section className="rounded-[28px] border border-border bg-surface p-8 shadow-soft">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-6 sm:space-y-8">
+      <section className="rounded-[28px] border border-border bg-surface p-4 shadow-soft sm:p-6 lg:p-8">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               CRM Calendar
             </p>
-            <h1 className="font-display text-6xl text-text">Lead calendar</h1>
-            <p className="mt-2 max-w-2xl text-2xl text-muted">
+            <h1 className="font-display text-4xl text-text sm:text-5xl lg:text-6xl">Lead calendar</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted sm:text-lg lg:text-2xl">
               Schedule tasks and appointments, drag items to reschedule, and keep every lead
               touchpoint aligned.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
             {hasUserVisibility ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                <label htmlFor="calendar-owner-header" className="sr-only">
-                  Owner
-                </label>
-                <select
-                  id="calendar-owner-header"
-                  name="calendar-owner-header"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  className="bg-transparent text-sm font-semibold text-text outline-none"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Calendar owner filter"
+                className="w-full sm:w-auto"
+              />
             ) : null}
             <button
               type="button"
               onClick={() => openCreateModal()}
               disabled={!canCreateItems}
-              className="rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-2xl border border-accent/30 bg-accent px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(6,151,107,0.22)] transition hover:-translate-y-[1px] hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               + Add event
             </button>
@@ -1002,10 +1103,10 @@ export default function Page() {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border bg-surface p-6 shadow-soft">
+      <section className="rounded-[28px] border border-border bg-surface p-4 shadow-soft sm:p-6">
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
+          <div className="flex flex-col gap-4">
+            <div className="flex w-full items-center gap-3 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-sm text-muted">
               <svg
                 viewBox="0 0 24 24"
                 className="h-5 w-5"
@@ -1034,14 +1135,27 @@ export default function Page() {
                   }
                   setCurrentMonth(new Date(year, month - 1, 1));
                 }}
-                className="w-full bg-transparent text-lg text-text outline-none"
+                className="w-full bg-transparent text-sm text-text outline-none sm:text-base lg:text-lg"
               />
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="max-w-full overflow-x-auto">
+            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+              <div className="sm:hidden">
+                <FilterDropdown
+                  value={viewMode}
+                  onChange={(value) =>
+                    setViewMode(
+                      value as 'day' | 'week' | 'month' | 'year' | 'schedule' | 'four_days',
+                    )
+                  }
+                  options={mobileViewOptions}
+                  ariaLabel="Calendar view mode"
+                  className="w-full"
+                />
+              </div>
+              <div className="hidden w-full max-w-full overflow-x-auto sm:block">
                 <div className="relative inline-flex min-w-max items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
                   <span
                     aria-hidden="true"
@@ -1065,7 +1179,7 @@ export default function Page() {
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-2 py-1">
+              <div className="grid w-full grid-cols-3 gap-2 rounded-xl border border-border bg-surface px-2 py-2 sm:flex sm:w-auto sm:items-center sm:gap-2 sm:px-2 sm:py-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1092,7 +1206,7 @@ export default function Page() {
                     }
                     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
                   }}
-                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)]"
+                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)] sm:text-sm"
                 >
                   Prev
                 </button>
@@ -1117,7 +1231,7 @@ export default function Page() {
                     }
                     setCurrentMonth(startOfMonth(new Date()));
                   }}
-                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)]"
+                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)] sm:text-sm"
                 >
                   Today
                 </button>
@@ -1147,12 +1261,21 @@ export default function Page() {
                     }
                     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
                   }}
-                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)]"
+                  className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)] sm:text-sm"
                 >
                   Next
                 </button>
               </div>
-              <div className="max-w-full overflow-x-auto">
+              <div className="sm:hidden">
+                <FilterDropdown
+                  value={categoryFilter}
+                  onChange={(value) => setCategoryFilter(value as CalendarCategory | 'all')}
+                  options={mobileCategoryOptions}
+                  ariaLabel="Calendar category filter"
+                  className="w-full"
+                />
+              </div>
+              <div className="hidden w-full max-w-full overflow-x-auto sm:block">
                 <div className="relative inline-flex min-w-max items-center rounded-2xl border border-border bg-[var(--surface-soft)] p-1">
                   <span
                     aria-hidden="true"
@@ -1177,7 +1300,7 @@ export default function Page() {
                 </div>
               </div>
               {viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days' ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted">
+                <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-xs text-muted sm:w-auto">
                   <label htmlFor="calendar-day" className="sr-only">
                     Day
                   </label>
@@ -1187,7 +1310,7 @@ export default function Page() {
                     name="calendar-day"
                     value={selectedDate}
                     onChange={(event) => setSelectedDate(event.target.value)}
-                    className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
+                    className="w-full bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
                   />
                 </div>
               ) : null}
@@ -1205,7 +1328,7 @@ export default function Page() {
                         ? 'Year view'
                         : 'Month view'}
               </p>
-              <h2 className="mt-1 font-display text-5xl text-text">
+              <h2 className="mt-1 font-display text-3xl text-text sm:text-4xl lg:text-5xl">
                 {viewMode === 'day'
                   ? selectedDateLabel
                   : viewMode === 'week'
@@ -1229,8 +1352,8 @@ export default function Page() {
             Loading calendar events...
           </div>
         ) : viewMode === 'day' ? (
-          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-6">
-            <div className="flex items-center justify-between">
+          <div className="mt-6 rounded-2xl border border-border/60 bg-bg/70 p-4 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-semibold text-text">Schedule for {selectedDateLabel}</p>
               {canCreateItems ? (
                 <button
@@ -1292,7 +1415,13 @@ export default function Page() {
             )}
           </div>
         ) : viewMode === 'week' ? (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-border/60">
+          <div className="mt-6">
+            {renderMobileDateStack(weekDates, {
+              maxVisible: 4,
+              emptyLabel: 'No events scheduled for this day.',
+            })}
+            <div className="hidden overflow-x-auto sm:block">
+            <div className="min-w-[860px] overflow-hidden rounded-2xl border border-border/60">
             <div className="grid grid-cols-7 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
               {weekDays.map((day) => (
                 <div key={day} className="px-3 py-3">
@@ -1362,9 +1491,17 @@ export default function Page() {
                 );
               })}
             </div>
+            </div>
+            </div>
           </div>
         ) : viewMode === 'four_days' ? (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-border/60">
+          <div className="mt-6">
+            {renderMobileDateStack(fourDayDates, {
+              maxVisible: 4,
+              emptyLabel: 'No events scheduled for this day.',
+            })}
+            <div className="hidden overflow-x-auto sm:block">
+            <div className="min-w-[720px] overflow-hidden rounded-2xl border border-border/60">
             <div className="grid grid-cols-4 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
               {fourDayDates.map((date) => (
                 <div key={toDateKey(date)} className="px-3 py-3">
@@ -1433,6 +1570,8 @@ export default function Page() {
                   </div>
                 );
               })}
+            </div>
+            </div>
             </div>
           </div>
         ) : viewMode === 'schedule' ? (
@@ -1550,7 +1689,13 @@ export default function Page() {
             })}
           </div>
         ) : (
-          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
+          <div className="mt-6">
+            {renderMobileDateStack(monthDatesInView, {
+              maxVisible: 3,
+              emptyLabel: 'No events scheduled for this date.',
+            })}
+            <div className="hidden overflow-x-auto sm:block">
+            <div className="min-w-[980px] overflow-hidden rounded-3xl border border-border bg-surface">
             <div className="grid grid-cols-7 border-b border-border bg-[var(--surface-soft)] text-xs font-semibold uppercase tracking-[0.2em] text-muted/80">
               {weekDays.map((day) => (
                 <div key={day} className="px-3 py-3">
@@ -1620,6 +1765,8 @@ export default function Page() {
                   </div>
                 );
               })}
+            </div>
+            </div>
             </div>
           </div>
         )}

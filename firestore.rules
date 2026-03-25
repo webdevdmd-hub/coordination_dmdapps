@@ -18,15 +18,9 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
     }
 
-    // Notification events: clients can only create events for themselves.
+    // Notification events: only server-side code may create delivery events.
     match /notificationEvents/{eventId} {
-      allow create: if isAuthed()
-        && request.resource.data.actorId == request.auth.uid
-        && (
-          request.resource.data.broadcast == true
-          || (request.resource.data.recipients is list
-            && request.resource.data.recipients.size() > 0)
-        );
+      allow create: if false;
       allow read, update, delete: if false;
     }
 

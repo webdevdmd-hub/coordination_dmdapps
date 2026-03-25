@@ -9,6 +9,7 @@ import { firebaseQuotationRepository } from '@/adapters/repositories/firebaseQuo
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { Customer } from '@/core/entities/customer';
 import { Project } from '@/core/entities/project';
 import { Quotation, QuotationLineItem, QuotationStatus } from '@/core/entities/quotation';
@@ -805,24 +806,12 @@ export default function Page() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {hasUserVisibility ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-bg/70 px-3 py-2 text-xs text-muted">
-                <label htmlFor="quote-owner" className="sr-only">
-                  Owner
-                </label>
-                <select
-                  id="quote-owner"
-                  name="quote-owner"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  className="bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-text outline-none"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Quotation owner filter"
+              />
             ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
@@ -891,7 +880,7 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70 md:w-48"
               />
             </div>
-            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+            <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-0.5 md:w-auto md:rounded-2xl md:p-1">
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
@@ -911,7 +900,7 @@ export default function Page() {
                     key={status}
                     type="button"
                     onClick={() => setStatusFilter(status)}
-                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                    className={`rounded-md px-1.5 py-1 text-[8px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
                       statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
                     }`}
                   >

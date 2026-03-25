@@ -28,10 +28,12 @@ import {
   hasUserVisibilityAccess,
 } from '@/lib/roleVisibility';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import {
   areSameRecipientSets,
   buildRecipientList,
   emitNotificationEventSafe,
+  getModuleNotificationPermissions,
 } from '@/lib/notifications';
 
 type TaskFormState = {
@@ -132,6 +134,16 @@ const buildAssignedRecipients = (
   actorId: string,
 ) => buildRecipientList(assignedTo, assignedUsers ?? [], actorId);
 
+const getTaskNotificationPermissions = (task: Pick<Task, 'projectId' | 'quotationRequestId'>) => {
+  if (task.quotationRequestId) {
+    return getModuleNotificationPermissions('quotationRequests');
+  }
+  if (task.projectId) {
+    return getModuleNotificationPermissions('projects');
+  }
+  return undefined;
+};
+
 export default function Page() {
   const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -142,7 +154,6 @@ export default function Page() {
   const [viewMode, setViewMode] = useState<TaskViewMode>('list');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [isOwnerMenuOpen, setIsOwnerMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -625,10 +636,6 @@ export default function Page() {
     [filteredTasks],
   );
 
-  const selectedOwnerLabel = useMemo(
-    () => ownerOptions.find((option) => option.id === ownerFilter)?.name ?? 'All users',
-    [ownerOptions, ownerFilter],
-  );
   const selectedViewIndex = useMemo(
     () => Math.max(0, taskViewOptions.findIndex((option) => option.value === viewMode)),
     [viewMode],
@@ -1031,6 +1038,7 @@ export default function Page() {
             recipients,
             entityType: 'task',
             entityId: updated.id,
+            requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
             meta: {
               assignedTo: updated.assignedTo,
             },
@@ -1051,6 +1059,7 @@ export default function Page() {
             recipients,
             entityType: 'task',
             entityId: updated.id,
+            requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
             meta: {
               status: updated.status,
             },
@@ -1132,6 +1141,7 @@ export default function Page() {
           recipients,
           entityType: 'task',
           entityId: created.id,
+          requiredPermissionsAnyOf: getTaskNotificationPermissions(created),
         });
         if (created.projectId) {
           await logProjectActivity(created.projectId, `Task created: ${created.title}.`);
@@ -1182,6 +1192,7 @@ export default function Page() {
         recipients,
         entityType: 'task',
         entityId: updated.id,
+        requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
         meta: {
           timerStartedAt: startedAt,
         },
@@ -1245,6 +1256,7 @@ export default function Page() {
         recipients,
         entityType: 'task',
         entityId: updated.id,
+        requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
         meta: {
           durationSeconds,
           totalSeconds,
@@ -1320,6 +1332,7 @@ export default function Page() {
         recipients,
         entityType: 'task',
         entityId: updated.id,
+        requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
         meta: {
           status: updated.status,
         },
@@ -1416,70 +1429,12 @@ export default function Page() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {hasUserVisibility ? (
-              <div
-                className="relative"
-                onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                    setIsOwnerMenuOpen(false);
-                  }
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setIsOwnerMenuOpen((prev) => !prev)}
-                  className="flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80"
-                  aria-haspopup="listbox"
-                  aria-expanded={isOwnerMenuOpen}
-                >
-                  <span className="truncate">{selectedOwnerLabel}</span>
-                  <svg
-                    viewBox="0 0 20 20"
-                    className={`h-4 w-4 shrink-0 text-muted transition ${isOwnerMenuOpen ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="m5 7.5 5 5 5-5" />
-                  </svg>
-                </button>
-                {isOwnerMenuOpen ? (
-                  <div className="absolute left-0 top-[calc(100%+0.45rem)] z-30 w-full overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_14px_32px_rgba(15,23,42,0.2)]">
-                    <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Task owner filter">
-                      {ownerOptions.map((option) => {
-                        const isActive = ownerFilter === option.id;
-                        return (
-                          <li key={option.id}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOwnerFilter(option.id);
-                                setIsOwnerMenuOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
-                                isActive
-                                  ? 'bg-[#00B67A]/12 text-[#00B67A]'
-                                  : 'text-text hover:bg-[var(--surface-soft)]'
-                              }`}
-                              role="option"
-                              aria-selected={isActive}
-                            >
-                              <span className="truncate">{option.name}</span>
-                              {isActive ? (
-                                <span className="text-xs font-semibold uppercase tracking-[0.14em]">
-                                  Selected
-                                </span>
-                              ) : null}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Task owner filter"
+              />
             ) : null}
             <div className="relative grid grid-cols-3 rounded-2xl border border-border bg-surface p-2">
               <span
@@ -1552,28 +1507,17 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/80"
               />
             </div>
-            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
-                style={{
-                  width: `calc((100% - 0.5rem) / ${taskStatusFilterOptions.length})`,
-                  transform: `translateX(calc(${selectedStatusIndex} * 100%))`,
-                }}
-              />
-              <div
-                className="relative z-[1] grid gap-2"
-                style={{
-                  gridTemplateColumns: `repeat(${taskStatusFilterOptions.length}, minmax(0, 1fr))`,
-                }}
-              >
+            <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-1 md:w-auto md:rounded-2xl">
+              <div className="relative z-[1] grid grid-cols-2 gap-1 md:grid-cols-none md:gap-2">
                 {taskStatusFilterOptions.map((status) => (
                   <button
                     key={status}
                     type="button"
                     onClick={() => setStatusFilter(status)}
-                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
-                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
+                    className={`rounded-md px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
+                      statusFilter === status
+                        ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
+                        : 'text-muted hover:text-text'
                     }`}
                   >
                     {status === 'all'

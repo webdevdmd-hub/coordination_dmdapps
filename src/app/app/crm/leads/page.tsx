@@ -10,6 +10,7 @@ import {
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { LeadModal } from '@/components/leads/LeadModal';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Lead, LeadStatus } from '@/core/entities/lead';
 import { User } from '@/core/entities/user';
@@ -535,24 +536,12 @@ export default function Page() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {hasUserVisibility ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
-                <label htmlFor="lead-owner-header" className="sr-only">
-                  User
-                </label>
-                <select
-                  id="lead-owner-header"
-                  name="lead-owner-header"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  className="bg-transparent text-sm font-semibold text-text outline-none"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Lead owner filter"
+              />
             ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span

@@ -6,6 +6,7 @@ import { addDoc, collection } from 'firebase/firestore';
 import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { SalesOrderRequest, SalesOrderRequestStatus } from '@/core/entities/salesOrderRequest';
 import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
@@ -611,24 +612,12 @@ export default function Page() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {hasUserVisibility ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted">
-                <label htmlFor="sales-order-owner-header" className="sr-only">
-                  User
-                </label>
-                <select
-                  id="sales-order-owner-header"
-                  name="sales-order-owner-header"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  className="bg-transparent text-sm font-semibold text-text outline-none"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Sales order owner filter"
+              />
             ) : null}
             <div className="relative grid grid-cols-2 rounded-2xl border border-border bg-surface p-2">
               <span
@@ -665,7 +654,7 @@ export default function Page() {
       <div className="space-y-4">
         <div className="rounded-2xl border border-border/60 bg-surface/80 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
+            <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-0.5 md:w-auto md:rounded-2xl md:p-1">
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
@@ -683,7 +672,7 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('pending_approval')}
-                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  className={`rounded-md px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
                     statusFilter === 'pending_approval' ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
@@ -692,7 +681,7 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('approved')}
-                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  className={`rounded-md px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
                     statusFilter === 'approved' ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
@@ -701,7 +690,7 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('rejected')}
-                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  className={`rounded-md px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
                     statusFilter === 'rejected' ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
@@ -710,7 +699,7 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('all')}
-                  className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                  className={`rounded-md px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
                     statusFilter === 'all' ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >

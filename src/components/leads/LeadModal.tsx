@@ -22,7 +22,11 @@ import { formatCurrency } from '@/lib/currency';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
-import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
+import {
+  buildRecipientList,
+  emitNotificationEventSafe,
+  getModuleNotificationPermissions,
+} from '@/lib/notifications';
 
 type LeadModalProps = {
   lead: Lead | null;
@@ -867,6 +871,7 @@ export function LeadModal({
           recipients: buildRecipientList(requesterId, recipientIds, user.id),
           entityType: 'quotationRequest',
           entityId: requestId,
+          requiredPermissionsAnyOf: getModuleNotificationPermissions('quotationRequests'),
           meta: {
             leadId: lead.id,
             priority: rfqPriority,

@@ -21,6 +21,7 @@ import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepo
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
+import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { Customer } from '@/core/entities/customer';
 import { Project, ProjectStatus } from '@/core/entities/project';
 import { Task, TaskPriority, TaskStatus } from '@/core/entities/task';
@@ -43,6 +44,7 @@ import {
   areSameRecipientSets,
   buildRecipientList,
   emitNotificationEventSafe,
+  getModuleNotificationPermissions,
 } from '@/lib/notifications';
 
 const statusOptions: Array<{ value: ProjectStatus; label: string }> = [
@@ -1128,6 +1130,7 @@ export default function Page() {
             recipients,
             entityType: 'task',
             entityId: updated.id,
+            requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
             meta: {
               assignedTo,
               projectId: selectedProject.id,
@@ -1149,6 +1152,7 @@ export default function Page() {
             recipients,
             entityType: 'task',
             entityId: updated.id,
+            requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
             meta: {
               status: updated.status,
               projectId: selectedProject.id,
@@ -1222,6 +1226,7 @@ export default function Page() {
           recipients,
           entityType: 'task',
           entityId: created.id,
+          requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
           meta: {
             projectId: selectedProject.id,
           },
@@ -1329,6 +1334,7 @@ export default function Page() {
         recipients,
         entityType: 'task',
         entityId: updated.id,
+        requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
         meta: {
           assignedTo,
           projectId: selectedProject.id,
@@ -1465,6 +1471,7 @@ export default function Page() {
             recipients: buildRecipientList(updated.assignedTo, [], user.id),
             entityType: 'project',
             entityId: updated.id,
+            requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
             meta: {
               status: updated.status,
             },
@@ -1481,6 +1488,7 @@ export default function Page() {
             recipients: buildRecipientList(updated.createdBy, [updated.assignedTo], user.id),
             entityType: 'project',
             entityId: updated.id,
+            requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
             meta: {
               status: updated.status,
             },
@@ -1531,6 +1539,7 @@ export default function Page() {
           recipients: buildRecipientList(created.assignedTo, [], user.id),
           entityType: 'project',
           entityId: created.id,
+          requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
           meta: {
             status: created.status,
           },
@@ -1611,24 +1620,13 @@ export default function Page() {
           </div>
           <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:items-center">
             {hasUserVisibility ? (
-              <div className="col-span-1 flex w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-soft)] px-4 py-3 text-xs text-muted md:w-auto">
-                <label htmlFor="project-owner" className="sr-only">
-                  Owner
-                </label>
-                <select
-                  id="project-owner"
-                  name="project-owner"
-                  value={ownerFilter}
-                  onChange={(event) => setOwnerFilter(event.target.value)}
-                  className="bg-transparent text-sm font-semibold uppercase tracking-[0.14em] text-text outline-none"
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterDropdown
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                options={ownerOptions}
+                ariaLabel="Project owner filter"
+                className="col-span-1 w-full md:w-auto"
+              />
             ) : null}
             <div className="relative col-span-1 grid w-full grid-cols-2 rounded-2xl border border-border bg-surface p-2 md:w-auto">
               <span
@@ -1722,28 +1720,17 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/70 md:w-48"
               />
             </div>
-            <div className="relative w-full rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:w-auto">
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
-                style={{
-                  width: `calc((100% - 0.5rem) / ${projectStatusFilterOptions.length})`,
-                  transform: `translateX(calc(${selectedProjectStatusIndex} * 100%))`,
-                }}
-              />
-              <div
-                className="relative z-[1] grid gap-2"
-                style={{
-                  gridTemplateColumns: `repeat(${projectStatusFilterOptions.length}, minmax(0, 1fr))`,
-                }}
-              >
+            <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-1 md:w-auto md:rounded-2xl">
+              <div className="relative z-[1] grid grid-cols-2 gap-1 md:grid-cols-none md:gap-2">
                 {projectStatusFilterOptions.map((status) => (
                   <button
                     key={status}
                     type="button"
                     onClick={() => setStatusFilter(status)}
-                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
-                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
+                    className={`rounded-md px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
+                      statusFilter === status
+                        ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
+                        : 'text-muted hover:text-text'
                     }`}
                   >
                     {status === 'all' ? 'All' : formatStatusLabel(status)}
