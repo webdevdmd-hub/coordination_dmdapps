@@ -1507,17 +1507,50 @@ export default function Page() {
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-muted/80"
               />
             </div>
-            <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-1 md:w-auto md:rounded-2xl">
-              <div className="relative z-[1] grid grid-cols-2 gap-1 md:grid-cols-none md:gap-2">
+            <div className="w-full md:hidden">
+              <div className="relative w-full rounded-lg border border-border bg-[var(--surface-muted)] p-1">
+                <div className="relative z-[1] grid grid-cols-2 gap-1">
+                  {taskStatusFilterOptions.map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setStatusFilter(status)}
+                      className={`rounded-md px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-[0.08em] transition ${
+                        statusFilter === status
+                          ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
+                          : 'text-muted hover:text-text'
+                      }`}
+                    >
+                      {status === 'all'
+                        ? 'All'
+                        : status.replace('-', ' ').replace(/\b\w/g, (value) => value.toUpperCase())}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="relative hidden rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:block md:w-auto">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
+                style={{
+                  width: `calc((100% - 0.5rem) / ${taskStatusFilterOptions.length})`,
+                  transform: `translateX(calc(${selectedStatusIndex} * 100%))`,
+                }}
+              />
+              <div
+                className="relative z-[1] grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${taskStatusFilterOptions.length}, minmax(0, 1fr))`,
+                }}
+              >
                 {taskStatusFilterOptions.map((status) => (
                   <button
                     key={status}
                     type="button"
                     onClick={() => setStatusFilter(status)}
-                    className={`rounded-md px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
-                      statusFilter === status
-                        ? 'bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.25)]'
-                        : 'text-muted hover:text-text'
+                    className={`rounded-xl px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
+                      statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
                     }`}
                   >
                     {status === 'all'
