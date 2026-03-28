@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { ALL_PERMISSIONS } from '@/core/entities/permissions';
 import type { PermissionKey } from '@/core/entities/permissions';
+import type { Role } from '@/core/entities/role';
 import { getFirebaseAdminDb } from '@/frameworks/firebase/admin';
 import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
 import { sortRecordsNewestFirst } from '@/lib/recordSort';
@@ -20,6 +21,10 @@ type UpdateRoleRequest = {
   name?: string;
   description?: string;
   roleRelations?: RoleRelations;
+};
+
+type RoleResponse = Role & {
+  updatedAt?: string;
 };
 
 const toErrorResponse = (message: string, status = 400) =>
@@ -97,7 +102,7 @@ export async function GET(request: Request) {
   try {
     const snapshot = await db.collection('roles').get();
     const roles = sortRecordsNewestFirst(
-      snapshot.docs.map((doc) => {
+      snapshot.docs.map((doc): RoleResponse => {
         const data = doc.data() as Record<string, unknown>;
         if (data.key === ADMIN_ROLE_KEY) {
           return {
@@ -105,6 +110,7 @@ export async function GET(request: Request) {
             ...data,
             permissions: ALL_PERMISSIONS,
             roleRelations: undefined,
+            createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
           };
         }
         return {
@@ -112,6 +118,7 @@ export async function GET(request: Request) {
           ...data,
           permissions: toKnownPermissions(data.permissions),
           roleRelations: normalizeRoleRelations(data.roleRelations),
+          createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
         };
       }),
     );
