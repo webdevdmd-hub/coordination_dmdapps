@@ -1159,7 +1159,7 @@ export default function Page() {
                 <div className="relative inline-flex min-w-max items-center rounded-2xl border border-border bg-[var(--surface-muted)] p-1">
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                    className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-white shadow-soft transition-transform duration-300 ease-out"
                     style={{
                       width: `${viewSegmentWidth}px`,
                       transform: `translateX(${selectedViewModeIndex * viewSegmentWidth}px)`,
@@ -1167,16 +1167,16 @@ export default function Page() {
                   />
                   {calendarViewModes.map((option) => (
                     <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setViewMode(option.value)}
-                      className={`relative z-[1] w-[120px] shrink-0 rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition-colors duration-200 ${
-                        viewMode === option.value ? 'text-white' : 'text-muted hover:text-text'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                    key={option.value}
+                    type="button"
+                    onClick={() => setViewMode(option.value)}
+                    className={`relative z-[1] w-[120px] shrink-0 rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition-colors duration-200 ${
+                      viewMode === option.value ? 'text-slate-900' : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
                 </div>
               </div>
               <div className="grid w-full grid-cols-3 gap-2 rounded-xl border border-border bg-surface px-2 py-2 sm:flex sm:w-auto sm:items-center sm:gap-2 sm:px-2 sm:py-1">
@@ -1279,7 +1279,7 @@ export default function Page() {
                 <div className="relative inline-flex min-w-max items-center rounded-2xl border border-border bg-[var(--surface-soft)] p-1">
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-black shadow-soft transition-transform duration-300 ease-out"
+                    className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-white shadow-soft transition-transform duration-300 ease-out"
                     style={{
                       width: `${categorySegmentWidth}px`,
                       transform: `translateX(${selectedCategoryIndex * categorySegmentWidth}px)`,
@@ -1287,16 +1287,16 @@ export default function Page() {
                   />
                   {calendarCategoryFilters.map((option) => (
                     <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setCategoryFilter(option.value)}
-                      className={`relative z-[1] w-[150px] shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
-                        categoryFilter === option.value ? 'text-white' : 'text-muted hover:text-text'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                    key={option.value}
+                    type="button"
+                    onClick={() => setCategoryFilter(option.value)}
+                    className={`relative z-[1] w-[150px] shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                      categoryFilter === option.value ? 'text-slate-900' : 'text-muted hover:text-text'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
                 </div>
               </div>
               {viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days' ? (
