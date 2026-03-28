@@ -1,6 +1,7 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
 
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 export type CreateQuotationRequestInput = {
   leadId: string;
@@ -52,10 +53,12 @@ export const firebaseQuotationRequestRepository = {
   },
   async listAll() {
     const snapshot = await getDocs(quotationRequestsCollection());
-    return snapshot.docs.map((snap) => ({
-      id: snap.id,
-      ...(snap.data() as Record<string, unknown>),
-    }));
+    return sortRecordsNewestFirst(
+      snapshot.docs.map((snap) => ({
+        id: snap.id,
+        ...(snap.data() as Record<string, unknown>),
+      })),
+    );
   },
   async update(id: string, updates: Record<string, unknown>) {
     const docRef = quotationRequestDoc(id);
@@ -88,10 +91,12 @@ export const firebaseQuotationRequestRepository = {
   },
   async listTasks(requestId: string) {
     const snapshot = await getDocs(quotationRequestTasksCollection(requestId));
-    return snapshot.docs.map((snap) => ({
-      id: snap.id,
-      ...(snap.data() as Record<string, unknown>),
-    }));
+    return sortRecordsNewestFirst(
+      snapshot.docs.map((snap) => ({
+        id: snap.id,
+        ...(snap.data() as Record<string, unknown>),
+      })),
+    );
   },
   async updateTask(requestId: string, taskId: string, updates: Record<string, unknown>) {
     const docRef = doc(

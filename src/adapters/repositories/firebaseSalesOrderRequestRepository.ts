@@ -6,6 +6,7 @@ import {
   SalesOrderRequestRepository,
 } from '@/core/ports/SalesOrderRequestRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type SalesOrderRequestFirestore = Omit<SalesOrderRequest, 'id'>;
 
@@ -24,8 +25,10 @@ const poRequestsCollection = () =>
 export const firebaseSalesOrderRequestRepository: SalesOrderRequestRepository = {
   async listAll() {
     const result = await getDocs(poRequestsCollection());
-    return result.docs.map((snap) =>
-      toSalesOrderRequest(snap.id, snap.data() as SalesOrderRequestFirestore),
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) =>
+        toSalesOrderRequest(snap.id, snap.data() as SalesOrderRequestFirestore),
+      ),
     );
   },
   async create(input: CreateSalesOrderRequestInput) {

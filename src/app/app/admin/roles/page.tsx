@@ -282,8 +282,7 @@ export default function Page() {
         throw new Error('Unable to load roles.');
       }
       const payload = (await response.json()) as { roles?: Role[] };
-      const sorted = [...(payload.roles ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-      syncRoles(sorted);
+      syncRoles(payload.roles ?? []);
     } catch {
       setError('Unable to load roles. Please try again.');
     }

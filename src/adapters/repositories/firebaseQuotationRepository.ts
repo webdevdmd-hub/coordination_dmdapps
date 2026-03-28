@@ -13,6 +13,7 @@ import {
 import { Quotation } from '@/core/entities/quotation';
 import { CreateQuotationInput, QuotationRepository } from '@/core/ports/QuotationRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type QuotationFirestore = Omit<Quotation, 'id'>;
 
@@ -28,7 +29,9 @@ const quotationCollection = () =>
 export const firebaseQuotationRepository: QuotationRepository = {
   async listAll() {
     const result = await getDocs(quotationCollection());
-    return result.docs.map((snap) => toQuotation(snap.id, snap.data() as QuotationFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toQuotation(snap.id, snap.data() as QuotationFirestore)),
+    );
   },
   async listForUser(userId, role) {
     const assignedQuery = query(quotationCollection(), where('assignedTo', '==', userId));
@@ -44,7 +47,7 @@ export const firebaseQuotationRepository: QuotationRepository = {
     sharedSnap.docs.forEach((snap) =>
       map.set(snap.id, toQuotation(snap.id, snap.data() as QuotationFirestore)),
     );
-    return Array.from(map.values());
+    return sortRecordsNewestFirst(Array.from(map.values()));
   },
   async create(input: CreateQuotationInput) {
     const now = new Date().toISOString();

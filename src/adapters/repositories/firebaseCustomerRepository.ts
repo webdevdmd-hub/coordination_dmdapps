@@ -13,6 +13,7 @@ import {
 import { Customer } from '@/core/entities/customer';
 import { CreateCustomerInput, CustomerRepository } from '@/core/ports/CustomerRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type CustomerFirestore = Omit<Customer, 'id'>;
 
@@ -52,7 +53,9 @@ export const findCustomerByEmail = async (email: string) => {
 export const firebaseCustomerRepository: CustomerRepository = {
   async listAll() {
     const result = await getDocs(customerCollection());
-    return result.docs.map((snap) => toCustomer(snap.id, snap.data() as CustomerFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toCustomer(snap.id, snap.data() as CustomerFirestore)),
+    );
   },
   async listForUser(userId, role) {
     const assignedQuery = query(customerCollection(), where('assignedTo', '==', userId));
@@ -68,7 +71,7 @@ export const firebaseCustomerRepository: CustomerRepository = {
     sharedSnap.docs.forEach((snap) =>
       map.set(snap.id, toCustomer(snap.id, snap.data() as CustomerFirestore)),
     );
-    return Array.from(map.values());
+    return sortRecordsNewestFirst(Array.from(map.values()));
   },
   async create(input: CreateCustomerInput) {
     const now = new Date().toISOString();

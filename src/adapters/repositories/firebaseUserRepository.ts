@@ -3,6 +3,7 @@ import { addDoc, collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'fir
 import { User } from '@/core/entities/user';
 import { CreateUserInput, UserRepository } from '@/core/ports/UserRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type UserFirestore = Omit<User, 'id'>;
 
@@ -27,7 +28,9 @@ export const firebaseUserRepository: UserRepository = {
   async listAll() {
     const db = getFirebaseDb();
     const result = await getDocs(collection(db, 'users'));
-    return result.docs.map((snap) => toUser(snap.id, snap.data() as UserFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toUser(snap.id, snap.data() as UserFirestore)),
+    );
   },
   async create(input: CreateUserInput) {
     const db = getFirebaseDb();

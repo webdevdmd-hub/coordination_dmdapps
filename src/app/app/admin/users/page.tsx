@@ -101,9 +101,7 @@ export default function Page() {
         throw new Error('Unable to load users.');
       }
       const payload = (await response.json()) as { users?: User[] };
-      const result = payload.users ?? [];
-      const sorted = [...result].sort((a, b) => (a.fullName ?? '').localeCompare(b.fullName ?? ''));
-      syncUsers(sorted);
+      syncUsers(payload.users ?? []);
     } catch {
       setError('Unable to load users. Please try again.');
     } finally {

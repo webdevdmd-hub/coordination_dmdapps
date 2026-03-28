@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import type { UserRole } from '@/core/entities/user';
 import { getFirebaseAdminAuth, getFirebaseAdminDb } from '@/frameworks/firebase/admin';
 import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 export const runtime = 'nodejs';
 
@@ -145,10 +146,12 @@ export async function GET(request: Request) {
 
   try {
     const snapshot = await db.collection('users').get();
-    const users = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as Record<string, unknown>),
-    }));
+    const users = sortRecordsNewestFirst(
+      snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Record<string, unknown>),
+      })),
+    );
     return NextResponse.json({ users }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return toErrorResponse('Unable to load users.', 500);

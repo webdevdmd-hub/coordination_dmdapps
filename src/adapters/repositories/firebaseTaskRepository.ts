@@ -13,6 +13,7 @@ import {
 import { Task } from '@/core/entities/task';
 import { CreateTaskInput, TaskRepository } from '@/core/ports/TaskRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type TaskFirestore = Omit<Task, 'id'>;
 
@@ -26,7 +27,9 @@ const taskCollection = () => collection(getFirebaseDb(), 'tasks');
 export const firebaseTaskRepository: TaskRepository = {
   async listAll() {
     const result = await getDocs(taskCollection());
-    return result.docs.map((snap) => toTask(snap.id, snap.data() as TaskFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toTask(snap.id, snap.data() as TaskFirestore)),
+    );
   },
   async listForUser(userId) {
     const assignedQuery = query(taskCollection(), where('assignedTo', '==', userId));
@@ -50,11 +53,13 @@ export const firebaseTaskRepository: TaskRepository = {
     createdSnap.docs.forEach((snap) =>
       map.set(snap.id, toTask(snap.id, snap.data() as TaskFirestore)),
     );
-    return Array.from(map.values());
+    return sortRecordsNewestFirst(Array.from(map.values()));
   },
   async listForProject(projectId) {
     const result = await getDocs(query(taskCollection(), where('projectId', '==', projectId)));
-    return result.docs.map((snap) => toTask(snap.id, snap.data() as TaskFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toTask(snap.id, snap.data() as TaskFirestore)),
+    );
   },
   async create(input: CreateTaskInput) {
     const now = new Date().toISOString();

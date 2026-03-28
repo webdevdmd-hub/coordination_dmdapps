@@ -16,6 +16,7 @@ import {
 import { Project } from '@/core/entities/project';
 import { CreateProjectInput, ProjectRepository } from '@/core/ports/ProjectRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type ProjectFirestore = Omit<Project, 'id'>;
 
@@ -45,7 +46,9 @@ const deleteSnapshotsInChunks = async (snapshots: Array<{ ref: DocumentReference
 export const firebaseProjectRepository: ProjectRepository = {
   async listAll() {
     const result = await getDocs(projectCollection());
-    return result.docs.map((snap) => toProject(snap.id, snap.data() as ProjectFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toProject(snap.id, snap.data() as ProjectFirestore)),
+    );
   },
   async listForUser(userId, role) {
     const assignedQuery = query(projectCollection(), where('assignedTo', '==', userId));
@@ -61,7 +64,7 @@ export const firebaseProjectRepository: ProjectRepository = {
     sharedSnap.docs.forEach((snap) =>
       map.set(snap.id, toProject(snap.id, snap.data() as ProjectFirestore)),
     );
-    return Array.from(map.values());
+    return sortRecordsNewestFirst(Array.from(map.values()));
   },
   async create(input: CreateProjectInput) {
     const now = new Date().toISOString();

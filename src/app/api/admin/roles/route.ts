@@ -4,6 +4,7 @@ import { ALL_PERMISSIONS } from '@/core/entities/permissions';
 import type { PermissionKey } from '@/core/entities/permissions';
 import { getFirebaseAdminDb } from '@/frameworks/firebase/admin';
 import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 import { normalizeRoleRelations, RoleRelations } from '@/lib/roleVisibility';
 
 export const runtime = 'nodejs';
@@ -94,24 +95,26 @@ export async function GET(request: Request) {
   const db = getFirebaseAdminDb();
 
   try {
-    const snapshot = await db.collection('roles').orderBy('name').get();
-    const roles = snapshot.docs.map((doc) => {
-      const data = doc.data() as Record<string, unknown>;
-      if (data.key === ADMIN_ROLE_KEY) {
+    const snapshot = await db.collection('roles').get();
+    const roles = sortRecordsNewestFirst(
+      snapshot.docs.map((doc) => {
+        const data = doc.data() as Record<string, unknown>;
+        if (data.key === ADMIN_ROLE_KEY) {
+          return {
+            id: doc.id,
+            ...data,
+            permissions: ALL_PERMISSIONS,
+            roleRelations: undefined,
+          };
+        }
         return {
           id: doc.id,
           ...data,
-          permissions: ALL_PERMISSIONS,
-          roleRelations: undefined,
+          permissions: toKnownPermissions(data.permissions),
+          roleRelations: normalizeRoleRelations(data.roleRelations),
         };
-      }
-      return {
-        id: doc.id,
-        ...data,
-        permissions: toKnownPermissions(data.permissions),
-        roleRelations: normalizeRoleRelations(data.roleRelations),
-      };
-    });
+      }),
+    );
     return NextResponse.json({ roles }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return toErrorResponse('Unable to load roles.', 500);

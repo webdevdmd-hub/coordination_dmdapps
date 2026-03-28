@@ -16,6 +16,7 @@ import {
 import { Lead, LeadActivity } from '@/core/entities/lead';
 import { CreateLeadInput, LeadRepository } from '@/core/ports/LeadRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type LeadFirestore = Omit<Lead, 'id'>;
 
@@ -53,11 +54,15 @@ export const firebaseLeadRepository: LeadRepository = {
   },
   async listByOwner(ownerId) {
     const result = await getDocs(query(crmLeadsCollection(), where('ownerId', '==', ownerId)));
-    return result.docs.map((snap) => toLead(snap.id, snap.data() as LeadFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toLead(snap.id, snap.data() as LeadFirestore)),
+    );
   },
   async listAll() {
     const result = await getDocs(crmLeadsCollection());
-    return result.docs.map((snap) => toLead(snap.id, snap.data() as LeadFirestore));
+    return sortRecordsNewestFirst(
+      result.docs.map((snap) => toLead(snap.id, snap.data() as LeadFirestore)),
+    );
   },
   async create(input: CreateLeadInput) {
     const now = new Date().toISOString();
