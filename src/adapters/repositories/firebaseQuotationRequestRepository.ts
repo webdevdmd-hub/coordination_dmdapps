@@ -1,5 +1,6 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
 
+import { QuotationRequest, QuotationRequestTask } from '@/core/entities/quotationRequest';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
@@ -31,6 +32,25 @@ export type QuotationRequestTaskInput = {
   updatedAt?: string;
 };
 
+type QuotationRequestFirestore = Omit<QuotationRequest, 'id'>;
+type QuotationRequestTaskFirestore = Omit<QuotationRequestTask, 'id'>;
+
+const toQuotationRequest = (
+  id: string,
+  data: QuotationRequestFirestore,
+): QuotationRequest => ({
+  id,
+  ...data,
+});
+
+const toQuotationRequestTask = (
+  id: string,
+  data: QuotationRequestTaskFirestore,
+): QuotationRequestTask => ({
+  id,
+  ...data,
+});
+
 const SALES_NAMESPACE_ID = 'main';
 const quotationRequestsCollection = () =>
   collection(getFirebaseDb(), 'sales', SALES_NAMESPACE_ID, 'quotation_requests');
@@ -42,22 +62,21 @@ const quotationRequestTasksCollection = (id: string) =>
 export const firebaseQuotationRequestRepository = {
   async create(input: CreateQuotationRequestInput) {
     const now = new Date().toISOString();
-    const payload = {
+    const payload: QuotationRequestFirestore = {
       ...input,
       status: input.status ?? 'new',
       notes: input.notes ?? '',
       createdAt: input.createdAt ?? now,
     };
     const docRef = await addDoc(quotationRequestsCollection(), payload);
-    return { id: docRef.id, ...payload };
+    return toQuotationRequest(docRef.id, payload);
   },
   async listAll() {
     const snapshot = await getDocs(quotationRequestsCollection());
     return sortRecordsNewestFirst(
-      snapshot.docs.map((snap) => ({
-        id: snap.id,
-        ...(snap.data() as Record<string, unknown>),
-      })),
+      snapshot.docs.map((snap) =>
+        toQuotationRequest(snap.id, snap.data() as QuotationRequestFirestore),
+      ),
     );
   },
   async update(id: string, updates: Record<string, unknown>) {
@@ -67,7 +86,7 @@ export const firebaseQuotationRequestRepository = {
     if (!snap.exists()) {
       throw new Error('Quotation request not found after update.');
     }
-    return { id: snap.id, ...(snap.data() as Record<string, unknown>) };
+    return toQuotationRequest(snap.id, snap.data() as QuotationRequestFirestore);
   },
   async delete(id: string) {
     await deleteDoc(quotationRequestDoc(id));
@@ -77,14 +96,14 @@ export const firebaseQuotationRequestRepository = {
     const collectionRef = quotationRequestTasksCollection(requestId);
     const created = await Promise.all(
       tasks.map(async (task) => {
-        const payload = {
+        const payload: QuotationRequestTaskFirestore = {
           ...task,
           status: task.status ?? 'pending',
           createdAt: task.createdAt ?? now,
           updatedAt: task.updatedAt ?? now,
         };
         const docRef = await addDoc(collectionRef, payload);
-        return { id: docRef.id, ...payload };
+        return toQuotationRequestTask(docRef.id, payload);
       }),
     );
     return created;
@@ -92,10 +111,9 @@ export const firebaseQuotationRequestRepository = {
   async listTasks(requestId: string) {
     const snapshot = await getDocs(quotationRequestTasksCollection(requestId));
     return sortRecordsNewestFirst(
-      snapshot.docs.map((snap) => ({
-        id: snap.id,
-        ...(snap.data() as Record<string, unknown>),
-      })),
+      snapshot.docs.map((snap) =>
+        toQuotationRequestTask(snap.id, snap.data() as QuotationRequestTaskFirestore),
+      ),
     );
   },
   async updateTask(requestId: string, taskId: string, updates: Record<string, unknown>) {
@@ -113,6 +131,6 @@ export const firebaseQuotationRequestRepository = {
     if (!snap.exists()) {
       throw new Error('Quotation request task not found after update.');
     }
-    return { id: snap.id, ...(snap.data() as Record<string, unknown>) };
+    return toQuotationRequestTask(snap.id, snap.data() as QuotationRequestTaskFirestore);
   },
 };
