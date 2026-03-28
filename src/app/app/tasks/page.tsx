@@ -1439,7 +1439,7 @@ export default function Page() {
             <div className="relative grid grid-cols-3 rounded-2xl border border-border bg-surface p-2">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-[var(--surface-soft)] shadow-[0_8px_18px_rgba(15,23,42,0.18)] transition-transform duration-300 ease-out dark:bg-slate-50"
                 style={{
                   width: 'calc((100% - 1rem) / 3)',
                   transform: `translateX(calc(${selectedViewIndex} * 100%))`,
@@ -1452,7 +1452,7 @@ export default function Page() {
                   onClick={() => setViewMode(option.value)}
                   className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
                     viewMode === option.value
-                      ? 'text-white'
+                      ? 'text-slate-900'
                       : 'text-muted hover:text-text'
                   }`}
                 >

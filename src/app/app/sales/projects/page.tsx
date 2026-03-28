@@ -1631,7 +1631,7 @@ export default function Page() {
             <div className="relative col-span-1 grid w-full grid-cols-2 rounded-2xl border border-border bg-surface p-2 md:w-auto">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-text shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-out"
+                className="pointer-events-none absolute bottom-2 left-2 top-2 rounded-xl bg-[var(--surface-soft)] shadow-[0_8px_18px_rgba(15,23,42,0.18)] transition-transform duration-300 ease-out dark:bg-slate-50"
                 style={{
                   width: 'calc((100% - 1rem) / 2)',
                   transform: viewMode === 'card' ? 'translateX(100%)' : 'translateX(0)',
@@ -1641,7 +1641,7 @@ export default function Page() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-                  viewMode === 'list' ? 'text-white' : 'text-muted hover:text-text'
+                  viewMode === 'list' ? 'text-slate-900' : 'text-muted hover:text-text'
                 }`}
               >
                 List
@@ -1650,7 +1650,7 @@ export default function Page() {
                 type="button"
                 onClick={() => setViewMode('card')}
                 className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-                  viewMode === 'card' ? 'text-white' : 'text-muted hover:text-text'
+                  viewMode === 'card' ? 'text-slate-900' : 'text-muted hover:text-text'
                 }`}
               >
                 Cards

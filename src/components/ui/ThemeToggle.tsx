@@ -17,6 +17,7 @@ export function ThemeToggle() {
   }
   const nextLabel = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   const isDark = theme === 'dark';
+  const sliderPositionClass = isDark ? 'translate-x-full' : 'translate-x-0';
 
   return (
     <button
@@ -25,7 +26,7 @@ export function ThemeToggle() {
       role="switch"
       aria-checked={isDark}
       aria-label={nextLabel}
-      className="group relative inline-flex h-10 w-[118px] items-center rounded-full border border-white/25 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.08))] p-1 text-text backdrop-blur-xl transition hover:border-white/35 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.04))]"
+      className="group relative inline-flex h-11 w-[96px] shrink-0 items-center rounded-full border border-white/25 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.08))] p-1 text-text backdrop-blur-xl transition hover:border-white/35 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.04))] sm:w-[128px]"
     >
       <span
         aria-hidden="true"
@@ -37,24 +38,21 @@ export function ThemeToggle() {
       />
       <span
         aria-hidden="true"
-        className={`pointer-events-none absolute inset-y-1 left-1 rounded-full transition-all duration-300 ${
+        className={`pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full transition-transform duration-300 ${sliderPositionClass} ${
           isDark
-            ? 'w-[54px] bg-[linear-gradient(135deg,rgba(15,23,42,0.92),rgba(51,65,85,0.72))]'
-            : 'w-[54px] bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(226,232,240,0.8))]'
+            ? 'bg-[linear-gradient(135deg,rgba(15,23,42,0.92),rgba(51,65,85,0.72))]'
+            : 'bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(226,232,240,0.8))]'
         }`}
-        style={{
-          transform: isDark ? 'translateX(54px)' : 'translateX(0)',
-        }}
       />
       <span className="relative z-[1] grid w-full grid-cols-2 items-center">
         <span
-          className={`flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors duration-300 ${
+          className={`flex items-center justify-center gap-1 px-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] transition-colors duration-300 sm:gap-1.5 sm:px-2 sm:text-[10px] sm:tracking-[0.16em] ${
             isDark ? 'text-white/72' : 'text-slate-900'
           }`}
         >
           <svg
             viewBox="0 0 24 24"
-            className="h-3.5 w-3.5"
+            className="h-3.5 w-3.5 sm:h-4 sm:w-4"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
@@ -72,16 +70,16 @@ export function ThemeToggle() {
             <path d="M17.7 6.3l1.6-1.6" />
             <circle cx="12" cy="12" r="3.6" />
           </svg>
-          <span>Light</span>
+          <span className="hidden sm:inline">Light</span>
         </span>
         <span
-          className={`flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors duration-300 ${
+          className={`flex items-center justify-center gap-1 px-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] transition-colors duration-300 sm:gap-1.5 sm:px-2 sm:text-[10px] sm:tracking-[0.16em] ${
             isDark ? 'text-white' : 'text-slate-700/78'
           }`}
         >
           <svg
             viewBox="0 0 24 24"
-            className="h-3.5 w-3.5"
+            className="h-3.5 w-3.5 sm:h-4 sm:w-4"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
@@ -91,20 +89,20 @@ export function ThemeToggle() {
           >
             <path d="M21 14.5a8.5 8.5 0 1 1-11.3-11.3 7.4 7.4 0 0 0 11.3 11.3Z" />
           </svg>
-          <span>Dark</span>
+          <span className="hidden sm:inline">Dark</span>
         </span>
       </span>
       <span
-        className={`pointer-events-none absolute inset-y-1 left-1 z-[2] grid w-[54px] place-items-center rounded-full border text-[10px] transition-all duration-300 ${
+        className={`pointer-events-none absolute inset-y-1 left-1 z-[2] grid w-[calc(50%-4px)] place-items-center rounded-full border text-[10px] transition-transform duration-300 ${sliderPositionClass} ${
           isDark
-            ? 'translate-x-[54px] border-white/12 bg-[linear-gradient(135deg,rgba(51,65,85,0.96),rgba(15,23,42,0.9))] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.12)]'
-            : 'translate-x-0 border-white/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(241,245,249,0.92))] text-slate-900 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9)]'
+            ? 'border-white/12 bg-[linear-gradient(135deg,rgba(51,65,85,0.96),rgba(15,23,42,0.9))] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.12)]'
+            : 'border-white/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(241,245,249,0.92))] text-slate-900 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9)]'
         }`}
       >
         {isDark ? (
           <svg
             viewBox="0 0 24 24"
-            className="h-3.5 w-3.5"
+            className="h-3.5 w-3.5 sm:h-4 sm:w-4"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
@@ -116,7 +114,7 @@ export function ThemeToggle() {
         ) : (
           <svg
             viewBox="0 0 24 24"
-            className="h-3.5 w-3.5"
+            className="h-3.5 w-3.5 sm:h-4 sm:w-4"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
