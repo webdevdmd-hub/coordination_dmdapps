@@ -104,21 +104,35 @@ export async function GET(request: Request) {
     const roles = sortRecordsNewestFirst(
       snapshot.docs.map((doc): RoleResponse => {
         const data = doc.data() as Record<string, unknown>;
+        const key = typeof data.key === 'string' ? data.key : '';
+        const name = typeof data.name === 'string' ? data.name : '';
+        const description =
+          typeof data.description === 'string' && data.description.length > 0
+            ? data.description
+            : undefined;
+        const createdAt = typeof data.createdAt === 'string' ? data.createdAt : '';
+        const updatedAt = typeof data.updatedAt === 'string' ? data.updatedAt : undefined;
         if (data.key === ADMIN_ROLE_KEY) {
           return {
             id: doc.id,
-            ...data,
+            key,
+            name,
+            description,
             permissions: ALL_PERMISSIONS,
             roleRelations: undefined,
-            createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
+            createdAt,
+            updatedAt,
           };
         }
         return {
           id: doc.id,
-          ...data,
+          key,
+          name,
+          description,
           permissions: toKnownPermissions(data.permissions),
           roleRelations: normalizeRoleRelations(data.roleRelations),
-          createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
+          createdAt,
+          updatedAt,
         };
       }),
     );
