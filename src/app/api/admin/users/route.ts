@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import type { User } from '@/core/entities/user';
 import type { UserRole } from '@/core/entities/user';
 import { getFirebaseAdminAuth, getFirebaseAdminDb } from '@/frameworks/firebase/admin';
 import { getAuthedUserFromSession } from '@/lib/auth/serverSession';
@@ -147,10 +148,20 @@ export async function GET(request: Request) {
   try {
     const snapshot = await db.collection('users').get();
     const users = sortRecordsNewestFirst(
-      snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Record<string, unknown>),
-      })),
+      snapshot.docs.map((doc): User => {
+        const data = doc.data() as Record<string, unknown>;
+        return {
+          id: doc.id,
+          fullName: typeof data.fullName === 'string' ? data.fullName : '',
+          email: typeof data.email === 'string' ? data.email : '',
+          role: typeof data.role === 'string' ? (data.role as UserRole) : 'agent',
+          active: data.active !== false,
+          createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
+          updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
+          phone: typeof data.phone === 'string' ? data.phone : undefined,
+          avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : undefined,
+        };
+      }),
     );
     return NextResponse.json({ users }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch {
