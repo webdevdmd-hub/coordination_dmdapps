@@ -130,4 +130,16 @@ export const firebaseQuotationRequestRepository = {
     }
     return toQuotationRequestTask(snap.id, snap.data() as QuotationRequestTaskFirestore);
   },
+  async deleteTask(requestId: string, taskId: string) {
+    const docRef = doc(
+      getFirebaseDb(),
+      'sales',
+      SALES_NAMESPACE_ID,
+      'quotation_requests',
+      requestId,
+      'tasks',
+      taskId,
+    );
+    await deleteDoc(docRef);
+  },
 };

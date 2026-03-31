@@ -68,6 +68,8 @@ const taskStatusStyles: Record<string, string> = {
   done: 'bg-[#00B67A]/14 text-[#00B67A]',
 };
 
+const normalizeTaskTag = (value: string) => value.trim().toLowerCase();
+
 const formatDate = (value: string) => {
   if (!value) {
     return '';
@@ -559,6 +561,11 @@ export default function Page() {
   const isEstimateTask = (task: QuotationRequestTask) =>
     task.tag.trim().toLowerCase() === 'estimate';
 
+  const isCustomRequestTask = (request: QuotationRequest, task: QuotationRequestTask) => {
+    const requestTags = new Set(request.tags.map((tag) => normalizeTaskTag(tag)));
+    return !requestTags.has(normalizeTaskTag(task.tag));
+  };
+
   const getProjectOptionsForRequest = (request: QuotationRequest) =>
     projects.filter((project) => project.customerId === request.customerId);
 
@@ -902,6 +909,38 @@ export default function Page() {
       setError('Unable to add task. Please try again.');
     } finally {
       setIsAddingTask(false);
+    }
+  };
+
+  const handleDeleteRequestTask = async (request: QuotationRequest, task: QuotationRequestTask) => {
+    if (!user || !canAssign || !isCustomRequestTask(request, task)) {
+      return;
+    }
+    const confirmed = window.confirm(`Delete task "${task.tag}" from this quotation request?`);
+    if (!confirmed) {
+      return;
+    }
+    setError(null);
+    try {
+      if (task.taskId) {
+        await firebaseTaskRepository.delete(task.taskId);
+      }
+      await firebaseQuotationRequestRepository.deleteTask(request.id, task.id);
+      updateTasksByRequest((prev) => ({
+        ...prev,
+        [request.id]: (prev[request.id] ?? []).filter((item) => item.id !== task.id),
+      }));
+      if (activeSalesOrderTaskId === task.id) {
+        setActiveSalesOrderTaskId(null);
+      }
+      await firebaseLeadRepository.addActivity(request.leadId, {
+        type: 'note',
+        note: `RFQ custom task removed: ${task.tag}.`,
+        date: new Date().toISOString(),
+        createdBy: user.id,
+      });
+    } catch {
+      setError('Unable to delete the custom task. Please try again.');
     }
   };
 
@@ -1400,6 +1439,17 @@ export default function Page() {
                           ))}
                         </select>
                       </div>
+                      {canAssign && isCustomRequestTask(activeRequest, task) ? (
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRequestTask(activeRequest, task)}
+                            className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-rose-600 transition hover:bg-rose-100"
+                          >
+                            Delete task
+                          </button>
+                        </div>
+                      ) : null}
                       {canRequestSalesOrder && isEstimateTask(task) && task.status === 'done' ? (
                         <div className="mt-3 flex justify-end">
                           <button
