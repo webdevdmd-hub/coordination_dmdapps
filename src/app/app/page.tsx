@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { firebaseCalendarRepository } from '@/adapters/repositories/firebaseCalendarRepository';
@@ -82,30 +82,33 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(() => !cachedDashboardEntry);
   const [leads, setLeads] = useState<Lead[]>(() => cachedDashboardEntry?.data.leads ?? []);
   const [tasks, setTasks] = useState<Task[]>(() => cachedDashboardEntry?.data.tasks ?? []);
-  const [projects, setProjects] = useState<Project[]>(() => cachedDashboardEntry?.data.projects ?? []);
-  const [quotations, setQuotations] = useState(
-    () => cachedDashboardEntry?.data.quotations ?? [],
+  const [projects, setProjects] = useState<Project[]>(
+    () => cachedDashboardEntry?.data.projects ?? [],
   );
+  const [quotations, setQuotations] = useState(() => cachedDashboardEntry?.data.quotations ?? []);
   const [calendarEvents, setCalendarEvents] = useState(
     () => cachedDashboardEntry?.data.calendarEvents ?? [],
   );
 
-  const syncDashboard = (next: {
-    leads: Lead[];
-    tasks: Task[];
-    projects: Project[];
-    quotations: Quotation[];
-    calendarEvents: CalendarEvent[];
-  }) => {
-    setLeads(next.leads);
-    setTasks(next.tasks);
-    setProjects(next.projects);
-    setQuotations(next.quotations);
-    setCalendarEvents(next.calendarEvents);
-    if (dashboardCacheKey) {
-      setModuleCacheEntry(dashboardCacheKey, next);
-    }
-  };
+  const syncDashboard = useCallback(
+    (next: {
+      leads: Lead[];
+      tasks: Task[];
+      projects: Project[];
+      quotations: Quotation[];
+      calendarEvents: CalendarEvent[];
+    }) => {
+      setLeads(next.leads);
+      setTasks(next.tasks);
+      setProjects(next.projects);
+      setQuotations(next.quotations);
+      setCalendarEvents(next.calendarEvents);
+      if (dashboardCacheKey) {
+        setModuleCacheEntry(dashboardCacheKey, next);
+      }
+    },
+    [dashboardCacheKey],
+  );
 
   useEffect(() => {
     if (authLoading) {
@@ -198,6 +201,7 @@ export default function DashboardPage() {
     canViewQuotations,
     canViewCalendar,
     dashboardCacheKey,
+    syncDashboard,
   ]);
 
   const metrics = useMemo(() => {

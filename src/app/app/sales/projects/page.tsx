@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   addDoc,
   collection,
@@ -36,10 +36,7 @@ import {
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 import {
   areSameRecipientSets,
   buildRecipientList,
@@ -90,6 +87,10 @@ const taskPriorityPill: Record<TaskPriority, string> = {
   high: 'bg-rose-500/20 text-rose-200',
   urgent: 'bg-rose-500 text-white',
 };
+
+const isEstimateProjectTask = (task?: Pick<Task, 'isEstimateTemplateTask' | 'title'> | null) =>
+  !!task &&
+  (task.isEstimateTemplateTask === true || task.title.trim().toLowerCase() === 'estimate');
 
 const buildAssignedRecipients = (assignedUsers: string[] | undefined, actorId: string) =>
   buildRecipientList('', assignedUsers ?? [], actorId);
@@ -269,7 +270,9 @@ export default function Page() {
   const [isSalesOrderSubmitting, setIsSalesOrderSubmitting] = useState(false);
   const [salesOrderError, setSalesOrderError] = useState<string | null>(null);
   const [salesOrderSuccess, setSalesOrderSuccess] = useState<string | null>(null);
-  const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() => emptySalesOrderForm());
+  const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() =>
+    emptySalesOrderForm(),
+  );
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
@@ -281,12 +284,9 @@ export default function Page() {
   const canCreateTasks = !!user && hasPermission(user.permissions, ['admin', 'task_create']);
   const canEditTasks = !!user && hasPermission(user.permissions, ['admin', 'task_edit']);
   const canAssignTasks = !!user && hasPermission(user.permissions, ['admin', 'task_assign']);
-  const canReassignProjectTasks = isAdmin;
-  const canRequestSalesOrder = !!user &&
-    hasPermission(user.permissions, [
-      'admin',
-      'sales_order_request_create',
-    ]);
+  const canReassignProjectTasks = canAssignTasks;
+  const canRequestSalesOrder =
+    !!user && hasPermission(user.permissions, ['admin', 'sales_order_request_create']);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
 
@@ -398,12 +398,15 @@ export default function Page() {
     }));
   }, [user, users, roles, canAssignTasks]);
 
-  const syncProjects = (next: Project[]) => {
-    setProjects(next);
-    if (projectsCacheKey) {
-      setModuleCacheEntry(projectsCacheKey, next);
-    }
-  };
+  const syncProjects = useCallback(
+    (next: Project[]) => {
+      setProjects(next);
+      if (projectsCacheKey) {
+        setModuleCacheEntry(projectsCacheKey, next);
+      }
+    },
+    [projectsCacheKey],
+  );
 
   const updateProjects = (updater: (current: Project[]) => Project[]) => {
     setProjects((current) => {
@@ -478,7 +481,9 @@ export default function Page() {
         setCustomers([]);
         return;
       }
-      const customersCacheKey = ['projects-customers', user.id, isAdmin ? 'admin' : user.role].join(':');
+      const customersCacheKey = ['projects-customers', user.id, isAdmin ? 'admin' : user.role].join(
+        ':',
+      );
       const cachedEntry = getModuleCacheEntry<Customer[]>(customersCacheKey);
       if (cachedEntry) {
         setCustomers(cachedEntry.data);
@@ -504,9 +509,7 @@ export default function Page() {
   }, [user, isAdmin, canViewAllCustomers]);
 
   useEffect(() => {
-    const cachedEntry = projectsCacheKey
-      ? getModuleCacheEntry<Project[]>(projectsCacheKey)
-      : null;
+    const cachedEntry = projectsCacheKey ? getModuleCacheEntry<Project[]>(projectsCacheKey) : null;
     if (!cachedEntry) {
       return;
     }
@@ -587,6 +590,7 @@ export default function Page() {
     userRoleMap,
     visibleUserIds,
     projectsCacheKey,
+    syncProjects,
   ]);
 
   useEffect(() => {
@@ -727,7 +731,10 @@ export default function Page() {
     const completed = projects.filter((project) => project.status === 'completed').length;
     return { notStarted, inProgress, onHold, completed };
   }, [projects]);
-  const projectStatusFilterOptions = ['all', ...statusOptions.map((status) => status.value)] as const;
+  const projectStatusFilterOptions = [
+    'all',
+    ...statusOptions.map((status) => status.value),
+  ] as const;
   const selectedProjectStatusIndex = Math.max(0, projectStatusFilterOptions.indexOf(statusFilter));
 
   const handleOpenCreate = () => {
@@ -791,8 +798,6 @@ export default function Page() {
     if (!selectedProject || !canRequestSalesOrder) {
       return;
     }
-    const isEstimateTask = (task: Task) =>
-      task.isEstimateTemplateTask === true || task.title.trim().toLowerCase() === 'estimate';
     const hasEstimateDetails = (task: Task) =>
       !!task.estimateNumber &&
       typeof task.estimateAmount === 'number' &&
@@ -800,17 +805,20 @@ export default function Page() {
       task.estimateAmount > 0;
 
     const fallbackEstimateTask = projectTasks.find(
-      (task) => isEstimateTask(task) && hasEstimateDetails(task),
+      (task) => isEstimateProjectTask(task) && hasEstimateDetails(task),
     );
     const prefillTask =
-      sourceTask && hasEstimateDetails(sourceTask) ? sourceTask : fallbackEstimateTask;
+      sourceTask && isEstimateProjectTask(sourceTask) && hasEstimateDetails(sourceTask)
+        ? sourceTask
+        : fallbackEstimateTask;
 
     const baseForm = emptySalesOrderForm();
     setSalesOrderFormState({
       ...baseForm,
       estimateNumber: prefillTask?.estimateNumber ?? '',
       estimateAmount:
-        typeof prefillTask?.estimateAmount === 'number' && Number.isFinite(prefillTask.estimateAmount)
+        typeof prefillTask?.estimateAmount === 'number' &&
+        Number.isFinite(prefillTask.estimateAmount)
           ? String(prefillTask.estimateAmount)
           : '',
     });
@@ -958,9 +966,7 @@ export default function Page() {
   const handleOpenTaskModal = (task?: Task) => {
     const taskAssignees = task?.assignedUsers ?? (task?.assignedTo ? [task.assignedTo] : []);
     const canEditEstimateOnly =
-      !!task &&
-      !!user &&
-      (task.assignedTo === user.id || taskAssignees.includes(user.id));
+      !!task && !!user && (task.assignedTo === user.id || taskAssignees.includes(user.id));
     if (task && !canEditTasks && !canEditEstimateOnly) {
       return;
     }
@@ -1014,6 +1020,7 @@ export default function Page() {
       !!selectedTask &&
       !!user &&
       (selectedTask.assignedTo === user.id || selectedTaskAssignees.includes(user.id));
+    const isEstimateTask = isEstimateProjectTask(selectedTask);
     if (selectedTask && !canEditTasks && !canEditEstimateOnly && !canEditAsParticipant) {
       setTaskError('You do not have permission to edit tasks.');
       return;
@@ -1043,7 +1050,7 @@ export default function Page() {
       }
     }
     const canEditEstimateDetails =
-      !!user && (assignedTo === user.id || assignedUsers.includes(user.id));
+      isEstimateTask && !!user && (assignedTo === user.id || assignedUsers.includes(user.id));
     const estimateNumber = taskFormState.estimateNumber.trim();
     const estimateAmountRaw = taskFormState.estimateAmount.trim();
     const estimateAmount = estimateAmountRaw.length > 0 ? Number(estimateAmountRaw) : null;
@@ -1085,13 +1092,19 @@ export default function Page() {
         : {};
     try {
       if (selectedTask) {
-        if (!canEditTasks && canEditEstimateOnly) {
+        if (!canEditTasks && canEditEstimateOnly && isEstimateTask) {
           const updated = await firebaseTaskRepository.update(selectedTask.id, {
             ...estimatePayload,
             updatedAt: new Date().toISOString(),
           });
-          setProjectTasks((prev) => prev.map((item) => (item.id === selectedTask.id ? updated : item)));
-          await logProjectActivity(selectedProject.id, `Estimate details updated for task: ${updated.title}.`, 'task');
+          setProjectTasks((prev) =>
+            prev.map((item) => (item.id === selectedTask.id ? updated : item)),
+          );
+          await logProjectActivity(
+            selectedProject.id,
+            `Estimate details updated for task: ${updated.title}.`,
+            'task',
+          );
           setIsTaskModalOpen(false);
           return;
         }
@@ -1310,10 +1323,6 @@ export default function Page() {
     }
     if (!canEditTasks || !canAssignTasks) {
       setTaskError('You do not have permission to assign tasks.');
-      return;
-    }
-    if (!isAdmin) {
-      setTaskError('Only admins can reassign tasks after assignment.');
       return;
     }
     const assignedUsers = assigneeId ? [assigneeId] : [];
@@ -1611,9 +1620,7 @@ export default function Page() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted/80 sm:text-xs sm:tracking-[0.28em]">
               Sales Projects
             </p>
-            <h1 className="font-display text-5xl leading-tight text-text">
-              Delivery runway
-            </h1>
+            <h1 className="font-display text-5xl leading-tight text-text">Delivery runway</h1>
             <p className="mt-3 max-w-2xl text-lg text-muted">
               Track project milestones and keep delivery details aligned with customer ownership.
             </p>
@@ -1792,7 +1799,9 @@ export default function Page() {
                 onKeyDown={(event) => handleEntryKeyDown(event, project)}
                 aria-disabled={!canOpenDetails}
                 className={`rounded-3xl border border-border bg-surface p-4 shadow-soft ${
-                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:border-border/80' : ''
+                  canOpenDetails
+                    ? 'cursor-pointer transition hover:-translate-y-[1px] hover:border-border/80'
+                    : ''
                 }`}
               >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -1802,7 +1811,12 @@ export default function Page() {
                     </p>
                     <h2 className="mt-1 font-display text-lg text-text">{project.name}</h2>
                     <div className="mt-1 space-y-1 text-[11px] text-muted">
-                      <p>Owner <span className="font-semibold text-text">{ownerNameMap.get(project.assignedTo) ?? project.assignedTo}</span></p>
+                      <p>
+                        Owner{' '}
+                        <span className="font-semibold text-text">
+                          {ownerNameMap.get(project.assignedTo) ?? project.assignedTo}
+                        </span>
+                      </p>
                       <p>Due {formatDate(project.dueDate)}</p>
                     </div>
                   </div>
@@ -1825,16 +1839,28 @@ export default function Page() {
 
                 <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Value</p>
-                    <p className="mt-1 text-sm font-semibold text-text">AED {project.value.toLocaleString()}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Value
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      AED {project.value.toLocaleString()}
+                    </p>
                   </div>
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
-                    <p className="mt-1 text-sm font-semibold text-text">{(ownerNameMap.get(project.assignedTo) ?? project.assignedTo).split(' ')[0]}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Owner
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {(ownerNameMap.get(project.assignedTo) ?? project.assignedTo).split(' ')[0]}
+                    </p>
                   </div>
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Status</p>
-                    <p className="mt-1 text-sm font-semibold text-text">{formatStatusLabel(project.status)}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Status
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {formatStatusLabel(project.status)}
+                    </p>
                   </div>
                 </div>
 
@@ -2227,11 +2253,10 @@ export default function Page() {
                       projectTasks.map((task) => {
                         const assignees =
                           task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []);
-                        const isEstimateTask =
-                          task.isEstimateTemplateTask === true ||
-                          task.title.trim().toLowerCase() === 'estimate';
+                        const isEstimateTask = isEstimateProjectTask(task);
                         const canOpenSalesOrderFromEstimate =
                           isEstimateTask &&
+                          task.status === 'done' &&
                           canRequestSalesOrder &&
                           (isAdmin || selectedProject.assignedTo === user?.id);
                         return (
@@ -2255,12 +2280,13 @@ export default function Page() {
                                     Revision: {task.revisionNumber}
                                   </p>
                                 ) : null}
-                                {task.estimateNumber ? (
+                                {isEstimateTask && task.estimateNumber ? (
                                   <p className="mt-1 text-xs text-emerald-200">
                                     Estimate No: {task.estimateNumber}
                                   </p>
                                 ) : null}
-                                {typeof task.estimateAmount === 'number' &&
+                                {isEstimateTask &&
+                                typeof task.estimateAmount === 'number' &&
                                 Number.isFinite(task.estimateAmount) ? (
                                   <p className="mt-1 text-xs text-emerald-200">
                                     Estimate Amount: {task.estimateAmount.toLocaleString()}
@@ -2328,7 +2354,9 @@ export default function Page() {
                                 <select
                                   value={assignees[0] ?? ''}
                                   onChange={(event) => handleAssignTask(task, event.target.value)}
-                                  disabled={!canEditTasks || !canAssignTasks || !canReassignProjectTasks}
+                                  disabled={
+                                    !canEditTasks || !canAssignTasks || !canReassignProjectTasks
+                                  }
                                   className="peer appearance-none rounded-2xl border border-border/60 bg-white px-4 py-2 pr-9 text-[11px] font-semibold uppercase tracking-[0.2em] text-black shadow-soft outline-none transition hover:bg-gray-50 focus:border-border/80 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   <option value="">Unassigned</option>
@@ -2578,7 +2606,9 @@ export default function Page() {
                 </div>
               </div>
 
-              {user &&
+              {selectedTask &&
+              isEstimateProjectTask(selectedTask) &&
+              user &&
               ((taskFormState.assignedUsers[0] ?? '') === user.id ||
                 taskFormState.assignedUsers.includes(user.id)) ? (
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
@@ -2687,7 +2717,10 @@ export default function Page() {
                     required
                     value={salesOrderFormState.estimateNumber}
                     onChange={(event) =>
-                      setSalesOrderFormState((prev) => ({ ...prev, estimateNumber: event.target.value }))
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        estimateNumber: event.target.value,
+                      }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="EST-2026-001"
@@ -2704,7 +2737,10 @@ export default function Page() {
                     required
                     value={salesOrderFormState.estimateAmount}
                     onChange={(event) =>
-                      setSalesOrderFormState((prev) => ({ ...prev, estimateAmount: event.target.value }))
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        estimateAmount: event.target.value,
+                      }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="15000"
@@ -2721,7 +2757,10 @@ export default function Page() {
                     required
                     value={salesOrderFormState.salesOrderNumber}
                     onChange={(event) =>
-                      setSalesOrderFormState((prev) => ({ ...prev, salesOrderNumber: event.target.value }))
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        salesOrderNumber: event.target.value,
+                      }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="SOR-2026-015"
@@ -2738,7 +2777,10 @@ export default function Page() {
                     required
                     value={salesOrderFormState.salesOrderAmount}
                     onChange={(event) =>
-                      setSalesOrderFormState((prev) => ({ ...prev, salesOrderAmount: event.target.value }))
+                      setSalesOrderFormState((prev) => ({
+                        ...prev,
+                        salesOrderAmount: event.target.value,
+                      }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                     placeholder="17500"
@@ -2755,7 +2797,10 @@ export default function Page() {
                   required
                   value={salesOrderFormState.salesOrderDate}
                   onChange={(event) =>
-                    setSalesOrderFormState((prev) => ({ ...prev, salesOrderDate: event.target.value }))
+                    setSalesOrderFormState((prev) => ({
+                      ...prev,
+                      salesOrderDate: event.target.value,
+                    }))
                   }
                   className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                 />
@@ -2964,11 +3009,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

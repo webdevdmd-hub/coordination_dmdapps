@@ -44,7 +44,9 @@ export async function POST(request: Request) {
   const body = String(payload.body ?? '').trim();
   const actorId = String(payload.actorId ?? authedUser.id).trim();
   const recipients = Array.isArray(payload.recipients)
-    ? payload.recipients.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    ? payload.recipients.filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0,
+      )
     : [];
   const broadcast = payload.broadcast === true;
   const requiredPermissionsAnyOf = Array.isArray(payload.requiredPermissionsAnyOf)

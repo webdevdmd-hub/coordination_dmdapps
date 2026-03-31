@@ -152,4 +152,3 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'compliance',
   'settings',
 ];
-

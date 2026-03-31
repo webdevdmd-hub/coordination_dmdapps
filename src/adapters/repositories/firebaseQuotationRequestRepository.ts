@@ -35,10 +35,7 @@ export type QuotationRequestTaskInput = {
 type QuotationRequestFirestore = Omit<QuotationRequest, 'id'>;
 type QuotationRequestTaskFirestore = Omit<QuotationRequestTask, 'id'>;
 
-const toQuotationRequest = (
-  id: string,
-  data: QuotationRequestFirestore,
-): QuotationRequest => ({
+const toQuotationRequest = (id: string, data: QuotationRequestFirestore): QuotationRequest => ({
   id,
   ...data,
 });

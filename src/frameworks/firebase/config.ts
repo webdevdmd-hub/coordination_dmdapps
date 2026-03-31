@@ -39,7 +39,8 @@ export const getFirebaseConfig = () => ({
   measurementId: getPublicEnv('NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID'),
 });
 
-export const shouldUseEmulators = () => getPublicEnv('NEXT_PUBLIC_USE_FIREBASE_EMULATORS') === 'true';
+export const shouldUseEmulators = () =>
+  getPublicEnv('NEXT_PUBLIC_USE_FIREBASE_EMULATORS') === 'true';
 
 export const isFirebaseConfigured = () => {
   const firebaseConfig = getFirebaseConfig();

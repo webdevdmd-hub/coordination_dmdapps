@@ -4,7 +4,9 @@ import { hasPermission } from '@/lib/permissions';
 
 export const getAccessibleNavHrefs = (permissions: PermissionKey[]) =>
   navigation.flatMap((section) =>
-    section.items.filter((item) => hasPermission(permissions, item.permissions)).map((item) => item.href),
+    section.items
+      .filter((item) => hasPermission(permissions, item.permissions))
+      .map((item) => item.href),
   );
 
 export const getFirstAccessiblePath = (

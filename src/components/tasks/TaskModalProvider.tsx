@@ -63,7 +63,10 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
         const endDateValue = payload.endDate;
         const start = new Date(`${startDateValue}T${payload.startTime}:00`);
         const end = new Date(`${endDateValue}T${payload.endTime}:00`);
-        if (new Date(`${endDateValue}T00:00:00`).getTime() < new Date(`${startDateValue}T00:00:00`).getTime()) {
+        if (
+          new Date(`${endDateValue}T00:00:00`).getTime() <
+          new Date(`${startDateValue}T00:00:00`).getTime()
+        ) {
           return 'End date must be on or after start date.';
         }
         if (end.getTime() <= start.getTime()) {

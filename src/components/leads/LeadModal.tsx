@@ -455,9 +455,7 @@ export function LeadModal({
         const requests = (await firebaseQuotationRequestRepository.listAll()) as Array<
           Record<string, unknown>
         >;
-        const leadRequests = requests.filter(
-          (request) => String(request.leadId ?? '') === lead.id,
-        );
+        const leadRequests = requests.filter((request) => String(request.leadId ?? '') === lead.id);
         const locked = new Set<string>();
         await Promise.all(
           leadRequests.map(async (request) => {
@@ -471,7 +469,9 @@ export function LeadModal({
             }>;
             tasks.forEach((task) => {
               const tag = String(task.tag ?? '').trim();
-              const status = String(task.status ?? '').trim().toLowerCase();
+              const status = String(task.status ?? '')
+                .trim()
+                .toLowerCase();
               if (!tag || status === 'done') {
                 return;
               }
@@ -758,9 +758,7 @@ export function LeadModal({
             String(request.leadId ?? '') === lead.id &&
             String(request.customerId ?? '') === convertedCustomerId,
         )
-        .sort((a, b) =>
-          String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
-        )[0];
+        .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')))[0];
 
       let requestId = '';
       let wasNewRequest = false;
@@ -770,7 +768,10 @@ export function LeadModal({
         const existingRecipients = Array.isArray(matchingRequest.recipients)
           ? (matchingRequest.recipients as Array<{ id: string; name: string; roleKey: string }>)
           : [];
-        const mergedRecipientsMap = new Map<string, { id: string; name: string; roleKey: string }>();
+        const mergedRecipientsMap = new Map<
+          string,
+          { id: string; name: string; roleKey: string }
+        >();
         existingRecipients.forEach((entry) => mergedRecipientsMap.set(entry.id, entry));
         recipients.forEach((entry) => mergedRecipientsMap.set(entry.id, entry));
         const mergedRecipients = Array.from(mergedRecipientsMap.values());
@@ -801,12 +802,18 @@ export function LeadModal({
           updatedAt: now,
         });
 
-        const existingTasks = (await firebaseQuotationRequestRepository.listTasks(requestId)) as Array<{
+        const existingTasks = (await firebaseQuotationRequestRepository.listTasks(
+          requestId,
+        )) as Array<{
           tag?: string;
         }>;
         const existingTaskTagSet = new Set(
           existingTasks
-            .map((task) => String(task.tag ?? '').trim().toLowerCase())
+            .map((task) =>
+              String(task.tag ?? '')
+                .trim()
+                .toLowerCase(),
+            )
             .filter(Boolean),
         );
         const tagsToCreate = rfqTags.filter(
@@ -1043,8 +1050,8 @@ export function LeadModal({
                     isLocked
                       ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                       : isSelected
-                      ? 'border-accent/60 bg-accent/15 text-text'
-                      : 'border-border/60 bg-bg/70 text-muted hover:text-text'
+                        ? 'border-accent/60 bg-accent/15 text-text'
+                        : 'border-border/60 bg-bg/70 text-muted hover:text-text'
                   }`}
                 >
                   {tag}
@@ -1524,7 +1531,8 @@ export function LeadModal({
                     <div>
                       <p className="font-semibold text-text">{activity.note}</p>
                       <p className="mt-1 text-sm text-muted">
-                        {formatTimelineDate(activity.date)} - {getTimelineActorName(activity.createdBy)}
+                        {formatTimelineDate(activity.date)} -{' '}
+                        {getTimelineActorName(activity.createdBy)}
                       </p>
                     </div>
                   </div>
@@ -1851,6 +1859,3 @@ export function LeadModal({
     </Modal>
   );
 }
-
-
-

@@ -10,10 +10,7 @@ import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type SalesOrderRequestFirestore = Omit<SalesOrderRequest, 'id'>;
 
-const toSalesOrderRequest = (
-  id: string,
-  data: SalesOrderRequestFirestore,
-): SalesOrderRequest => ({
+const toSalesOrderRequest = (id: string, data: SalesOrderRequestFirestore): SalesOrderRequest => ({
   id,
   ...data,
 });

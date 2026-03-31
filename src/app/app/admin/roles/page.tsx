@@ -105,13 +105,7 @@ const permissionGroups: Array<
     sections: [
       {
         title: 'Leads',
-        keys: [
-          'lead_create',
-          'lead_view',
-          'lead_edit',
-          'lead_delete',
-          'lead_source_manage',
-        ],
+        keys: ['lead_create', 'lead_view', 'lead_edit', 'lead_delete', 'lead_source_manage'],
       },
       {
         title: 'Profile',
@@ -143,13 +137,7 @@ const permissionGroups: Array<
   },
   {
     title: 'Tasks',
-    keys: [
-      'task_create',
-      'task_view',
-      'task_edit',
-      'task_delete',
-      'task_assign',
-    ],
+    keys: ['task_create', 'task_view', 'task_edit', 'task_delete', 'task_assign'],
   },
   {
     title: 'Sales',
@@ -267,26 +255,29 @@ export default function Page() {
     setModuleCacheEntry(ROLES_CACHE_KEY, next);
   }, []);
 
-  const refreshRoles = useCallback(async (options?: { force?: boolean }) => {
-    const cachedEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
-    if (cachedEntry && !options?.force) {
-      setRoles(cachedEntry.data);
-      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
-        return;
+  const refreshRoles = useCallback(
+    async (options?: { force?: boolean }) => {
+      const cachedEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
+      if (cachedEntry && !options?.force) {
+        setRoles(cachedEntry.data);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
       }
-    }
-    setError(null);
-    try {
-      const response = await fetch('/api/admin/roles', { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error('Unable to load roles.');
+      setError(null);
+      try {
+        const response = await fetch('/api/admin/roles', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('Unable to load roles.');
+        }
+        const payload = (await response.json()) as { roles?: Role[] };
+        syncRoles(payload.roles ?? []);
+      } catch {
+        setError('Unable to load roles. Please try again.');
       }
-      const payload = (await response.json()) as { roles?: Role[] };
-      syncRoles(payload.roles ?? []);
-    } catch {
-      setError('Unable to load roles. Please try again.');
-    }
-  }, [syncRoles]);
+    },
+    [syncRoles],
+  );
 
   useEffect(() => {
     refreshRoles();
@@ -564,9 +555,7 @@ export default function Page() {
     moduleKey: RoleRelationModuleKey,
     relationKey: keyof ModuleRoleRelation,
     roleKey: string,
-  ) =>
-    isAdminRole ||
-    Boolean(roleRelationsDraft[moduleKey]?.[relationKey]?.includes(roleKey));
+  ) => isAdminRole || Boolean(roleRelationsDraft[moduleKey]?.[relationKey]?.includes(roleKey));
 
   return (
     <ModuleShell
@@ -587,7 +576,9 @@ export default function Page() {
           <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(6,151,107,0.12),transparent_58%)]" />
           <div className="relative grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-border/60 bg-surface/90 p-5 backdrop-blur">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted/80">Roles</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted/80">
+                Roles
+              </p>
               <p className="mt-4 font-display text-5xl text-text">{roles.length}</p>
               <p className="mt-2 text-sm text-muted">Configured access groups</p>
             </div>
@@ -620,12 +611,16 @@ export default function Page() {
             <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-accent/10 blur-3xl" />
             <div className="flex items-start justify-between gap-4">
               <div className="relative">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Roles</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                  Roles
+                </p>
                 <h2 className="mt-2 font-display text-2xl text-text">Access groups</h2>
               </div>
               <div
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                  hasUnsavedChanges ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                  hasUnsavedChanges
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-emerald-100 text-emerald-700'
                 }`}
               >
                 {hasUnsavedChanges ? 'Unsaved' : 'Synced'}
@@ -693,191 +688,201 @@ export default function Page() {
           </aside>
 
           <div className="space-y-4">
-          <div className="rounded-[30px] border border-border/60 bg-surface/85 p-6 shadow-soft backdrop-blur">
-            <div className="flex flex-col gap-4 border-b border-border/60 pb-5 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Workspace</p>
-                <h2 className="mt-2 font-display text-3xl text-text">Permission matrix</h2>
-                <p className="mt-2 max-w-3xl text-sm text-muted">
-                  Configure module access and role-to-role visibility from one control surface.
-                </p>
+            <div className="rounded-[30px] border border-border/60 bg-surface/85 p-6 shadow-soft backdrop-blur">
+              <div className="flex flex-col gap-4 border-b border-border/60 pb-5 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                    Workspace
+                  </p>
+                  <h2 className="mt-2 font-display text-3xl text-text">Permission matrix</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-muted">
+                    Configure module access and role-to-role visibility from one control surface.
+                  </p>
+                  {selectedRole ? (
+                    <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-bg/70 px-4 py-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-accent" />
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                        Editing {selectedRole.name}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
                 {selectedRole ? (
-                  <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-bg/70 px-4 py-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                      Editing {selectedRole.name}
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
+                        Selected role
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-text">{selectedRole.name}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openEditRole}
+                      disabled={isAdminRole}
+                      className="rounded-full border border-border/60 bg-bg/70 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Edit role
+                    </button>
                   </div>
                 ) : null}
               </div>
-              {selectedRole ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
-                      Selected role
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-text">{selectedRole.name}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={openEditRole}
-                    disabled={isAdminRole}
-                    className="rounded-full border border-border/60 bg-bg/70 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Edit role
-                  </button>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
+                    Permission coverage
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-text">{activePermissionCount}</p>
                 </div>
-              ) : null}
-            </div>
+                <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
+                    Role links
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-text">
+                    {totalConfiguredRelations}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
+                    State
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-text">
+                    {isAdminRole ? 'Locked' : hasUnsavedChanges ? 'Draft' : 'Clean'}
+                  </p>
+                </div>
+              </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
-                  Permission coverage
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-text">{activePermissionCount}</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
-                  Role links
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-text">{totalConfiguredRelations}</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-bg/70 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">
-                  State
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-text">
-                  {isAdminRole ? 'Locked' : hasUnsavedChanges ? 'Draft' : 'Clean'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 space-y-4">
-              {selectedRole ? (
-                <>
-                  {selectedRole.description ? (
-                    <p className="rounded-2xl border border-border/60 bg-bg/70 p-4 text-sm text-text">
-                      {selectedRole.description}
-                    </p>
-                  ) : null}
-                  {isAdminRole ? (
-                    <p className="rounded-2xl border border-border/60 bg-bg/70 p-4 text-sm text-muted">
-                      Admin role has full access by default and cannot be edited.
-                    </p>
-                  ) : null}
-                  <div className="space-y-5">
-                    {permissionGroups.map((group) => (
-                      <div
-                        key={group.title}
-                        className="rounded-[26px] border border-border/60 bg-transparent p-5"
-                      >
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                            {group.title}
-                          </p>
-                          <p className="mt-1 text-sm text-muted">
-                            {'sections' in group && group.sections
-                              ? `${group.sections.length} permission clusters`
-                              : `${group.keys.length} direct permissions`}
-                          </p>
-                        </div>
-                        {'sections' in group && group.sections ? (
-                          <div className="mt-4 rounded-2xl border border-border/60 bg-transparent p-4">
-                            <div
-                              className={`grid gap-4 ${
-                                group.title === 'Operations' ? 'md:grid-cols-2' : ''
-                              }`}
-                            >
-                              {group.sections.map((section) => (
-                                <div key={section.title} className="rounded-2xl border border-border/60 bg-transparent p-4">
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-                                    {section.title}
-                                  </p>
-                                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                                    {section.keys.map((permission) => (
-                                      <label
-                                        key={permission}
-                                        className="grid grid-cols-[1fr_auto] items-center rounded-2xl border border-border/60 bg-bg/80 px-4 py-2.5 text-xs text-muted transition hover:border-border hover:bg-hover/10"
-                                      >
-                                        <span className="font-semibold uppercase tracking-[0.18em] text-text">
-                                          {formatPermissionLabel(permission)}
-                                        </span>
-                                        <input
-                                          type="checkbox"
-                                          checked={permissionDraft.includes(permission)}
-                                          disabled={isAdminRole}
-                                          onChange={() =>
-                                            setPermissionDraft((prev) =>
-                                              togglePermission(prev, permission),
-                                            )
-                                          }
-                                          className="h-4 w-4"
-                                        />
-                                      </label>
-                                    ))}
+              <div className="mt-5 space-y-4">
+                {selectedRole ? (
+                  <>
+                    {selectedRole.description ? (
+                      <p className="rounded-2xl border border-border/60 bg-bg/70 p-4 text-sm text-text">
+                        {selectedRole.description}
+                      </p>
+                    ) : null}
+                    {isAdminRole ? (
+                      <p className="rounded-2xl border border-border/60 bg-bg/70 p-4 text-sm text-muted">
+                        Admin role has full access by default and cannot be edited.
+                      </p>
+                    ) : null}
+                    <div className="space-y-5">
+                      {permissionGroups.map((group) => (
+                        <div
+                          key={group.title}
+                          className="rounded-[26px] border border-border/60 bg-transparent p-5"
+                        >
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                              {group.title}
+                            </p>
+                            <p className="mt-1 text-sm text-muted">
+                              {'sections' in group && group.sections
+                                ? `${group.sections.length} permission clusters`
+                                : `${group.keys.length} direct permissions`}
+                            </p>
+                          </div>
+                          {'sections' in group && group.sections ? (
+                            <div className="mt-4 rounded-2xl border border-border/60 bg-transparent p-4">
+                              <div
+                                className={`grid gap-4 ${
+                                  group.title === 'Operations' ? 'md:grid-cols-2' : ''
+                                }`}
+                              >
+                                {group.sections.map((section) => (
+                                  <div
+                                    key={section.title}
+                                    className="rounded-2xl border border-border/60 bg-transparent p-4"
+                                  >
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                                      {section.title}
+                                    </p>
+                                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                                      {section.keys.map((permission) => (
+                                        <label
+                                          key={permission}
+                                          className="grid grid-cols-[1fr_auto] items-center rounded-2xl border border-border/60 bg-bg/80 px-4 py-2.5 text-xs text-muted transition hover:border-border hover:bg-hover/10"
+                                        >
+                                          <span className="font-semibold uppercase tracking-[0.18em] text-text">
+                                            {formatPermissionLabel(permission)}
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={permissionDraft.includes(permission)}
+                                            disabled={isAdminRole}
+                                            onChange={() =>
+                                              setPermissionDraft((prev) =>
+                                                togglePermission(prev, permission),
+                                              )
+                                            }
+                                            className="h-4 w-4"
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-4 grid gap-2 md:grid-cols-2">
+                              {group.keys.map((permission) => (
+                                <label
+                                  key={permission}
+                                  className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/80 px-4 py-2.5 text-xs text-muted transition hover:border-border hover:bg-hover/10"
+                                >
+                                  <span className="font-semibold uppercase tracking-[0.18em] text-text">
+                                    {formatPermissionLabel(permission)}
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={permissionDraft.includes(permission)}
+                                    disabled={isAdminRole}
+                                    onChange={() =>
+                                      setPermissionDraft((prev) =>
+                                        togglePermission(prev, permission),
+                                      )
+                                    }
+                                    className="h-4 w-4"
+                                  />
+                                </label>
                               ))}
                             </div>
-                          </div>
-                        ) : (
-                          <div className="mt-4 grid gap-2 md:grid-cols-2">
-                            {group.keys.map((permission) => (
-                              <label
-                                key={permission}
-                                className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/80 px-4 py-2.5 text-xs text-muted transition hover:border-border hover:bg-hover/10"
-                              >
-                                <span className="font-semibold uppercase tracking-[0.18em] text-text">
-                                  {formatPermissionLabel(permission)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={permissionDraft.includes(permission)}
-                                  disabled={isAdminRole}
-                                  onChange={() =>
-                                    setPermissionDraft((prev) => togglePermission(prev, permission))
-                                  }
-                                  className="h-4 w-4"
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {!isAdminRole ? (
-                    <div className="rounded-[26px] border border-border/60 bg-transparent p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        Module Role Access
-                      </p>
-                      <p className="mt-2 text-sm text-muted">
-                        Same-role and cross-role visibility/assignment are both controlled here. Add
-                        the current role as well if users in that role should see or assign to each
-                        other.
-                      </p>
-                      <div className="mt-4 space-y-4">
-                        {ROLE_RELATION_MODULES.map((moduleKey) => (
-                          <div
-                            key={moduleKey}
-                            className="rounded-2xl border border-border/60 bg-transparent p-4"
-                          >
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-                              {ROLE_RELATION_MODULE_LABELS[moduleKey]}
-                            </p>
-                            {availableRoleOptions.length === 0 ? (
-                              <p className="mt-3 text-sm text-muted">
-                                No other roles available for cross-role access.
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {!isAdminRole ? (
+                      <div className="rounded-[26px] border border-border/60 bg-transparent p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Module Role Access
+                        </p>
+                        <p className="mt-2 text-sm text-muted">
+                          Same-role and cross-role visibility/assignment are both controlled here.
+                          Add the current role as well if users in that role should see or assign to
+                          each other.
+                        </p>
+                        <div className="mt-4 space-y-4">
+                          {ROLE_RELATION_MODULES.map((moduleKey) => (
+                            <div
+                              key={moduleKey}
+                              className="rounded-2xl border border-border/60 bg-transparent p-4"
+                            >
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                                {ROLE_RELATION_MODULE_LABELS[moduleKey]}
                               </p>
-                            ) : (
-                              <div className="mt-3 grid gap-4 xl:grid-cols-3">
-                                {([
-                                  ['canViewRoles', 'Can View Users'],
-                                  ['canAssignToRoles', 'Can Assign To'],
-                                  ['canBeAssignedByRoles', 'Can Be Assigned By'],
-                                ] as Array<[keyof ModuleRoleRelation, string]>).map(
-                                  ([relationKey, label]) => (
+                              {availableRoleOptions.length === 0 ? (
+                                <p className="mt-3 text-sm text-muted">
+                                  No other roles available for cross-role access.
+                                </p>
+                              ) : (
+                                <div className="mt-3 grid gap-4 xl:grid-cols-3">
+                                  {(
+                                    [
+                                      ['canViewRoles', 'Can View Users'],
+                                      ['canAssignToRoles', 'Can Assign To'],
+                                      ['canBeAssignedByRoles', 'Can Be Assigned By'],
+                                    ] as Array<[keyof ModuleRoleRelation, string]>
+                                  ).map(([relationKey, label]) => (
                                     <div key={relationKey}>
                                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">
                                         {label}
@@ -913,68 +918,67 @@ export default function Page() {
                                         ))}
                                       </div>
                                     </div>
-                                  ),
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="flex flex-col gap-4 rounded-[26px] border border-border/60 bg-[linear-gradient(135deg,rgba(6,151,107,0.08),rgba(255,255,255,0.9)_24%,rgba(148,163,184,0.08))] p-4 shadow-soft dark:bg-[linear-gradient(135deg,rgba(6,151,107,0.12),rgba(15,23,42,0.92)_26%,rgba(30,41,59,0.4))] sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Deployment State
+                        </p>
+                        <p className="mt-1 text-sm text-muted">
+                          {hasUnsavedChanges
+                            ? 'Changes are staged locally and ready to be applied.'
+                            : 'No pending permission changes for this role.'}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="button"
+                          disabled={isSavingPermissions || isAdminRole || !hasUnsavedChanges}
+                          onClick={resetDraftToSelectedRole}
+                          className="rounded-full border border-border/60 bg-bg/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Discard draft
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSavingPermissions || isAdminRole}
+                          onClick={openSaveDialog}
+                          className="rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSavingPermissions
+                            ? 'Saving...'
+                            : saveStatus === 'saved'
+                              ? 'Saved'
+                              : 'Save permissions'}
+                        </button>
                       </div>
                     </div>
-                  ) : null}
-                  <div className="flex flex-col gap-4 rounded-[26px] border border-border/60 bg-[linear-gradient(135deg,rgba(6,151,107,0.08),rgba(255,255,255,0.9)_24%,rgba(148,163,184,0.08))] p-4 shadow-soft dark:bg-[linear-gradient(135deg,rgba(6,151,107,0.12),rgba(15,23,42,0.92)_26%,rgba(30,41,59,0.4))] sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        Deployment State
+                    {saveStatus === 'saved' ? (
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-200">
+                        Permissions saved.
                       </p>
-                      <p className="mt-1 text-sm text-muted">
-                        {hasUnsavedChanges
-                          ? 'Changes are staged locally and ready to be applied.'
-                          : 'No pending permission changes for this role.'}
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="button"
-                        disabled={isSavingPermissions || isAdminRole || !hasUnsavedChanges}
-                        onClick={resetDraftToSelectedRole}
-                        className="rounded-full border border-border/60 bg-bg/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Discard draft
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSavingPermissions || isAdminRole}
-                        onClick={openSaveDialog}
-                        className="rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isSavingPermissions
-                          ? 'Saving...'
-                          : saveStatus === 'saved'
-                            ? 'Saved'
-                            : 'Save permissions'}
-                      </button>
-                    </div>
-                  </div>
-                  {saveStatus === 'saved' ? (
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-200">
-                      Permissions saved.
-                    </p>
-                  ) : null}
-                </>
-              ) : (
-                <p className="rounded-2xl border border-border/60 bg-bg/70 p-4 text-sm text-muted">
-                  Select a role to update permissions.
-                </p>
-              )}
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="rounded-2xl border border-border/60 bg-bg/70 p-4 text-sm text-muted">
+                    Select a role to update permissions.
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
 
-          {error ? (
-            <div className="rounded-2xl border border-border/60 bg-rose-500/10 p-4 text-sm text-rose-100">
-              {error}
-            </div>
-          ) : null}
+            {error ? (
+              <div className="rounded-2xl border border-border/60 bg-rose-500/10 p-4 text-sm text-rose-100">
+                {error}
+              </div>
+            ) : null}
           </div>
         </section>
       </div>
@@ -1068,9 +1072,7 @@ export default function Page() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">Edit</p>
                 <h3 className="mt-2 font-display text-2xl text-text">Role details</h3>
-                <p className="mt-2 text-sm text-muted">
-                  Update role name and description.
-                </p>
+                <p className="mt-2 text-sm text-muted">Update role name and description.</p>
               </div>
               <button
                 type="button"
@@ -1184,7 +1186,9 @@ export default function Page() {
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
                       Confirm
                     </p>
-                    <h3 className="mt-2 font-display text-2xl text-text">Save permission changes</h3>
+                    <h3 className="mt-2 font-display text-2xl text-text">
+                      Save permission changes
+                    </h3>
                     <p className="mt-2 text-sm text-muted">
                       Apply the current permission matrix and module role access changes to{' '}
                       {selectedRole?.name ?? 'this role'}?

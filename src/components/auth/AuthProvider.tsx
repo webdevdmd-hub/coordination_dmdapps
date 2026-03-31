@@ -71,7 +71,7 @@ const toPermissions = (value: unknown): PermissionKey[] => {
                           ? 'quotation_view_same_role'
                           : item === 'quotation_request_view_department'
                             ? 'quotation_request_view_same_role'
-              : item;
+                            : item;
     if (permissionSet.has(normalized as PermissionKey)) {
       acc.push(normalized as PermissionKey);
     }
@@ -230,4 +230,3 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   return context ?? fallbackAuthContext;
 };
-

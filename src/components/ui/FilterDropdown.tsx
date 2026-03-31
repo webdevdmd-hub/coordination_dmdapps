@@ -82,7 +82,9 @@ export function FilterDropdown({
                       setIsOpen(false);
                     }}
                     className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
-                      isActive ? 'bg-[#00B67A]/12 text-[#00B67A]' : 'text-text hover:bg-[var(--surface-soft)]'
+                      isActive
+                        ? 'bg-[#00B67A]/12 text-[#00B67A]'
+                        : 'text-text hover:bg-[var(--surface-soft)]'
                     }`}
                     role="option"
                     aria-selected={isActive}

@@ -1,17 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { firebaseCustomerRepository } from '@/adapters/repositories/firebaseCustomerRepository';
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { FilterDropdown } from '@/components/ui/FilterDropdown';
-import {
-  Customer,
-  CustomerAddress,
-  CustomerStatus,
-} from '@/core/entities/customer';
+import { Customer, CustomerAddress, CustomerStatus } from '@/core/entities/customer';
 import { User } from '@/core/entities/user';
 import {
   getModuleCacheEntry,
@@ -22,10 +18,7 @@ import {
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
 type CustomerFormState = {
   companyName: string;
@@ -253,12 +246,15 @@ export default function Page() {
     });
   }, [users, roles, user]);
 
-  const syncCustomers = (next: Customer[]) => {
-    setCustomers(next);
-    if (customersCacheKey) {
-      setModuleCacheEntry(customersCacheKey, next);
-    }
-  };
+  const syncCustomers = useCallback(
+    (next: Customer[]) => {
+      setCustomers(next);
+      if (customersCacheKey) {
+        setModuleCacheEntry(customersCacheKey, next);
+      }
+    },
+    [customersCacheKey],
+  );
 
   const updateCustomers = (updater: (current: Customer[]) => Customer[]) => {
     setCustomers((current) => {
@@ -397,6 +393,7 @@ export default function Page() {
     userRoleMap,
     visibleUserIds,
     customersCacheKey,
+    syncCustomers,
   ]);
 
   const totals = useMemo(() => {
@@ -412,9 +409,12 @@ export default function Page() {
       const matchesStatus = statusFilter === 'all' ? true : customer.status === statusFilter;
       const matchesSearch =
         term.length === 0 ||
-        [customer.companyName, customer.contactPerson, customer.displayName ?? '', customer.email].some((value) =>
-          value.toLowerCase().includes(term),
-        );
+        [
+          customer.companyName,
+          customer.contactPerson,
+          customer.displayName ?? '',
+          customer.email,
+        ].some((value) => value.toLowerCase().includes(term));
       return matchesStatus && matchesSearch;
     });
   }, [customers, statusFilter, search]);
@@ -432,7 +432,10 @@ export default function Page() {
 
   const customerViewOptions: Array<'list' | 'cards'> = ['list', 'cards'];
   const selectedCustomerViewIndex = Math.max(0, customerViewOptions.indexOf(viewMode));
-  const customerStatusFilterOptions = ['all', ...statusOptions.map((option) => option.value)] as const;
+  const customerStatusFilterOptions = [
+    'all',
+    ...statusOptions.map((option) => option.value),
+  ] as const;
   const selectedCustomerStatusIndex = Math.max(
     0,
     customerStatusFilterOptions.indexOf(statusFilter),
@@ -474,7 +477,8 @@ export default function Page() {
       billingAddress: customer.billingAddress ?? emptyAddress(),
       shippingAddress: customer.shippingAddress ?? customer.billingAddress ?? emptyAddress(),
       useBillingAsShipping:
-        !customer.shippingAddress || addressesMatch(customer.billingAddress, customer.shippingAddress),
+        !customer.shippingAddress ||
+        addressesMatch(customer.billingAddress, customer.shippingAddress),
       remarks: customer.remarks ?? '',
       source: customer.source,
       status: customer.status,
@@ -519,10 +523,7 @@ export default function Page() {
       formState.lastName,
       formState.contactPerson,
     );
-    const nextCompanyName = buildCompanyName(
-      formState.companyName,
-      nextContactPerson,
-    );
+    const nextCompanyName = buildCompanyName(formState.companyName, nextContactPerson);
     if (!nextCompanyName || !nextContactPerson || !formState.email.trim()) {
       setError('Company, primary contact, and email are required.');
       return;
@@ -666,10 +667,7 @@ export default function Page() {
     }
   };
 
-  const updateField = <K extends keyof CustomerFormState,>(
-    key: K,
-    value: CustomerFormState[K],
-  ) => {
+  const updateField = <K extends keyof CustomerFormState>(key: K, value: CustomerFormState[K]) => {
     setFormState((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -744,7 +742,9 @@ export default function Page() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Active</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Active
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.active}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
@@ -872,7 +872,9 @@ export default function Page() {
                   </div>
 
                   <div className="min-w-0">
-                    <p className="truncate text-base font-semibold text-text">{customer.contactPerson}</p>
+                    <p className="truncate text-base font-semibold text-text">
+                      {customer.contactPerson}
+                    </p>
                     <p className="truncate text-xs text-muted">{customer.email}</p>
                   </div>
 
@@ -906,7 +908,8 @@ export default function Page() {
                       statusStyles[customer.status]
                     }`}
                   >
-                    {statusOptions.find((option) => option.value === customer.status)?.label ?? customer.status}
+                    {statusOptions.find((option) => option.value === customer.status)?.label ??
+                      customer.status}
                   </span>
 
                   {canEdit ? (
@@ -936,7 +939,9 @@ export default function Page() {
                 onKeyDown={(event) => handleEntryKeyDown(event, customer)}
                 aria-disabled={!canOpenDetails}
                 className={`rounded-3xl border border-border bg-surface p-4 shadow-soft ${
-                  canOpenDetails ? 'cursor-pointer transition hover:-translate-y-[1px] hover:border-border/80' : ''
+                  canOpenDetails
+                    ? 'cursor-pointer transition hover:-translate-y-[1px] hover:border-border/80'
+                    : ''
                 }`}
               >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -944,7 +949,9 @@ export default function Page() {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
                       {customer.companyName}
                     </p>
-                    <h2 className="mt-1 font-display text-lg text-text">{customer.contactPerson}</h2>
+                    <h2 className="mt-1 font-display text-lg text-text">
+                      {customer.contactPerson}
+                    </h2>
                     <div className="mt-1 space-y-1 text-[11px] text-muted">
                       <p className="truncate">{customer.email}</p>
                       <p>
@@ -961,7 +968,8 @@ export default function Page() {
                         statusStyles[customer.status]
                       }`}
                     >
-                      {statusOptions.find((option) => option.value === customer.status)?.label ?? customer.status}
+                      {statusOptions.find((option) => option.value === customer.status)?.label ??
+                        customer.status}
                     </span>
                     <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs text-muted">
                       {customer.source || 'No source'}
@@ -974,18 +982,29 @@ export default function Page() {
 
                 <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
-                    <p className="mt-1 text-sm font-semibold text-text">{getOwnerInitials(customer.assignedTo)}</p>
-                  </div>
-                  <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Status</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Owner
+                    </p>
                     <p className="mt-1 text-sm font-semibold text-text">
-                      {statusOptions.find((option) => option.value === customer.status)?.label ?? customer.status}
+                      {getOwnerInitials(customer.assignedTo)}
                     </p>
                   </div>
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Shared</p>
-                    <p className="mt-1 text-sm font-semibold text-text">{customer.sharedRoles.length}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Status
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {statusOptions.find((option) => option.value === customer.status)?.label ??
+                        customer.status}
+                    </p>
+                  </div>
+                  <div className="px-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Shared
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {customer.sharedRoles.length}
+                    </p>
                   </div>
                 </div>
 
@@ -1090,10 +1109,14 @@ export default function Page() {
               {customerFormTab === 'details' ? (
                 <div className="space-y-6">
                   <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Identity</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Identity
+                    </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Company name</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Company name
+                        </label>
                         <input
                           value={formState.companyName}
                           onChange={(event) => updateField('companyName', event.target.value)}
@@ -1101,7 +1124,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Display name</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Display name
+                        </label>
                         <input
                           value={formState.displayName}
                           onChange={(event) => updateField('displayName', event.target.value)}
@@ -1114,12 +1139,16 @@ export default function Page() {
                         </label>
                         <input
                           value={formState.displayNameSecondary}
-                          onChange={(event) => updateField('displayNameSecondary', event.target.value)}
+                          onChange={(event) =>
+                            updateField('displayNameSecondary', event.target.value)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">VAT number</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          VAT number
+                        </label>
                         <input
                           value={formState.vatNumber}
                           onChange={(event) => updateField('vatNumber', event.target.value)}
@@ -1127,7 +1156,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Website</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Website
+                        </label>
                         <input
                           value={formState.website}
                           onChange={(event) => updateField('website', event.target.value)}
@@ -1138,10 +1169,14 @@ export default function Page() {
                   </div>
 
                   <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Primary contact</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Primary contact
+                    </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-4">
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Salutation</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Salutation
+                        </label>
                         <input
                           value={formState.salutation}
                           onChange={(event) => updateField('salutation', event.target.value)}
@@ -1149,7 +1184,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">First name</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          First name
+                        </label>
                         <input
                           required
                           value={formState.firstName}
@@ -1158,7 +1195,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Last name</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Last name
+                        </label>
                         <input
                           value={formState.lastName}
                           onChange={(event) => updateField('lastName', event.target.value)}
@@ -1176,7 +1215,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Email</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Email
+                        </label>
                         <input
                           type="email"
                           required
@@ -1186,7 +1227,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Work phone</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Work phone
+                        </label>
                         <input
                           value={formState.workPhone}
                           onChange={(event) => updateField('workPhone', event.target.value)}
@@ -1194,7 +1237,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Mobile</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Mobile
+                        </label>
                         <input
                           value={formState.mobile}
                           onChange={(event) => updateField('mobile', event.target.value)}
@@ -1202,7 +1247,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Legacy phone</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Legacy phone
+                        </label>
                         <input
                           value={formState.phone}
                           onChange={(event) => updateField('phone', event.target.value)}
@@ -1213,10 +1260,14 @@ export default function Page() {
                   </div>
 
                   <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Commercial settings</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Commercial settings
+                    </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Currency</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Currency
+                        </label>
                         <input
                           value={formState.currency}
                           onChange={(event) => updateField('currency', event.target.value)}
@@ -1224,7 +1275,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Tax treatment</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Tax treatment
+                        </label>
                         <input
                           value={formState.taxTreatment}
                           onChange={(event) => updateField('taxTreatment', event.target.value)}
@@ -1232,7 +1285,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Place of supply</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Place of supply
+                        </label>
                         <input
                           value={formState.placeOfSupply}
                           onChange={(event) => updateField('placeOfSupply', event.target.value)}
@@ -1240,7 +1295,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Payment terms</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Payment terms
+                        </label>
                         <input
                           value={formState.paymentTerms}
                           onChange={(event) => updateField('paymentTerms', event.target.value)}
@@ -1248,7 +1305,9 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Source</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Source
+                        </label>
                         <input
                           value={formState.source}
                           onChange={(event) => updateField('source', event.target.value)}
@@ -1256,10 +1315,14 @@ export default function Page() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Status</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Status
+                        </label>
                         <select
                           value={formState.status}
-                          onChange={(event) => updateField('status', event.target.value as CustomerStatus)}
+                          onChange={(event) =>
+                            updateField('status', event.target.value as CustomerStatus)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         >
                           {statusOptions.map((option) => (
@@ -1284,53 +1347,79 @@ export default function Page() {
               ) : (
                 <div className="space-y-6">
                   <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Billing address</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Billing address
+                    </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div className="md:col-span-2">
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 1</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Address line 1
+                        </label>
                         <textarea
                           value={formState.billingAddress.addressLine1}
-                          onChange={(event) => updateAddress('billingAddress', 'addressLine1', event.target.value)}
+                          onChange={(event) =>
+                            updateAddress('billingAddress', 'addressLine1', event.target.value)
+                          }
                           className="mt-2 min-h-[100px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
                         />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 2</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Address line 2
+                        </label>
                         <input
                           value={formState.billingAddress.addressLine2}
-                          onChange={(event) => updateAddress('billingAddress', 'addressLine2', event.target.value)}
+                          onChange={(event) =>
+                            updateAddress('billingAddress', 'addressLine2', event.target.value)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">City</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          City
+                        </label>
                         <input
                           value={formState.billingAddress.city}
-                          onChange={(event) => updateAddress('billingAddress', 'city', event.target.value)}
+                          onChange={(event) =>
+                            updateAddress('billingAddress', 'city', event.target.value)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">State</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          State
+                        </label>
                         <input
                           value={formState.billingAddress.state}
-                          onChange={(event) => updateAddress('billingAddress', 'state', event.target.value)}
+                          onChange={(event) =>
+                            updateAddress('billingAddress', 'state', event.target.value)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Zip code</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Zip code
+                        </label>
                         <input
                           value={formState.billingAddress.zipCode}
-                          onChange={(event) => updateAddress('billingAddress', 'zipCode', event.target.value)}
+                          onChange={(event) =>
+                            updateAddress('billingAddress', 'zipCode', event.target.value)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Country</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Country
+                        </label>
                         <input
                           value={formState.billingAddress.country}
-                          onChange={(event) => updateAddress('billingAddress', 'country', event.target.value)}
+                          onChange={(event) =>
+                            updateAddress('billingAddress', 'country', event.target.value)
+                          }
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                         />
                       </div>
@@ -1339,12 +1428,16 @@ export default function Page() {
 
                   <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Shipping address</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                        Shipping address
+                      </p>
                       <label className="flex items-center gap-2 text-sm text-text">
                         <input
                           type="checkbox"
                           checked={formState.useBillingAsShipping}
-                          onChange={(event) => updateField('useBillingAsShipping', event.target.checked)}
+                          onChange={(event) =>
+                            updateField('useBillingAsShipping', event.target.checked)
+                          }
                         />
                         <span>Same as billing</span>
                       </label>
@@ -1352,50 +1445,74 @@ export default function Page() {
                     {!formState.useBillingAsShipping ? (
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <div className="md:col-span-2">
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 1</label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            Address line 1
+                          </label>
                           <textarea
                             value={formState.shippingAddress.addressLine1}
-                            onChange={(event) => updateAddress('shippingAddress', 'addressLine1', event.target.value)}
+                            onChange={(event) =>
+                              updateAddress('shippingAddress', 'addressLine1', event.target.value)
+                            }
                             className="mt-2 min-h-[100px] w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none"
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Address line 2</label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            Address line 2
+                          </label>
                           <input
                             value={formState.shippingAddress.addressLine2}
-                            onChange={(event) => updateAddress('shippingAddress', 'addressLine2', event.target.value)}
+                            onChange={(event) =>
+                              updateAddress('shippingAddress', 'addressLine2', event.target.value)
+                            }
                             className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">City</label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            City
+                          </label>
                           <input
                             value={formState.shippingAddress.city}
-                            onChange={(event) => updateAddress('shippingAddress', 'city', event.target.value)}
+                            onChange={(event) =>
+                              updateAddress('shippingAddress', 'city', event.target.value)
+                            }
                             className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">State</label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            State
+                          </label>
                           <input
                             value={formState.shippingAddress.state}
-                            onChange={(event) => updateAddress('shippingAddress', 'state', event.target.value)}
+                            onChange={(event) =>
+                              updateAddress('shippingAddress', 'state', event.target.value)
+                            }
                             className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Zip code</label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            Zip code
+                          </label>
                           <input
                             value={formState.shippingAddress.zipCode}
-                            onChange={(event) => updateAddress('shippingAddress', 'zipCode', event.target.value)}
+                            onChange={(event) =>
+                              updateAddress('shippingAddress', 'zipCode', event.target.value)
+                            }
                             className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Country</label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                            Country
+                          </label>
                           <input
                             value={formState.shippingAddress.country}
-                            onChange={(event) => updateAddress('shippingAddress', 'country', event.target.value)}
+                            onChange={(event) =>
+                              updateAddress('shippingAddress', 'country', event.target.value)
+                            }
                             className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
                           />
                         </div>
@@ -1408,10 +1525,14 @@ export default function Page() {
                   </div>
 
                   <div className="rounded-3xl border border-border/60 bg-bg/40 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Ownership & notes</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Ownership & notes
+                    </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Assigned to</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Assigned to
+                        </label>
                         {canAssign ? (
                           <select
                             value={formState.assignedTo}
@@ -1445,7 +1566,9 @@ export default function Page() {
                       </div>
                       <div />
                       <div className="md:col-span-2">
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Remarks</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                          Remarks
+                        </label>
                         <textarea
                           value={formState.remarks}
                           onChange={(event) => updateField('remarks', event.target.value)}
@@ -1483,11 +1606,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

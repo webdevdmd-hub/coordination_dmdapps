@@ -76,17 +76,16 @@ export default function Page() {
     });
   }, [statusFilter, search]);
   const invoiceStatusFilterOptions = ['all', 'draft', 'sent', 'paid', 'overdue'] as const;
-  const selectedInvoiceStatusIndex = Math.max(
-    0,
-    invoiceStatusFilterOptions.indexOf(statusFilter),
-  );
+  const selectedInvoiceStatusIndex = Math.max(0, invoiceStatusFilterOptions.indexOf(statusFilter));
 
   return (
     <div className="space-y-8">
       <section className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">Invoices</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
+              Invoices
+            </p>
             <h1 className="font-display text-5xl text-text">Billing pipeline</h1>
             <p className="mt-3 max-w-2xl text-lg text-muted">
               Approved quotations move into invoicing. Track payments and overdue activity here.
@@ -110,7 +109,9 @@ export default function Page() {
 
         <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Drafts</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Drafts
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.draft}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
@@ -122,7 +123,9 @@ export default function Page() {
             <p className="mt-4 text-5xl font-semibold text-text">{totals.paid}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Overdue</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Overdue
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.overdue}</p>
           </div>
         </div>

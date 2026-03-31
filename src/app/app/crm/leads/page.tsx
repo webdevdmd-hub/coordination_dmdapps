@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { firebaseLeadRepository } from '@/adapters/repositories/firebaseLeadRepository';
 import {
@@ -24,10 +24,7 @@ import {
 } from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { buildRecipientList, emitNotificationEventSafe } from '@/lib/notifications';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
 const leadStatusClass: Record<LeadStatus, string> = {
   new: 'bg-[var(--surface-muted)] text-muted border border-border',
@@ -171,12 +168,15 @@ export default function Page() {
       .slice(0, 2)
       .toUpperCase();
 
-  const syncLeads = (next: Lead[]) => {
-    setLeads(next);
-    if (leadsCacheKey) {
-      setModuleCacheEntry(leadsCacheKey, next);
-    }
-  };
+  const syncLeads = useCallback(
+    (next: Lead[]) => {
+      setLeads(next);
+      if (leadsCacheKey) {
+        setModuleCacheEntry(leadsCacheKey, next);
+      }
+    },
+    [leadsCacheKey],
+  );
 
   const updateLeads = (updater: (current: Lead[]) => Lead[]) => {
     setLeads((current) => {
@@ -232,9 +232,7 @@ export default function Page() {
           const allLeads = await firebaseLeadRepository.listAll();
           const scoped = allLeads.filter((lead) => visibleUserIds.has(lead.ownerId));
           result =
-            ownerFilter === 'all'
-              ? scoped
-              : scoped.filter((lead) => lead.ownerId === ownerFilter);
+            ownerFilter === 'all' ? scoped : scoped.filter((lead) => lead.ownerId === ownerFilter);
         } else {
           result = await firebaseLeadRepository.listByOwner(
             ownerFilter === 'all' ? user.id : ownerFilter,
@@ -258,7 +256,7 @@ export default function Page() {
     return () => {
       active = false;
     };
-  }, [user, ownerFilter, hasUserVisibility, visibleUserIds, leadsCacheKey]);
+  }, [user, ownerFilter, hasUserVisibility, visibleUserIds, leadsCacheKey, syncLeads]);
 
   useEffect(() => {
     const loadSources = async () => {
@@ -579,15 +577,21 @@ export default function Page() {
 
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New leads</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              New leads
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.new}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Proposal</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Proposal
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.proposal}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Negotiation</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Negotiation
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{leadSummary.negotiation}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
@@ -767,7 +771,9 @@ export default function Page() {
                           <p className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
                             {lead.company}
                           </p>
-                          <h3 className="mt-1 truncate font-display text-xl text-text">{lead.name}</h3>
+                          <h3 className="mt-1 truncate font-display text-xl text-text">
+                            {lead.name}
+                          </h3>
                           <p className="mt-1 truncate text-sm text-muted">{lead.email}</p>
                         </div>
                       </div>
@@ -781,23 +787,35 @@ export default function Page() {
                     </div>
 
                     <div className="mt-4 rounded-2xl border border-border/70 px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-text">{getOwnerName(lead.ownerId)}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                        Owner
+                      </p>
+                      <p className="mt-1 truncate text-sm font-semibold text-text">
+                        {getOwnerName(lead.ownerId)}
+                      </p>
                     </div>
 
                     <div className="mt-3 grid w-full grid-cols-3 divide-x divide-border rounded-2xl border border-border/70 py-2 text-center">
                       <div className="px-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Value</p>
-                        <p className="mt-1 text-sm font-semibold text-text">{formatCurrency(lead.value)}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                          Value
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-text">
+                          {formatCurrency(lead.value)}
+                        </p>
                       </div>
                       <div className="px-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Stage</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                          Stage
+                        </p>
                         <p className="mt-1 text-sm font-semibold text-text">
                           {lead.status.replace(/\b\w/g, (value) => value.toUpperCase())}
                         </p>
                       </div>
                       <div className="px-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Created</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                          Created
+                        </p>
                         <p className="mt-1 text-sm font-semibold text-text">
                           {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
                         </p>
@@ -1060,10 +1078,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-

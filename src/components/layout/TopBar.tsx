@@ -523,7 +523,10 @@ export function TopBar({
           <ThemeToggle />
           <div className="flex items-center gap-3 border-l border-border pl-3">
             {canViewProfile ? (
-              <a href="/app/profile" className="text-left text-xs text-muted transition hover:text-text">
+              <a
+                href="/app/profile"
+                className="text-left text-xs text-muted transition hover:text-text"
+              >
                 <p className="text-[10px] uppercase tracking-[0.24em]">{roleLabel}</p>
                 <p className="text-sm font-semibold text-text">{userName}</p>
               </a>
@@ -542,4 +545,3 @@ export function TopBar({
     </header>
   );
 }
-

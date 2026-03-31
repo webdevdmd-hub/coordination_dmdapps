@@ -30,7 +30,9 @@ const projectCollection = () =>
   collection(getFirebaseDb(), 'sales', SALES_NAMESPACE_ID, 'projects');
 const taskCollection = () => collection(getFirebaseDb(), 'tasks');
 
-const deleteSnapshotsInChunks = async (snapshots: Array<{ ref: DocumentReference<DocumentData> }>) => {
+const deleteSnapshotsInChunks = async (
+  snapshots: Array<{ ref: DocumentReference<DocumentData> }>,
+) => {
   if (snapshots.length === 0) {
     return;
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { firebaseCalendarRepository } from '@/adapters/repositories/firebaseCalendarRepository';
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
@@ -21,10 +21,7 @@ import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { emitNotificationEventSafe } from '@/lib/notifications';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
 type CalendarFormState = {
   title: string;
@@ -284,12 +281,15 @@ export default function Page() {
     });
   }, [users, roles, user]);
 
-  const syncEvents = (next: CalendarEvent[]) => {
-    setEvents(next);
-    if (calendarCacheKey) {
-      setModuleCacheEntry(calendarCacheKey, next);
-    }
-  };
+  const syncEvents = useCallback(
+    (next: CalendarEvent[]) => {
+      setEvents(next);
+      if (calendarCacheKey) {
+        setModuleCacheEntry(calendarCacheKey, next);
+      }
+    },
+    [calendarCacheKey],
+  );
 
   const updateEvents = (updater: (current: CalendarEvent[]) => CalendarEvent[]) => {
     setEvents((current) => {
@@ -321,7 +321,7 @@ export default function Page() {
     }
     setEvents(cachedEntry.data);
     setLoading(false);
-  }, [calendarCacheKey]);
+  }, [calendarCacheKey, syncEvents]);
 
   const dateInputValue = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -417,7 +417,10 @@ export default function Page() {
       const year = currentMonth.getFullYear();
       return { start: new Date(year, 0, 1), end: new Date(year, 11, 31) };
     }
-    return { start: startOfWeek(startOfMonth(currentMonth)), end: endOfWeek(endOfMonth(currentMonth)) };
+    return {
+      start: startOfWeek(startOfMonth(currentMonth)),
+      end: endOfWeek(endOfMonth(currentMonth)),
+    };
   }, [viewMode, selectedDate, weekStartDate, currentMonth]);
 
   const displayEvents = useMemo(() => {
@@ -433,8 +436,15 @@ export default function Page() {
       const sourceStartKey = toDateKey(sourceStart);
       const sourceEndKey = toDateKey(sourceEnd);
 
-      const pushOccurrence = (occurrenceStart: Date, occurrenceEnd: Date, occurrenceIndex: number) => {
-        if (occurrenceEnd.getTime() < rangeStart.getTime() || occurrenceStart.getTime() > rangeEnd.getTime()) {
+      const pushOccurrence = (
+        occurrenceStart: Date,
+        occurrenceEnd: Date,
+        occurrenceIndex: number,
+      ) => {
+        if (
+          occurrenceEnd.getTime() < rangeStart.getTime() ||
+          occurrenceStart.getTime() > rangeEnd.getTime()
+        ) {
           return;
         }
         const occurrenceStartKey = toDateKey(occurrenceStart);
@@ -742,14 +752,7 @@ export default function Page() {
     return () => {
       active = false;
     };
-  }, [
-    user,
-    canView,
-    hasUserVisibility,
-    ownerFilter,
-    visibleUserIds,
-    calendarCacheKey,
-  ]);
+  }, [user, canView, hasUserVisibility, ownerFilter, visibleUserIds, calendarCacheKey, syncEvents]);
 
   useEffect(() => {
     if (!user) {
@@ -812,9 +815,7 @@ export default function Page() {
       setError('You do not have permission to create events.');
       return;
     }
-    const canEditOwnTaskEvent =
-      !!editingEvent &&
-      editingEvent.type === 'task';
+    const canEditOwnTaskEvent = !!editingEvent && editingEvent.type === 'task';
     if (
       editingEvent &&
       !hasPermission(user.permissions, ['admin', 'calendar_edit']) &&
@@ -1075,7 +1076,9 @@ export default function Page() {
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted/80">
               CRM Calendar
             </p>
-            <h1 className="font-display text-4xl text-text sm:text-5xl lg:text-6xl">Lead calendar</h1>
+            <h1 className="font-display text-4xl text-text sm:text-5xl lg:text-6xl">
+              Lead calendar
+            </h1>
             <p className="mt-2 max-w-2xl text-sm text-muted sm:text-lg lg:text-2xl">
               Schedule tasks and appointments, drag items to reschedule, and keep every lead
               touchpoint aligned.
@@ -1167,16 +1170,16 @@ export default function Page() {
                   />
                   {calendarViewModes.map((option) => (
                     <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setViewMode(option.value)}
-                    className={`relative z-[1] w-[120px] shrink-0 rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition-colors duration-200 ${
-                      viewMode === option.value ? 'text-slate-900' : 'text-muted hover:text-text'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+                      key={option.value}
+                      type="button"
+                      onClick={() => setViewMode(option.value)}
+                      className={`relative z-[1] w-[120px] shrink-0 rounded-xl px-4 py-2 text-sm font-semibold uppercase tracking-[0.12em] transition-colors duration-200 ${
+                        viewMode === option.value ? 'text-slate-900' : 'text-muted hover:text-text'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="grid w-full grid-cols-3 gap-2 rounded-xl border border-border bg-surface px-2 py-2 sm:flex sm:w-auto sm:items-center sm:gap-2 sm:px-2 sm:py-1">
@@ -1204,7 +1207,9 @@ export default function Page() {
                       );
                       return;
                     }
-                    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+                    setCurrentMonth(
+                      new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1),
+                    );
                   }}
                   className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)] sm:text-sm"
                 >
@@ -1226,7 +1231,9 @@ export default function Page() {
                       return;
                     }
                     if (viewMode === 'year') {
-                      setCurrentMonth(new Date(new Date().getFullYear(), currentMonth.getMonth(), 1));
+                      setCurrentMonth(
+                        new Date(new Date().getFullYear(), currentMonth.getMonth(), 1),
+                      );
                       return;
                     }
                     setCurrentMonth(startOfMonth(new Date()));
@@ -1259,7 +1266,9 @@ export default function Page() {
                       );
                       return;
                     }
-                    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+                    setCurrentMonth(
+                      new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1),
+                    );
                   }}
                   className="rounded-lg border border-border bg-[var(--surface-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-text transition hover:bg-[var(--surface-muted)] sm:text-sm"
                 >
@@ -1287,16 +1296,18 @@ export default function Page() {
                   />
                   {calendarCategoryFilters.map((option) => (
                     <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setCategoryFilter(option.value)}
-                    className={`relative z-[1] w-[150px] shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
-                      categoryFilter === option.value ? 'text-slate-900' : 'text-muted hover:text-text'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+                      key={option.value}
+                      type="button"
+                      onClick={() => setCategoryFilter(option.value)}
+                      className={`relative z-[1] w-[150px] shrink-0 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-200 ${
+                        categoryFilter === option.value
+                          ? 'text-slate-900'
+                          : 'text-muted hover:text-text'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               {viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days' ? (
@@ -1395,16 +1406,18 @@ export default function Page() {
                           {eventItem.type.toUpperCase()} · {ownerName}
                         </p>
                         {formatEventTimeRange(eventItem) ? (
-                          <p className="mt-1 text-xs text-muted">{formatEventTimeRange(eventItem)}</p>
+                          <p className="mt-1 text-xs text-muted">
+                            {formatEventTimeRange(eventItem)}
+                          </p>
                         ) : null}
                       </div>
                       <span
-                      className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
-                      style={{
-                        backgroundColor: style?.bg ?? '#E5E7EB',
-                        color: style?.text ?? '#111827',
-                        borderColor: style?.text ?? '#111827',
-                      }}
+                        className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
+                        style={{
+                          backgroundColor: style?.bg ?? '#E5E7EB',
+                          color: style?.text ?? '#111827',
+                          borderColor: style?.text ?? '#111827',
+                        }}
                       >
                         {eventItem.category.replace('_', ' ')}
                       </span>
@@ -1421,77 +1434,82 @@ export default function Page() {
               emptyLabel: 'No events scheduled for this day.',
             })}
             <div className="hidden overflow-x-auto sm:block">
-            <div className="min-w-[860px] overflow-hidden rounded-2xl border border-border/60">
-            <div className="grid grid-cols-7 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-              {weekDays.map((day) => (
-                <div key={day} className="px-3 py-3">
-                  {day}
+              <div className="min-w-[860px] overflow-hidden rounded-2xl border border-border/60">
+                <div className="grid grid-cols-7 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  {weekDays.map((day) => (
+                    <div key={day} className="px-3 py-3">
+                      {day}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {weekDates.map((date) => {
-                const dateKey = toDateKey(date);
-                const dayEventsList = eventsByDate.get(dateKey) ?? [];
-                return (
-                  <div
-                    key={dateKey}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => handleDrop(dateKey, event)}
-                    onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
-                    className="min-h-[180px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted">{date.getDate()}</span>
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {dayEventsList.slice(0, 4).map((eventItem) => {
-                        const style = categoryStyles.get(eventItem.category);
-                        const ownerName = ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
-                        return (
-                          <button
-                            key={`${eventItem.id}-${dateKey}`}
-                            type="button"
-                            draggable={hasPermission(user?.permissions ?? [], [
-                              'admin',
-                              'calendar_edit',
-                            ])}
-                            onDragStart={(event) => handleDragStart(eventItem.id, event)}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEditModalById(eventItem.id);
-                            }}
-                            className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
-                            style={{
-                              backgroundColor: style?.bg ?? '#E5E7EB',
-                              color: style?.text ?? '#111827',
-                              borderLeftColor: style?.text ?? '#111827',
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="truncate">{eventItem.title}</span>
-                              <span className="ml-2 text-[10px] uppercase">{eventItem.type}</span>
-                            </div>
-                            <span className="mt-1 block text-[10px] opacity-80">{ownerName}</span>
-                            {formatEventTimeRange(eventItem) ? (
-                              <span className="mt-1 block text-[10px] opacity-80">
-                                {formatEventTimeRange(eventItem)}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                      {dayEventsList.length > 4 ? (
-                        <span className="text-[11px] text-muted">
-                          +{dayEventsList.length - 4} more
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            </div>
+                <div className="grid grid-cols-7">
+                  {weekDates.map((date) => {
+                    const dateKey = toDateKey(date);
+                    const dayEventsList = eventsByDate.get(dateKey) ?? [];
+                    return (
+                      <div
+                        key={dateKey}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => handleDrop(dateKey, event)}
+                        onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
+                        className="min-h-[180px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-muted">{date.getDate()}</span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {dayEventsList.slice(0, 4).map((eventItem) => {
+                            const style = categoryStyles.get(eventItem.category);
+                            const ownerName =
+                              ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
+                            return (
+                              <button
+                                key={`${eventItem.id}-${dateKey}`}
+                                type="button"
+                                draggable={hasPermission(user?.permissions ?? [], [
+                                  'admin',
+                                  'calendar_edit',
+                                ])}
+                                onDragStart={(event) => handleDragStart(eventItem.id, event)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditModalById(eventItem.id);
+                                }}
+                                className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
+                                style={{
+                                  backgroundColor: style?.bg ?? '#E5E7EB',
+                                  color: style?.text ?? '#111827',
+                                  borderLeftColor: style?.text ?? '#111827',
+                                }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="truncate">{eventItem.title}</span>
+                                  <span className="ml-2 text-[10px] uppercase">
+                                    {eventItem.type}
+                                  </span>
+                                </div>
+                                <span className="mt-1 block text-[10px] opacity-80">
+                                  {ownerName}
+                                </span>
+                                {formatEventTimeRange(eventItem) ? (
+                                  <span className="mt-1 block text-[10px] opacity-80">
+                                    {formatEventTimeRange(eventItem)}
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                          {dayEventsList.length > 4 ? (
+                            <span className="text-[11px] text-muted">
+                              +{dayEventsList.length - 4} more
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         ) : viewMode === 'four_days' ? (
@@ -1501,77 +1519,82 @@ export default function Page() {
               emptyLabel: 'No events scheduled for this day.',
             })}
             <div className="hidden overflow-x-auto sm:block">
-            <div className="min-w-[720px] overflow-hidden rounded-2xl border border-border/60">
-            <div className="grid grid-cols-4 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-              {fourDayDates.map((date) => (
-                <div key={toDateKey(date)} className="px-3 py-3">
-                  {date.toLocaleDateString('en-US', { weekday: 'short' })}
+              <div className="min-w-[720px] overflow-hidden rounded-2xl border border-border/60">
+                <div className="grid grid-cols-4 border-b border-border/60 bg-bg/70 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  {fourDayDates.map((date) => (
+                    <div key={toDateKey(date)} className="px-3 py-3">
+                      {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-4">
-              {fourDayDates.map((date) => {
-                const dateKey = toDateKey(date);
-                const dayEventsList = eventsByDate.get(dateKey) ?? [];
-                return (
-                  <div
-                    key={dateKey}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => handleDrop(dateKey, event)}
-                    onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
-                    className="min-h-[200px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted">{date.getDate()}</span>
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {dayEventsList.slice(0, 4).map((eventItem) => {
-                        const style = categoryStyles.get(eventItem.category);
-                        const ownerName = ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
-                        return (
-                          <button
-                            key={`${eventItem.id}-${dateKey}`}
-                            type="button"
-                            draggable={hasPermission(user?.permissions ?? [], [
-                              'admin',
-                              'calendar_edit',
-                            ])}
-                            onDragStart={(event) => handleDragStart(eventItem.id, event)}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEditModalById(eventItem.id);
-                            }}
-                            className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
-                            style={{
-                              backgroundColor: style?.bg ?? '#E5E7EB',
-                              color: style?.text ?? '#111827',
-                              borderLeftColor: style?.text ?? '#111827',
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="truncate">{eventItem.title}</span>
-                              <span className="ml-2 text-[10px] uppercase">{eventItem.type}</span>
-                            </div>
-                            <span className="mt-1 block text-[10px] opacity-80">{ownerName}</span>
-                            {formatEventTimeRange(eventItem) ? (
-                              <span className="mt-1 block text-[10px] opacity-80">
-                                {formatEventTimeRange(eventItem)}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                      {dayEventsList.length > 4 ? (
-                        <span className="text-[11px] text-muted">
-                          +{dayEventsList.length - 4} more
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            </div>
+                <div className="grid grid-cols-4">
+                  {fourDayDates.map((date) => {
+                    const dateKey = toDateKey(date);
+                    const dayEventsList = eventsByDate.get(dateKey) ?? [];
+                    return (
+                      <div
+                        key={dateKey}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => handleDrop(dateKey, event)}
+                        onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
+                        className="min-h-[200px] border-b border-border/60 border-r border-border/60 bg-surface/80 p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-muted">{date.getDate()}</span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {dayEventsList.slice(0, 4).map((eventItem) => {
+                            const style = categoryStyles.get(eventItem.category);
+                            const ownerName =
+                              ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
+                            return (
+                              <button
+                                key={`${eventItem.id}-${dateKey}`}
+                                type="button"
+                                draggable={hasPermission(user?.permissions ?? [], [
+                                  'admin',
+                                  'calendar_edit',
+                                ])}
+                                onDragStart={(event) => handleDragStart(eventItem.id, event)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditModalById(eventItem.id);
+                                }}
+                                className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
+                                style={{
+                                  backgroundColor: style?.bg ?? '#E5E7EB',
+                                  color: style?.text ?? '#111827',
+                                  borderLeftColor: style?.text ?? '#111827',
+                                }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="truncate">{eventItem.title}</span>
+                                  <span className="ml-2 text-[10px] uppercase">
+                                    {eventItem.type}
+                                  </span>
+                                </div>
+                                <span className="mt-1 block text-[10px] opacity-80">
+                                  {ownerName}
+                                </span>
+                                {formatEventTimeRange(eventItem) ? (
+                                  <span className="mt-1 block text-[10px] opacity-80">
+                                    {formatEventTimeRange(eventItem)}
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                          {dayEventsList.length > 4 ? (
+                            <span className="text-[11px] text-muted">
+                              +{dayEventsList.length - 4} more
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         ) : viewMode === 'schedule' ? (
@@ -1695,78 +1718,85 @@ export default function Page() {
               emptyLabel: 'No events scheduled for this date.',
             })}
             <div className="hidden overflow-x-auto sm:block">
-            <div className="min-w-[980px] overflow-hidden rounded-3xl border border-border bg-surface">
-            <div className="grid grid-cols-7 border-b border-border bg-[var(--surface-soft)] text-xs font-semibold uppercase tracking-[0.2em] text-muted/80">
-              {weekDays.map((day) => (
-                <div key={day} className="px-3 py-3">
-                  {day}
+              <div className="min-w-[980px] overflow-hidden rounded-3xl border border-border bg-surface">
+                <div className="grid grid-cols-7 border-b border-border bg-[var(--surface-soft)] text-xs font-semibold uppercase tracking-[0.2em] text-muted/80">
+                  {weekDays.map((day) => (
+                    <div key={day} className="px-3 py-3">
+                      {day}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {monthDays.map((date) => {
-                const dateKey = toDateKey(date);
-                const dayEvents = eventsByDate.get(dateKey) ?? [];
-                const isCurrentMonth = date.getMonth() === currentMonth.getMonth();
-                return (
-                  <div
-                    key={dateKey}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => handleDrop(dateKey, event)}
-                    onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
-                    className={`min-h-[220px] border-b border-border border-r border-border bg-surface p-3 transition ${
-                      isCurrentMonth ? '' : 'bg-[var(--surface-soft)] text-muted'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-muted">{date.getDate()}</span>
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {dayEvents.slice(0, 3).map((eventItem) => {
-                        const style = categoryStyles.get(eventItem.category);
-                        const ownerName = ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
-                        return (
-                          <button
-                            key={`${eventItem.id}-${dateKey}`}
-                            type="button"
-                            draggable={hasPermission(user?.permissions ?? [], [
-                              'admin',
-                              'calendar_edit',
-                            ])}
-                            onDragStart={(event) => handleDragStart(eventItem.id, event)}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEditModalById(eventItem.id);
-                            }}
-                            className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
-                            style={{
-                              backgroundColor: style?.bg ?? '#E5E7EB',
-                              color: style?.text ?? '#111827',
-                              borderLeftColor: style?.text ?? '#111827',
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="truncate">{eventItem.title}</span>
-                              <span className="ml-2 text-[10px] uppercase">{eventItem.type}</span>
-                            </div>
-                            <span className="mt-1 block text-[10px] opacity-80">{ownerName}</span>
-                            {formatEventTimeRange(eventItem) ? (
-                              <span className="mt-1 block text-[10px] opacity-80">
-                                {formatEventTimeRange(eventItem)}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                      {dayEvents.length > 3 ? (
-                        <span className="text-[11px] text-muted">+{dayEvents.length - 3} more</span>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            </div>
+                <div className="grid grid-cols-7">
+                  {monthDays.map((date) => {
+                    const dateKey = toDateKey(date);
+                    const dayEvents = eventsByDate.get(dateKey) ?? [];
+                    const isCurrentMonth = date.getMonth() === currentMonth.getMonth();
+                    return (
+                      <div
+                        key={dateKey}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => handleDrop(dateKey, event)}
+                        onClick={() => (canCreateItems ? openCreateModal(dateKey) : null)}
+                        className={`min-h-[220px] border-b border-border border-r border-border bg-surface p-3 transition ${
+                          isCurrentMonth ? '' : 'bg-[var(--surface-soft)] text-muted'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-muted">{date.getDate()}</span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {dayEvents.slice(0, 3).map((eventItem) => {
+                            const style = categoryStyles.get(eventItem.category);
+                            const ownerName =
+                              ownerNameMap.get(eventItem.ownerId) ?? eventItem.ownerId;
+                            return (
+                              <button
+                                key={`${eventItem.id}-${dateKey}`}
+                                type="button"
+                                draggable={hasPermission(user?.permissions ?? [], [
+                                  'admin',
+                                  'calendar_edit',
+                                ])}
+                                onDragStart={(event) => handleDragStart(eventItem.id, event)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditModalById(eventItem.id);
+                                }}
+                                className="w-full rounded-xl border-l-[3px] px-3 py-2 text-left text-xs font-semibold"
+                                style={{
+                                  backgroundColor: style?.bg ?? '#E5E7EB',
+                                  color: style?.text ?? '#111827',
+                                  borderLeftColor: style?.text ?? '#111827',
+                                }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="truncate">{eventItem.title}</span>
+                                  <span className="ml-2 text-[10px] uppercase">
+                                    {eventItem.type}
+                                  </span>
+                                </div>
+                                <span className="mt-1 block text-[10px] opacity-80">
+                                  {ownerName}
+                                </span>
+                                {formatEventTimeRange(eventItem) ? (
+                                  <span className="mt-1 block text-[10px] opacity-80">
+                                    {formatEventTimeRange(eventItem)}
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                          {dayEvents.length > 3 ? (
+                            <span className="text-[11px] text-muted">
+                              +{dayEvents.length - 3} more
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2066,10 +2096,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-

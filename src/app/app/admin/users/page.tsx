@@ -83,56 +83,62 @@ export default function Page() {
     });
   }, []);
 
-  const refreshUsers = useCallback(async (options?: { force?: boolean }) => {
-    const cachedEntry = getModuleCacheEntry<User[]>(USERS_CACHE_KEY);
-    if (cachedEntry && !options?.force) {
-      setUsers(cachedEntry.data);
-      setLoading(false);
-      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
-        return;
+  const refreshUsers = useCallback(
+    async (options?: { force?: boolean }) => {
+      const cachedEntry = getModuleCacheEntry<User[]>(USERS_CACHE_KEY);
+      if (cachedEntry && !options?.force) {
+        setUsers(cachedEntry.data);
+        setLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setLoading(true);
       }
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const response = await fetch('/api/admin/users', { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error('Unable to load users.');
+      setError(null);
+      try {
+        const response = await fetch('/api/admin/users', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('Unable to load users.');
+        }
+        const payload = (await response.json()) as { users?: User[] };
+        syncUsers(payload.users ?? []);
+      } catch {
+        setError('Unable to load users. Please try again.');
+      } finally {
+        setLoading(false);
       }
-      const payload = (await response.json()) as { users?: User[] };
-      syncUsers(payload.users ?? []);
-    } catch {
-      setError('Unable to load users. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [syncUsers]);
+    },
+    [syncUsers],
+  );
 
-  const refreshRoles = useCallback(async (options?: { force?: boolean }) => {
-    const cachedEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
-    if (cachedEntry && !options?.force) {
-      setRoles(cachedEntry.data);
-      setRolesLoading(false);
-      if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
-        return;
+  const refreshRoles = useCallback(
+    async (options?: { force?: boolean }) => {
+      const cachedEntry = getModuleCacheEntry<Role[]>(ROLES_CACHE_KEY);
+      if (cachedEntry && !options?.force) {
+        setRoles(cachedEntry.data);
+        setRolesLoading(false);
+        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
+          return;
+        }
+      } else {
+        setRolesLoading(true);
       }
-    } else {
-      setRolesLoading(true);
-    }
-    try {
-      const response = await fetch('/api/admin/roles', { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error('Unable to load roles.');
+      try {
+        const response = await fetch('/api/admin/roles', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('Unable to load roles.');
+        }
+        const payload = (await response.json()) as { roles?: Role[] };
+        syncRoles(payload.roles ?? []);
+      } catch {
+        setError('Unable to load roles. Please try again.');
+      } finally {
+        setRolesLoading(false);
       }
-      const payload = (await response.json()) as { roles?: Role[] };
-      syncRoles(payload.roles ?? []);
-    } catch {
-      setError('Unable to load roles. Please try again.');
-    } finally {
-      setRolesLoading(false);
-    }
-  }, [syncRoles]);
+    },
+    [syncRoles],
+  );
 
   useEffect(() => {
     refreshUsers();

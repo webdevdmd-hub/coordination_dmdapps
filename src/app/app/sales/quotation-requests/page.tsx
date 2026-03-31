@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { firebaseProjectRepository } from '@/adapters/repositories/firebaseProjectRepository';
 import { firebaseQuotationRequestRepository } from '@/adapters/repositories/firebaseQuotationRequestRepository';
@@ -30,10 +30,7 @@ import {
   getModuleNotificationPermissions,
 } from '@/lib/notifications';
 import { filterAssignableUsers } from '@/lib/assignees';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
 type EligibleUser = {
   id: string;
@@ -113,7 +110,9 @@ const normalizeRequest = (raw: Record<string, unknown>): QuotationRequest => {
 export default function Page() {
   const { user } = useAuth();
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
-  const [allUsers, setAllUsers] = useState<Array<{ id: string; role: string; active: boolean }>>([]);
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; role: string; active: boolean }>>(
+    [],
+  );
   const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
   const [search, setSearch] = useState('');
@@ -134,7 +133,6 @@ export default function Page() {
   const [salesOrderSuccess, setSalesOrderSuccess] = useState<string | null>(null);
 
   const canView = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_view']);
-  const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_request_edit']);
   const canDelete =
     !!user && hasPermission(user.permissions, ['admin', 'quotation_request_delete']);
   const canAssign =
@@ -144,11 +142,7 @@ export default function Page() {
   const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
   const canViewAllProjects =
     !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
-  const hasUserVisibility = hasUserVisibilityAccess(
-    user,
-    'quotationRequests',
-    user?.roleRelations,
-  );
+  const hasUserVisibility = hasUserVisibilityAccess(user, 'quotationRequests', user?.roleRelations);
 
   const visibleUsers = useMemo(
     () => filterUsersByRole(user, allUsers, 'quotationRequests', user?.roleRelations),
@@ -189,48 +183,71 @@ export default function Page() {
     () => cachedRequestsEntry?.data.tasksByRequest ?? {},
   );
   const [isLoading, setIsLoading] = useState(() => !cachedRequestsEntry);
+  const requestsRef = useRef(requests);
+  const tasksByRequestRef = useRef(tasksByRequest);
 
-  const syncRequestsState = (
-    nextRequests: QuotationRequest[],
-    nextTasksByRequest: Record<string, QuotationRequestTask[]>,
-  ) => {
-    setRequests(nextRequests);
-    setTasksByRequest(nextTasksByRequest);
-    if (quotationRequestsCacheKey) {
-      setModuleCacheEntry(quotationRequestsCacheKey, {
-        requests: nextRequests,
-        tasksByRequest: nextTasksByRequest,
+  useEffect(() => {
+    requestsRef.current = requests;
+  }, [requests]);
+
+  useEffect(() => {
+    tasksByRequestRef.current = tasksByRequest;
+  }, [tasksByRequest]);
+
+  const syncRequestsState = useCallback(
+    (
+      nextRequests: QuotationRequest[],
+      nextTasksByRequest: Record<string, QuotationRequestTask[]>,
+    ) => {
+      setRequests(nextRequests);
+      setTasksByRequest(nextTasksByRequest);
+      if (quotationRequestsCacheKey) {
+        setModuleCacheEntry(quotationRequestsCacheKey, {
+          requests: nextRequests,
+          tasksByRequest: nextTasksByRequest,
+        });
+      }
+    },
+    [quotationRequestsCacheKey],
+  );
+
+  const updateRequests = useCallback(
+    (updater: (current: QuotationRequest[]) => QuotationRequest[]) => {
+      setRequests((current) => {
+        const next = updater(current);
+        requestsRef.current = next;
+        if (quotationRequestsCacheKey) {
+          setModuleCacheEntry(quotationRequestsCacheKey, {
+            requests: next,
+            tasksByRequest: tasksByRequestRef.current,
+          });
+        }
+        return next;
       });
-    }
-  };
+    },
+    [quotationRequestsCacheKey],
+  );
 
-  const updateRequests = (updater: (current: QuotationRequest[]) => QuotationRequest[]) => {
-    setRequests((current) => {
-      const next = updater(current);
-      if (quotationRequestsCacheKey) {
-        setModuleCacheEntry(quotationRequestsCacheKey, {
-          requests: next,
-          tasksByRequest,
-        });
-      }
-      return next;
-    });
-  };
-
-  const updateTasksByRequest = (
-    updater: (current: Record<string, QuotationRequestTask[]>) => Record<string, QuotationRequestTask[]>,
-  ) => {
-    setTasksByRequest((current) => {
-      const next = updater(current);
-      if (quotationRequestsCacheKey) {
-        setModuleCacheEntry(quotationRequestsCacheKey, {
-          requests,
-          tasksByRequest: next,
-        });
-      }
-      return next;
-    });
-  };
+  const updateTasksByRequest = useCallback(
+    (
+      updater: (
+        current: Record<string, QuotationRequestTask[]>,
+      ) => Record<string, QuotationRequestTask[]>,
+    ) => {
+      setTasksByRequest((current) => {
+        const next = updater(current);
+        tasksByRequestRef.current = next;
+        if (quotationRequestsCacheKey) {
+          setModuleCacheEntry(quotationRequestsCacheKey, {
+            requests: requestsRef.current,
+            tasksByRequest: next,
+          });
+        }
+        return next;
+      });
+    },
+    [quotationRequestsCacheKey],
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -260,13 +277,12 @@ export default function Page() {
         const roleMap = new Map(roles.map((role) => [role.key.trim().toLowerCase(), role]));
         const isAdmin = Boolean(user?.permissions.includes('admin'));
         const assignableUserIds = new Set(
-          (
-            isAdmin
-              ? users.filter((userItem) => userItem.active)
-              : filterAssignableUsers(users, roles, 'quotation_request_assign', {
-                  currentUser: user,
-                  moduleKey: 'quotationRequests',
-                })
+          (isAdmin
+            ? users.filter((userItem) => userItem.active)
+            : filterAssignableUsers(users, roles, 'quotation_request_assign', {
+                currentUser: user,
+                moduleKey: 'quotationRequests',
+              })
           ).map((entry) => entry.id),
         );
         const filtered = users
@@ -328,7 +344,11 @@ export default function Page() {
     }
     let isActive = true;
     const loadProjects = async () => {
-      const projectsCacheKey = ['quotation-requests-projects', user.id, canViewAllProjects ? 'all' : user.role].join(':');
+      const projectsCacheKey = [
+        'quotation-requests-projects',
+        user.id,
+        canViewAllProjects ? 'all' : user.role,
+      ].join(':');
       const cachedEntry = getModuleCacheEntry<Project[]>(projectsCacheKey);
       if (cachedEntry) {
         setProjects(cachedEntry.data);
@@ -390,9 +410,6 @@ export default function Page() {
         setRequests(cachedEntry.data.requests);
         setTasksByRequest(cachedEntry.data.tasksByRequest);
         setIsLoading(false);
-        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
-          return;
-        }
       } else {
         setIsLoading(true);
       }
@@ -448,7 +465,45 @@ export default function Page() {
     return () => {
       isActive = false;
     };
-  }, [user, canView, hasUserVisibility, visibleUserIds, quotationRequestsCacheKey]);
+  }, [
+    user,
+    canView,
+    hasUserVisibility,
+    visibleUserIds,
+    quotationRequestsCacheKey,
+    syncRequestsState,
+  ]);
+
+  useEffect(() => {
+    if (!activeRequestId) {
+      return;
+    }
+    let active = true;
+    const refreshActiveRequestTasks = async () => {
+      try {
+        const latestTasks = (await firebaseQuotationRequestRepository.listTasks(
+          activeRequestId,
+        )) as QuotationRequestTask[];
+        if (!active) {
+          return;
+        }
+        updateTasksByRequest((prev) => ({
+          ...prev,
+          [activeRequestId]: latestTasks,
+        }));
+      } catch {
+        // Keep the current modal state if the refresh fails.
+      }
+    };
+    void refreshActiveRequestTasks();
+    const intervalId = window.setInterval(() => {
+      void refreshActiveRequestTasks();
+    }, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [activeRequestId, updateTasksByRequest]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -482,10 +537,7 @@ export default function Page() {
     'rejected',
     'completed',
   ] as const;
-  const selectedRequestStatusIndex = Math.max(
-    0,
-    requestStatusFilterOptions.indexOf(statusFilter),
-  );
+  const selectedRequestStatusIndex = Math.max(0, requestStatusFilterOptions.indexOf(statusFilter));
 
   const activeRequest = useMemo(
     () => requests.find((request) => request.id === activeRequestId) ?? null,
@@ -504,7 +556,8 @@ export default function Page() {
     [activeTasks, activeSalesOrderTaskId],
   );
 
-  const isEstimateTask = (task: QuotationRequestTask) => task.tag.trim().toLowerCase() === 'estimate';
+  const isEstimateTask = (task: QuotationRequestTask) =>
+    task.tag.trim().toLowerCase() === 'estimate';
 
   const getProjectOptionsForRequest = (request: QuotationRequest) =>
     projects.filter((project) => project.customerId === request.customerId);
@@ -637,7 +690,7 @@ export default function Page() {
     task: QuotationRequestTask,
     userId: string,
   ) => {
-    if (!user || !canEdit || !canAssign) {
+    if (!user || !canAssign) {
       return;
     }
     const selected = eligibleUsers.find((entry) => entry.id === userId);
@@ -751,7 +804,7 @@ export default function Page() {
   };
 
   const handleAddCustomTask = async (request: QuotationRequest) => {
-    if (!user || !canEdit || !canAssign) {
+    if (!user || !canAssign) {
       return;
     }
     if (!customTaskTitle.trim()) {
@@ -944,11 +997,15 @@ export default function Page() {
             <p className="mt-4 text-5xl font-semibold text-text">{totals.review}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Approved</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Approved
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.approved}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Rejected</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Rejected
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.rejected}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
@@ -1040,7 +1097,13 @@ export default function Page() {
           </div>
         </div>
 
-        <div className={viewMode === 'cards' ? 'mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3' : 'mt-6 space-y-4'}>
+        <div
+          className={
+            viewMode === 'cards'
+              ? 'mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3'
+              : 'mt-6 space-y-4'
+          }
+        >
           {!canView ? (
             <div className="col-span-full rounded-2xl border border-border bg-[var(--surface-soft)] p-4 text-sm text-muted">
               You do not have permission to view quotation requests.
@@ -1151,7 +1214,6 @@ export default function Page() {
                       <p className="mt-2 text-2xl font-semibold text-text">{doneCount}</p>
                     </div>
                   </div>
-
                 </button>
               );
             })
@@ -1225,19 +1287,25 @@ export default function Page() {
 
             <div className="mt-4 grid grid-cols-3 divide-x divide-border rounded-2xl border border-border bg-[var(--surface-soft)] py-2 text-center">
               <div className="px-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-600">Pending</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-600">
+                  Pending
+                </p>
                 <p className="mt-1 text-2xl font-semibold text-text">
                   {activeTasks.filter((task) => task.status === 'pending').length}
                 </p>
               </div>
               <div className="px-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Assigned</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                  Assigned
+                </p>
                 <p className="mt-1 text-2xl font-semibold text-text">
                   {activeTasks.filter((task) => task.status === 'assigned').length}
                 </p>
               </div>
               <div className="px-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#00B67A]">Done</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#00B67A]">
+                  Done
+                </p>
                 <p className="mt-1 text-2xl font-semibold text-text">
                   {activeTasks.filter((task) => task.status === 'done').length}
                 </p>
@@ -1447,7 +1515,6 @@ export default function Page() {
                 </div>
               </div>
             </details>
-
           </DraggablePanel>
         </div>
       ) : null}
@@ -1641,10 +1708,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-

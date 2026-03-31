@@ -31,7 +31,9 @@ const activitiesCollection = (leadId: string) =>
   collection(getFirebaseDb(), 'crm', CRM_NAMESPACE_ID, 'crm_leads', leadId, 'activities');
 const tasksCollection = () => collection(getFirebaseDb(), 'tasks');
 
-const deleteSnapshotsInChunks = async (snapshots: Array<{ ref: DocumentReference<DocumentData> }>) => {
+const deleteSnapshotsInChunks = async (
+  snapshots: Array<{ ref: DocumentReference<DocumentData> }>,
+) => {
   if (snapshots.length === 0) {
     return;
   }

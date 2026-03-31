@@ -28,7 +28,9 @@ const normalizePermission = (permission: string): PermissionKey | null => {
           : permission === 'po_request_approve'
             ? 'sales_order_request_approve'
             : permission;
-  return ALL_PERMISSIONS.includes(normalized as PermissionKey) ? (normalized as PermissionKey) : null;
+  return ALL_PERMISSIONS.includes(normalized as PermissionKey)
+    ? (normalized as PermissionKey)
+    : null;
 };
 
 const resolveRolePermissions = async (
@@ -59,9 +61,9 @@ const resolveRolePermissions = async (
 
   const byId = await db.collection('roles').doc(normalizedRole).get();
   if (byId.exists) {
-    const permissions = ((((byId.data()?.permissions as string[]) ?? []) as string[])
+    const permissions = (((byId.data()?.permissions as string[]) ?? []) as string[])
       .map(normalizePermission)
-      .filter((permission): permission is PermissionKey => permission !== null));
+      .filter((permission): permission is PermissionKey => permission !== null);
     cache.set(normalizedRole, permissions);
     return permissions;
   }
@@ -70,14 +72,14 @@ const resolveRolePermissions = async (
   return [];
 };
 
-const resolveRecipientIds = async (
-  input: DispatchNotificationEventInput,
-): Promise<string[]> => {
+const resolveRecipientIds = async (input: DispatchNotificationEventInput): Promise<string[]> => {
   const db = getFirebaseAdminDb();
   const usersSnap = await db.collection('users').where('active', '==', true).get();
   const activeUsers = usersSnap.docs.map((docSnap) => ({
     id: docSnap.id,
-    roleKey: String(docSnap.data().role ?? '').trim().toLowerCase(),
+    roleKey: String(docSnap.data().role ?? '')
+      .trim()
+      .toLowerCase(),
   }));
   const activeUserIds = new Set(activeUsers.map((user) => user.id));
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseCustomerRepository } from '@/adapters/repositories/firebaseCustomerRepository';
@@ -23,10 +23,7 @@ import {
   setModuleCacheEntry,
 } from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
 const statusOptions: Array<{ value: QuotationStatus; label: string }> = [
   { value: 'draft', label: 'Draft' },
@@ -122,7 +119,8 @@ export default function Page() {
   const canEdit = !!user && hasPermission(user.permissions, ['admin', 'quotation_edit']);
   const canDelete = !!user && hasPermission(user.permissions, ['admin', 'quotation_delete']);
   const canViewProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
-  const canViewAllProjects = !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
+  const canViewAllProjects =
+    !!user && hasPermission(user.permissions, ['admin', 'project_view_all']);
   const canCreateProject = !!user && hasPermission(user.permissions, ['admin', 'project_create']);
   const canViewAllCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_view_all']);
@@ -227,12 +225,15 @@ export default function Page() {
   const [quotations, setQuotations] = useState<Quotation[]>(() => cachedQuotesEntry?.data ?? []);
   const [loading, setLoading] = useState(() => !cachedQuotesEntry);
 
-  const syncQuotations = (next: Quotation[]) => {
-    setQuotations(next);
-    if (quotationsCacheKey) {
-      setModuleCacheEntry(quotationsCacheKey, next);
-    }
-  };
+  const syncQuotations = useCallback(
+    (next: Quotation[]) => {
+      setQuotations(next);
+      if (quotationsCacheKey) {
+        setModuleCacheEntry(quotationsCacheKey, next);
+      }
+    },
+    [quotationsCacheKey],
+  );
 
   const updateQuotations = (updater: (current: Quotation[]) => Quotation[]) => {
     setQuotations((current) => {
@@ -285,7 +286,11 @@ export default function Page() {
         setCustomers([]);
         return;
       }
-      const customersCacheKey = ['quotations-customers', user.id, isAdmin ? 'admin' : user.role].join(':');
+      const customersCacheKey = [
+        'quotations-customers',
+        user.id,
+        isAdmin ? 'admin' : user.role,
+      ].join(':');
       const cachedEntry = getModuleCacheEntry<Customer[]>(customersCacheKey);
       if (cachedEntry) {
         setCustomers(cachedEntry.data);
@@ -316,7 +321,11 @@ export default function Page() {
         setProjects([]);
         return;
       }
-      const projectsListCacheKey = ['quotations-projects', user.id, canViewAllProjects ? 'all' : user.role].join(':');
+      const projectsListCacheKey = [
+        'quotations-projects',
+        user.id,
+        canViewAllProjects ? 'all' : user.role,
+      ].join(':');
       const cachedEntry = getModuleCacheEntry<Project[]>(projectsListCacheKey);
       if (cachedEntry) {
         setProjects(cachedEntry.data);
@@ -389,9 +398,7 @@ export default function Page() {
           }
         } else if (hasUserVisibility) {
           const allQuotes = await firebaseQuotationRepository.listAll();
-          const sameRoleQuotes = allQuotes.filter((quote) =>
-            visibleUserIds.has(quote.assignedTo),
-          );
+          const sameRoleQuotes = allQuotes.filter((quote) => visibleUserIds.has(quote.assignedTo));
           if (ownerFilter === 'all') {
             nextQuotes = sameRoleQuotes;
           } else {
@@ -421,6 +428,7 @@ export default function Page() {
     userRoleMap,
     visibleUserIds,
     quotationsCacheKey,
+    syncQuotations,
   ]);
 
   const filteredQuotations = useMemo(() => {
@@ -572,7 +580,13 @@ export default function Page() {
   const syncProjectTimelineForQuotation = async (
     quote: Pick<
       Quotation,
-      'quoteNumber' | 'customerName' | 'projectId' | 'projectName' | 'status' | 'validUntil' | 'total'
+      | 'quoteNumber'
+      | 'customerName'
+      | 'projectId'
+      | 'projectName'
+      | 'status'
+      | 'validUntil'
+      | 'total'
     >,
     previousStatus?: QuotationStatus,
   ) => {
@@ -862,7 +876,9 @@ export default function Page() {
             <p className="mt-4 text-5xl font-semibold text-text">{totalsByStatus.sent}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Approved</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Approved
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totalsByStatus.approved}</p>
           </div>
         </div>
@@ -925,7 +941,10 @@ export default function Page() {
         ) : viewMode === 'card' ? (
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {filteredQuotations.map((quote) => (
-              <div key={quote.id} className="rounded-3xl border border-border bg-surface p-4 shadow-soft">
+              <div
+                key={quote.id}
+                className="rounded-3xl border border-border bg-surface p-4 shadow-soft"
+              >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted/80">
@@ -935,7 +954,10 @@ export default function Page() {
                     <div className="mt-1 space-y-1 text-[11px] text-muted">
                       <p>Project: {quote.projectName || '-'}</p>
                       <p>
-                        Owner <span className="font-semibold text-text">{ownerNameMap.get(quote.assignedTo) ?? quote.assignedTo}</span>
+                        Owner{' '}
+                        <span className="font-semibold text-text">
+                          {ownerNameMap.get(quote.assignedTo) ?? quote.assignedTo}
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -957,18 +979,28 @@ export default function Page() {
                 </div>
                 <div className="mt-2.5 grid w-full grid-cols-3 divide-x divide-border py-0.5 text-center">
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Owner</p>
-                    <p className="mt-1 text-sm font-semibold text-text">{getOwnerInitials(quote.assignedTo)}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Owner
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {getOwnerInitials(quote.assignedTo)}
+                    </p>
                   </div>
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Status</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Status
+                    </p>
                     <p className="mt-1 text-sm font-semibold text-text">
                       {statusOptions.find((option) => option.value === quote.status)?.label}
                     </p>
                   </div>
                   <div className="px-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Total</p>
-                    <p className="mt-1 text-sm font-semibold text-text">{formatCurrency(quote.total)}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      Total
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-text">
+                      {formatCurrency(quote.total)}
+                    </p>
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-end gap-2">
@@ -1430,11 +1462,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

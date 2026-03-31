@@ -75,7 +75,7 @@ const normalizePermission = (permission: string) =>
                       ? 'quotation_view_same_role'
                       : permission === 'quotation_request_view_department'
                         ? 'quotation_request_view_same_role'
-          : permission;
+                        : permission;
 const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
   Array.from(
     new Set(
@@ -83,9 +83,8 @@ const toKnownPermissions = (permissions: unknown): PermissionKey[] =>
         ? permissions
             .filter((permission): permission is string => typeof permission === 'string')
             .map((permission) => normalizePermission(permission))
-            .filter(
-              (permission): permission is PermissionKey =>
-                ALL_PERMISSIONS.includes(permission as PermissionKey),
+            .filter((permission): permission is PermissionKey =>
+              ALL_PERMISSIONS.includes(permission as PermissionKey),
             )
         : [],
     ),
@@ -255,11 +254,7 @@ export async function PATCH(request: Request) {
       return toErrorResponse('Admin role permissions are locked.', 403);
     }
     if (typeof updates.key === 'string') {
-      const duplicate = await db
-        .collection('roles')
-        .where('key', '==', updates.key)
-        .limit(2)
-        .get();
+      const duplicate = await db.collection('roles').where('key', '==', updates.key).limit(2).get();
       const hasAnotherRoleWithSameKey = duplicate.docs.some((doc) => doc.id !== payload.id);
       if (hasAnotherRoleWithSameKey) {
         return toErrorResponse('Role already exists.');
@@ -271,4 +266,3 @@ export async function PATCH(request: Request) {
     return toErrorResponse('Unable to update role.', 500);
   }
 }
-

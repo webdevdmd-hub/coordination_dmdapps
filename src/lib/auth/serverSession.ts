@@ -58,14 +58,16 @@ const resolveRolePermissions = async (
                 ? 'sales_order_request_approve'
                 : permission,
       )
-      .filter((permission): permission is PermissionKey => ALL_PERMISSIONS.includes(permission as PermissionKey));
+      .filter((permission): permission is PermissionKey =>
+        ALL_PERMISSIONS.includes(permission as PermissionKey),
+      );
     cache.set(normalized, permissions);
     return permissions;
   }
 
   const byId = await db.collection('roles').doc(normalized).get();
   if (byId.exists) {
-    const permissions = ((((byId.data()?.permissions as string[]) ?? []) as string[])
+    const permissions = (((byId.data()?.permissions as string[]) ?? []) as string[])
       .map((permission) =>
         permission === 'accounts'
           ? 'sales_order'
@@ -77,10 +79,9 @@ const resolveRolePermissions = async (
                 ? 'sales_order_request_approve'
                 : permission,
       )
-      .filter(
-        (permission): permission is PermissionKey =>
-          ALL_PERMISSIONS.includes(permission as PermissionKey),
-      ));
+      .filter((permission): permission is PermissionKey =>
+        ALL_PERMISSIONS.includes(permission as PermissionKey),
+      );
     cache.set(normalized, permissions);
     return permissions;
   }
@@ -104,7 +105,9 @@ export async function getAuthedUserFromSession(request: Request): Promise<Authed
     }
 
     const data = userSnap.data() as Record<string, unknown>;
-    const roleKey = String(data.role ?? '').trim().toLowerCase();
+    const roleKey = String(data.role ?? '')
+      .trim()
+      .toLowerCase();
     const permissions = await resolveRolePermissions(roleKey, new Map<string, PermissionKey[]>());
 
     return {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { firebaseCalendarRepository } from '@/adapters/repositories/firebaseCalendarRepository';
 import { firebaseLeadRepository } from '@/adapters/repositories/firebaseLeadRepository';
@@ -83,16 +83,21 @@ export default function Page() {
     ? getModuleCacheEntry<{ leads: Lead[]; events: CalendarEvent[] }>(reportsCacheKey)
     : null;
   const [leads, setLeads] = useState<Lead[]>(() => cachedReportsEntry?.data.leads ?? []);
-  const [events, setEvents] = useState<CalendarEvent[]>(() => cachedReportsEntry?.data.events ?? []);
+  const [events, setEvents] = useState<CalendarEvent[]>(
+    () => cachedReportsEntry?.data.events ?? [],
+  );
   const [loading, setLoading] = useState(() => !cachedReportsEntry);
 
-  const syncReports = (next: { leads: Lead[]; events: CalendarEvent[] }) => {
-    setLeads(next.leads);
-    setEvents(next.events);
-    if (reportsCacheKey) {
-      setModuleCacheEntry(reportsCacheKey, next);
-    }
-  };
+  const syncReports = useCallback(
+    (next: { leads: Lead[]; events: CalendarEvent[] }) => {
+      setLeads(next.leads);
+      setEvents(next.events);
+      if (reportsCacheKey) {
+        setModuleCacheEntry(reportsCacheKey, next);
+      }
+    },
+    [reportsCacheKey],
+  );
 
   useEffect(() => {
     const cachedEntry = reportsCacheKey
@@ -193,7 +198,7 @@ export default function Page() {
     return () => {
       active = false;
     };
-  }, [user, isAdmin, ownerFilter, canViewLeads, canViewCalendar, reportsCacheKey]);
+  }, [user, isAdmin, ownerFilter, canViewLeads, canViewCalendar, reportsCacheKey, syncReports]);
 
   const filteredLeads = useMemo(() => {
     if (!monthFilter) {

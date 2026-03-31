@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection } from 'firebase/firestore';
 
 import { firebaseSalesOrderRequestRepository } from '@/adapters/repositories/firebaseSalesOrderRequestRepository';
@@ -158,12 +158,15 @@ const logStoreHandoffActivity = async (
 ) => {
   const now = new Date().toISOString();
   await Promise.all([
-    addDoc(collection(getFirebaseDb(), 'sales', 'main', 'projects', request.projectId, 'activities'), {
-      type: 'note',
-      note: `Sales Order Req ${request.requestNo} sent to Store by ${actorName}.`,
-      date: now,
-      createdBy: actorId,
-    }),
+    addDoc(
+      collection(getFirebaseDb(), 'sales', 'main', 'projects', request.projectId, 'activities'),
+      {
+        type: 'note',
+        note: `Sales Order Req ${request.requestNo} sent to Store by ${actorName}.`,
+        date: now,
+        createdBy: actorId,
+      },
+    ),
     addSalesOrderTimelineEvent({
       requestId: request.id,
       requestNo: request.requestNo,
@@ -226,9 +229,15 @@ export default function Page() {
   const [rejectRequest, setRejectRequest] = useState<SalesOrderRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  const canView = !!user &&
-    hasPermission(user.permissions, ['admin', 'sales_order_request_view', 'sales_order_request_view']);
-  const canApprove = !!user &&
+  const canView =
+    !!user &&
+    hasPermission(user.permissions, [
+      'admin',
+      'sales_order_request_view',
+      'sales_order_request_view',
+    ]);
+  const canApprove =
+    !!user &&
     hasPermission(user.permissions, [
       'admin',
       'sales_order_request_approve',
@@ -264,7 +273,9 @@ export default function Page() {
   const cachedRequestsEntry = salesOrderCacheKey
     ? getModuleCacheEntry<SalesOrderRequest[]>(salesOrderCacheKey)
     : null;
-  const [requests, setRequests] = useState<SalesOrderRequest[]>(() => cachedRequestsEntry?.data ?? []);
+  const [requests, setRequests] = useState<SalesOrderRequest[]>(
+    () => cachedRequestsEntry?.data ?? [],
+  );
   const [isLoading, setIsLoading] = useState(() => !cachedRequestsEntry);
   const ownerOptions = useMemo(() => {
     if (!hasUserVisibility || !user) {
@@ -273,15 +284,21 @@ export default function Page() {
     const map = new Map<string, string>();
     map.set(user.id, user.fullName);
     visibleUsers.forEach((profile) => map.set(profile.id, profile.fullName));
-    return [{ id: 'all', name: 'All users' }, ...Array.from(map.entries()).map(([id, name]) => ({ id, name }))];
+    return [
+      { id: 'all', name: 'All users' },
+      ...Array.from(map.entries()).map(([id, name]) => ({ id, name })),
+    ];
   }, [hasUserVisibility, user, visibleUsers]);
 
-  const syncRequests = (next: SalesOrderRequest[]) => {
-    setRequests(next);
-    if (salesOrderCacheKey) {
-      setModuleCacheEntry(salesOrderCacheKey, next);
-    }
-  };
+  const syncRequests = useCallback(
+    (next: SalesOrderRequest[]) => {
+      setRequests(next);
+      if (salesOrderCacheKey) {
+        setModuleCacheEntry(salesOrderCacheKey, next);
+      }
+    },
+    [salesOrderCacheKey],
+  );
 
   const updateRequests = (updater: (current: SalesOrderRequest[]) => SalesOrderRequest[]) => {
     setRequests((current) => {
@@ -398,7 +415,15 @@ export default function Page() {
     return () => {
       active = false;
     };
-  }, [canView, user, hasUserVisibility, visibleUserIds, ownerFilter, salesOrderCacheKey]);
+  }, [
+    canView,
+    user,
+    hasUserVisibility,
+    visibleUserIds,
+    ownerFilter,
+    salesOrderCacheKey,
+    syncRequests,
+  ]);
 
   useEffect(() => {
     if (!selectedRequest) {
@@ -474,8 +499,7 @@ export default function Page() {
   }, [selectedRequest]);
 
   const filteredRequests = useMemo(
-    () =>
-      requests.filter((item) => (statusFilter === 'all' ? true : item.status === statusFilter)),
+    () => requests.filter((item) => (statusFilter === 'all' ? true : item.status === statusFilter)),
     [requests, statusFilter],
   );
 
@@ -554,7 +578,9 @@ export default function Page() {
       await Promise.allSettled([
         logPoDecisionActivity(request, user.id, status, rejectionReason),
         notifyRequester(request, user.id, user.fullName, status, rejectionReason),
-        ...(status === 'approved' ? [logStoreHandoffActivity(request, user.id, user.fullName)] : []),
+        ...(status === 'approved'
+          ? [logStoreHandoffActivity(request, user.id, user.fullName)]
+          : []),
       ]);
       return true;
     } catch {
@@ -673,7 +699,9 @@ export default function Page() {
                   type="button"
                   onClick={() => setStatusFilter('pending_approval')}
                   className={`rounded-md px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.08em] transition md:rounded-xl md:px-4 md:py-2 md:text-[11px] md:tracking-[0.18em] ${
-                    statusFilter === 'pending_approval' ? 'text-white' : 'text-muted hover:text-text'
+                    statusFilter === 'pending_approval'
+                      ? 'text-white'
+                      : 'text-muted hover:text-text'
                   }`}
                 >
                   Pending ({totals.pending})
@@ -725,7 +753,9 @@ export default function Page() {
         ) : (
           <div
             className={
-              viewMode === 'card' ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3' : 'space-y-2'
+              viewMode === 'card'
+                ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3'
+                : 'space-y-2'
             }
           >
             {filteredRequests.map((request) => (
@@ -760,7 +790,9 @@ export default function Page() {
                     <h3 className="text-base font-bold text-text [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
                       {request.projectName}
                     </h3>
-                    <p className="mt-1 text-xs text-muted">Requested by: {request.requestedByName}</p>
+                    <p className="mt-1 text-xs text-muted">
+                      Requested by: {request.requestedByName}
+                    </p>
                     {request.status === 'rejected' && request.approval?.rejectionReason ? (
                       <p className="mt-1 text-xs text-rose-200">
                         Rejection Reason: {request.approval.rejectionReason}
@@ -965,13 +997,17 @@ export default function Page() {
                       timelineActivities.map((activity, index) => (
                         <div key={`${activity.id}-${index}`} className="flex gap-4">
                           <div className="flex flex-col items-center">
-                            <span className={`h-3 w-3 rounded-full ${activityDotClass(activity)}`} />
+                            <span
+                              className={`h-3 w-3 rounded-full ${activityDotClass(activity)}`}
+                            />
                             {index < timelineActivities.length - 1 ? (
                               <span className="mt-2 h-10 w-[1px] bg-border/60" />
                             ) : null}
                           </div>
                           <div>
-                            <p className="font-semibold text-text">{activity.note || 'Activity update'}</p>
+                            <p className="font-semibold text-text">
+                              {activity.note || 'Activity update'}
+                            </p>
                             <p className="mt-1 text-sm text-muted">
                               {formatTimelineDate(activity.date)} -{' '}
                               {activity.actorName || activity.createdBy || 'System'}
@@ -1026,7 +1062,9 @@ export default function Page() {
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
                     Reject request
                   </p>
-                  <h3 className="mt-1 text-lg font-semibold text-text">{rejectRequest.requestNo}</h3>
+                  <h3 className="mt-1 text-lg font-semibold text-text">
+                    {rejectRequest.requestNo}
+                  </h3>
                   <p className="mt-1 text-sm text-muted">{rejectRequest.projectName}</p>
                 </div>
                 <button

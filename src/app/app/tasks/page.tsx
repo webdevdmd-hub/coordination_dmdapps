@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
@@ -23,10 +23,7 @@ import {
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
-import {
-  filterUsersByRole,
-  hasUserVisibilityAccess,
-} from '@/lib/roleVisibility';
+import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 import { DraggablePanel } from '@/components/ui/DraggablePanel';
 import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import {
@@ -228,6 +225,41 @@ export default function Page() {
     });
   };
 
+  const syncLinkedQuotationRequestTask = async (
+    task: Pick<
+      Task,
+      | 'quotationRequestId'
+      | 'quotationRequestTaskId'
+      | 'status'
+      | 'estimateNumber'
+      | 'estimateAmount'
+    >,
+    updatedAt: string,
+  ) => {
+    if (!task.quotationRequestId || !task.quotationRequestTaskId) {
+      return;
+    }
+    const payload: Record<string, unknown> = { updatedAt };
+    if (task.status === 'done') {
+      payload.status = 'done';
+    }
+    if (task.estimateNumber?.trim()) {
+      payload.estimateNumber = task.estimateNumber.trim();
+    }
+    if (
+      typeof task.estimateAmount === 'number' &&
+      Number.isFinite(task.estimateAmount) &&
+      task.estimateAmount > 0
+    ) {
+      payload.estimateAmount = task.estimateAmount;
+    }
+    await firebaseQuotationRequestRepository.updateTask(
+      task.quotationRequestId,
+      task.quotationRequestTaskId,
+      payload,
+    );
+  };
+
   const formatDuration = (seconds: number) => {
     if (!Number.isFinite(seconds) || seconds <= 0) {
       return '0s';
@@ -378,12 +410,15 @@ export default function Page() {
     return items;
   }, [selectedTask]);
 
-  const syncTasks = (next: Task[]) => {
-    setTasks(next);
-    if (tasksCacheKey) {
-      setModuleCacheEntry(tasksCacheKey, next);
-    }
-  };
+  const syncTasks = useCallback(
+    (next: Task[]) => {
+      setTasks(next);
+      if (tasksCacheKey) {
+        setModuleCacheEntry(tasksCacheKey, next);
+      }
+    },
+    [tasksCacheKey],
+  );
 
   const updateTasks = (updater: (current: Task[]) => Task[]) => {
     setTasks((current) => {
@@ -537,14 +572,7 @@ export default function Page() {
     return () => {
       active = false;
     };
-  }, [
-    user,
-    canView,
-    hasUserVisibility,
-    ownerFilter,
-    visibleUserIds,
-    tasksCacheKey,
-  ]);
+  }, [user, canView, hasUserVisibility, ownerFilter, visibleUserIds, tasksCacheKey, syncTasks]);
 
   useEffect(() => {
     if (!tasks.some((task) => task.timerStartedAt)) {
@@ -581,7 +609,8 @@ export default function Page() {
             return null;
           }
           const data = snap.data() as { name?: unknown };
-          const name = typeof data.name === 'string' && data.name.trim().length > 0 ? data.name : null;
+          const name =
+            typeof data.name === 'string' && data.name.trim().length > 0 ? data.name : null;
           if (!name) {
             return null;
           }
@@ -637,7 +666,11 @@ export default function Page() {
   );
 
   const selectedViewIndex = useMemo(
-    () => Math.max(0, taskViewOptions.findIndex((option) => option.value === viewMode)),
+    () =>
+      Math.max(
+        0,
+        taskViewOptions.findIndex((option) => option.value === viewMode),
+      ),
     [viewMode],
   );
   const selectedStatusIndex = useMemo(
@@ -645,16 +678,13 @@ export default function Page() {
     [statusFilter],
   );
 
-  const renderBoardTaskCard = (
-    task: Task,
-    variant: 'list' | 'cards' | 'kanban' = 'list',
-  ) => {
+  const renderBoardTaskCard = (task: Task, variant: 'list' | 'cards' | 'kanban' = 'list') => {
     const isRunning = !!task.timerStartedAt;
     const totalSeconds = getLiveDuration(task);
     const canTrack = canTrackTask(task);
     const showDetails = variant !== 'kanban';
     const assigneeName = task.assignedTo
-      ? ownerNameMap.get(task.assignedTo) ?? task.assignedTo
+      ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo)
       : 'Unassigned';
     const assigneeInitial = assigneeName
       .split(' ')
@@ -692,7 +722,7 @@ export default function Page() {
 
           <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
             {task.projectId
-              ? taskProjectNameMap.get(task.projectId) ?? task.projectId
+              ? (taskProjectNameMap.get(task.projectId) ?? task.projectId)
               : task.leadReference || 'No linked record'}
           </p>
 
@@ -740,15 +770,14 @@ export default function Page() {
           >
             {timerBusyId === task.id ? 'Updating...' : isRunning ? 'Stop timer' : 'Start timer'}
           </button>
-
         </div>
       );
     }
 
     const cardClass =
       variant === 'cards'
-          ? 'rounded-3xl border border-border bg-surface p-4 shadow-[0_6px_18px_rgba(15,23,42,0.05)]'
-          : 'rounded-3xl border border-border bg-surface p-5 shadow-[0_4px_16px_rgba(15,23,42,0.06)]';
+        ? 'rounded-3xl border border-border bg-surface p-4 shadow-[0_6px_18px_rgba(15,23,42,0.05)]'
+        : 'rounded-3xl border border-border bg-surface p-5 shadow-[0_4px_16px_rgba(15,23,42,0.06)]';
 
     return (
       <div
@@ -784,11 +813,17 @@ export default function Page() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
-              {task.assignedTo ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo) : 'Unassigned'}
+              {task.assignedTo
+                ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo)
+                : 'Unassigned'}
             </p>
             <p
               className={`mt-2 font-semibold text-text ${
-                variant === 'cards' ? 'text-sm' : variant === 'kanban' ? 'text-2xl' : 'text-2xl sm:text-3xl'
+                variant === 'cards'
+                  ? 'text-sm'
+                  : variant === 'kanban'
+                    ? 'text-2xl'
+                    : 'text-2xl sm:text-3xl'
               }`}
             >
               {task.title}
@@ -954,11 +989,17 @@ export default function Page() {
       return;
     }
     if (canEditEstimateDetails) {
-      if ((estimateNumber.length > 0 && estimateAmountRaw.length === 0) || (estimateNumber.length === 0 && estimateAmountRaw.length > 0)) {
+      if (
+        (estimateNumber.length > 0 && estimateAmountRaw.length === 0) ||
+        (estimateNumber.length === 0 && estimateAmountRaw.length > 0)
+      ) {
         setError('Provide both Estimate No and Estimate Amount.');
         return;
       }
-      if (estimateAmountRaw.length > 0 && (!Number.isFinite(estimateAmount) || estimateAmount === null || estimateAmount <= 0)) {
+      if (
+        estimateAmountRaw.length > 0 &&
+        (!Number.isFinite(estimateAmount) || estimateAmount === null || estimateAmount <= 0)
+      ) {
         setError('Estimate amount must be greater than 0.');
         return;
       }
@@ -1097,27 +1138,25 @@ export default function Page() {
             );
           }
         }
-        if (
-          previousStatus !== 'done' &&
-          updated.status === 'done' &&
-          updated.quotationRequestId &&
-          updated.quotationRequestTaskId &&
-          updated.leadId &&
-          updated.rfqTag
-        ) {
+        if (updated.quotationRequestId && updated.quotationRequestTaskId) {
           const completedAt = new Date().toISOString();
-          await firebaseQuotationRequestRepository.updateTask(
-            updated.quotationRequestId,
-            updated.quotationRequestTaskId,
-            { status: 'done', updatedAt: completedAt },
-          );
-          await syncQuotationRequestStatus(updated.quotationRequestId);
-          await firebaseLeadRepository.addActivity(updated.leadId, {
-            type: 'note',
-            note: `RFQ task completed: ${updated.rfqTag}.`,
-            date: completedAt,
-            createdBy: user.id,
-          });
+          await syncLinkedQuotationRequestTask(updated, completedAt);
+          if (previousStatus !== 'done' && updated.status === 'done') {
+            await syncQuotationRequestStatus(updated.quotationRequestId);
+          }
+          if (
+            previousStatus !== 'done' &&
+            updated.status === 'done' &&
+            updated.leadId &&
+            updated.rfqTag
+          ) {
+            await firebaseLeadRepository.addActivity(updated.leadId, {
+              type: 'note',
+              note: `RFQ task completed: ${updated.rfqTag}.`,
+              date: completedAt,
+              createdBy: user.id,
+            });
+          }
         }
         updateTasks((prev) => prev.map((task) => (task.id === updated.id ? updated : task)));
       } else {
@@ -1347,22 +1386,18 @@ export default function Page() {
         task.status !== 'done' &&
         updated.status === 'done' &&
         updated.quotationRequestId &&
-        updated.quotationRequestTaskId &&
-        updated.leadId &&
-        updated.rfqTag
+        updated.quotationRequestTaskId
       ) {
-        await firebaseQuotationRequestRepository.updateTask(
-          updated.quotationRequestId,
-          updated.quotationRequestTaskId,
-          { status: 'done', updatedAt },
-        );
+        await syncLinkedQuotationRequestTask(updated, updatedAt);
         await syncQuotationRequestStatus(updated.quotationRequestId);
-        await firebaseLeadRepository.addActivity(updated.leadId, {
-          type: 'note',
-          note: `RFQ task completed: ${updated.rfqTag}.`,
-          date: updatedAt,
-          createdBy: user.id,
-        });
+        if (updated.leadId && updated.rfqTag) {
+          await firebaseLeadRepository.addActivity(updated.leadId, {
+            type: 'note',
+            note: `RFQ task completed: ${updated.rfqTag}.`,
+            date: updatedAt,
+            createdBy: user.id,
+          });
+        }
       }
     } catch {
       setError('Unable to update task status. Please try again.');
@@ -1451,9 +1486,7 @@ export default function Page() {
                   type="button"
                   onClick={() => setViewMode(option.value)}
                   className={`relative z-[1] rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200 ${
-                    viewMode === option.value
-                      ? 'text-white'
-                      : 'text-muted hover:text-text'
+                    viewMode === option.value ? 'text-white' : 'text-muted hover:text-text'
                   }`}
                 >
                   {option.label}
@@ -1478,17 +1511,23 @@ export default function Page() {
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">In progress</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              In progress
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.inProgress}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Review</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Review
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.review}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">Completed</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Completed
+            </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.done}</p>
             <p className="mt-1 text-sm text-muted/80">tasks</p>
           </div>
@@ -1591,18 +1630,22 @@ export default function Page() {
                     className="rounded-3xl border-2 border-dashed border-border/70 bg-[var(--surface-soft)] p-6 text-center"
                   >
                     <p className="text-lg font-semibold text-text">Add New Task</p>
-                    <p className="mt-2 text-sm text-muted/80">Click to create a new task in this view</p>
+                    <p className="mt-2 text-sm text-muted/80">
+                      Click to create a new task in this view
+                    </p>
                   </button>
                 ) : null}
               </div>
             ) : (
               <div className="mt-6 grid gap-4 xl:grid-cols-4">
-                {([
-                  { key: 'todo', label: 'To Do' },
-                  { key: 'in-progress', label: 'In Progress' },
-                  { key: 'review', label: 'Review' },
-                  { key: 'done', label: 'Completed' },
-                ] as const).map((column) => (
+                {(
+                  [
+                    { key: 'todo', label: 'To Do' },
+                    { key: 'in-progress', label: 'In Progress' },
+                    { key: 'review', label: 'Review' },
+                    { key: 'done', label: 'Completed' },
+                  ] as const
+                ).map((column) => (
                   <div
                     key={column.key}
                     onDragOver={(event) => {
@@ -1692,10 +1735,10 @@ export default function Page() {
                 onSubmit={handleSave}
               >
                 <div className="col-span-2 grid gap-4 grid-cols-2">
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                        Title
-                      </label>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                      Title
+                    </label>
                     <input
                       required
                       value={formState.title}
@@ -1990,11 +2033,3 @@ export default function Page() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

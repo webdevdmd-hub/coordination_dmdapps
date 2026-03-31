@@ -76,4 +76,3 @@ export const fetchRoleSummaries = async (): Promise<RoleSummary[]> => {
     };
   });
 };
-

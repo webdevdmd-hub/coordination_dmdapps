@@ -58,9 +58,9 @@ const resolveRolePermissions = async (
 
   const byId = await db.collection('roles').doc(normalized).get();
   if (byId.exists) {
-    const permissions = (((byId.data()?.permissions as PermissionKey[]) ?? []) as PermissionKey[]).filter(
-      (permission) => ALL_PERMISSIONS.includes(permission),
-    );
+    const permissions = (
+      ((byId.data()?.permissions as PermissionKey[]) ?? []) as PermissionKey[]
+    ).filter((permission) => ALL_PERMISSIONS.includes(permission));
     cache.set(normalized, permissions);
     return permissions;
   }
@@ -126,7 +126,11 @@ export async function POST(request: Request) {
   }
 
   const db = getFirebaseAdminDb();
-  const projectRef = db.collection('sales').doc(SALES_NAMESPACE_ID).collection('projects').doc(projectId);
+  const projectRef = db
+    .collection('sales')
+    .doc(SALES_NAMESPACE_ID)
+    .collection('projects')
+    .doc(projectId);
   const projectSnap = await projectRef.get();
   if (!projectSnap.exists) {
     return toErrorResponse('Project not found.', 404);
@@ -155,7 +159,9 @@ export async function POST(request: Request) {
       continue;
     }
     const userData = userDoc.data() as { role?: string };
-    const roleKey = String(userData.role ?? '').trim().toLowerCase();
+    const roleKey = String(userData.role ?? '')
+      .trim()
+      .toLowerCase();
     if (!roleKey) {
       continue;
     }

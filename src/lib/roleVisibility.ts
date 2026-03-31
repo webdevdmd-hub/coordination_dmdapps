@@ -36,9 +36,7 @@ export type RoleRelations = Partial<Record<RoleRelationModuleKey, ModuleRoleRela
 const normalizeRoleKeys = (value: string[] | undefined) =>
   Array.from(
     new Set(
-      (value ?? [])
-        .map((item) => item.trim().toLowerCase())
-        .filter((item) => item.length > 0),
+      (value ?? []).map((item) => item.trim().toLowerCase()).filter((item) => item.length > 0),
     ),
   );
 
@@ -61,7 +59,9 @@ export const normalizeRoleRelations = (value: unknown): RoleRelations | undefine
       Array.isArray(relation.canViewRoles) ? (relation.canViewRoles as string[]) : undefined,
     );
     const canAssignToRoles = normalizeRoleKeys(
-      Array.isArray(relation.canAssignToRoles) ? (relation.canAssignToRoles as string[]) : undefined,
+      Array.isArray(relation.canAssignToRoles)
+        ? (relation.canAssignToRoles as string[])
+        : undefined,
     );
     const canBeAssignedByRoles = normalizeRoleKeys(
       Array.isArray(relation.canBeAssignedByRoles)
@@ -84,10 +84,8 @@ export const normalizeRoleRelations = (value: unknown): RoleRelations | undefine
   return Object.keys(result).length > 0 ? result : undefined;
 };
 
-export const hasRoleScope = (
-  permissions: PermissionKey[],
-  roleScopedPermission: PermissionKey,
-) => permissions.includes('admin') || permissions.includes(roleScopedPermission);
+export const hasRoleScope = (permissions: PermissionKey[], roleScopedPermission: PermissionKey) =>
+  permissions.includes('admin') || permissions.includes(roleScopedPermission);
 
 export const getViewableRoleKeys = (
   currentUser: Pick<User, 'id' | 'role'> | null,
@@ -160,9 +158,7 @@ export const canAssignAcrossRoles = (
   if (!normalizedSource || !normalizedTarget) {
     return false;
   }
-  const sourceAllowed = new Set(
-    normalizeRoleKeys(sourceRelations?.[moduleKey]?.canAssignToRoles),
-  );
+  const sourceAllowed = new Set(normalizeRoleKeys(sourceRelations?.[moduleKey]?.canAssignToRoles));
   if (!sourceAllowed.has(normalizedTarget)) {
     return false;
   }
