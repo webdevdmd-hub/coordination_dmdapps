@@ -29,7 +29,6 @@ type CustomerFormState = {
   firstName: string;
   lastName: string;
   displayName: string;
-  displayNameSecondary: string;
   vatNumber: string;
   website: string;
   workPhone: string;
@@ -147,7 +146,6 @@ export default function Page() {
     firstName: '',
     lastName: '',
     displayName: '',
-    displayNameSecondary: '',
     vatNumber: '',
     website: '',
     workPhone: '',
@@ -463,7 +461,6 @@ export default function Page() {
       firstName: customer.firstName ?? parsedContactName.firstName,
       lastName: customer.lastName ?? parsedContactName.lastName,
       displayName: customer.displayName ?? customer.companyName,
-      displayNameSecondary: customer.displayNameSecondary ?? '',
       vatNumber: customer.vatNumber ?? '',
       website: customer.website ?? '',
       workPhone: customer.workPhone ?? customer.phone,
@@ -551,7 +548,6 @@ export default function Page() {
       firstName: formState.firstName.trim(),
       lastName: formState.lastName.trim(),
       displayName: (formState.displayName || nextCompanyName).trim(),
-      displayNameSecondary: formState.displayNameSecondary.trim(),
       vatNumber: formState.vatNumber.trim(),
       website: formState.website.trim(),
       workPhone: formState.workPhone.trim(),
@@ -1135,18 +1131,6 @@ export default function Page() {
                       </div>
                       <div>
                         <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                          Display name (secondary)
-                        </label>
-                        <input
-                          value={formState.displayNameSecondary}
-                          onChange={(event) =>
-                            updateField('displayNameSecondary', event.target.value)
-                          }
-                          className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
                           VAT number
                         </label>
                         <input
@@ -1331,15 +1315,6 @@ export default function Page() {
                             </option>
                           ))}
                         </select>
-                      </div>
-                      <div className="md:col-span-2 flex items-center gap-3 rounded-2xl border border-border/60 bg-bg/60 px-4 py-3 text-sm text-text">
-                        <input
-                          id="enable-portal"
-                          type="checkbox"
-                          checked={formState.enablePortal}
-                          onChange={(event) => updateField('enablePortal', event.target.checked)}
-                        />
-                        <label htmlFor="enable-portal">Allow portal access for this customer</label>
                       </div>
                     </div>
                   </div>

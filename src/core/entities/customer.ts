@@ -27,7 +27,6 @@ export type Customer = {
   firstName?: string;
   lastName?: string;
   displayName?: string;
-  displayNameSecondary?: string;
   vatNumber?: string;
   website?: string;
   workPhone?: string;

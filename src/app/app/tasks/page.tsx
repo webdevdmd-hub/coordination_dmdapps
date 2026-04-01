@@ -167,6 +167,7 @@ export default function Page() {
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
+  const [pendingTimerStopTask, setPendingTimerStopTask] = useState<Task | null>(null);
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
@@ -202,6 +203,14 @@ export default function Page() {
 
   const canEditEstimateDetails =
     !!user && (formState.assignedTo === user.id || formState.assignedUsers.includes(user.id));
+  const isFormAssignedTask = useMemo(
+    () =>
+      isAssignedTask({
+        assignedTo: formState.assignedTo,
+        assignedUsers: formState.assignedUsers,
+      }),
+    [formState.assignedTo, formState.assignedUsers],
+  );
 
   const logProjectActivity = async (projectId: string, note: string, type: string = 'task') => {
     if (!user) {
@@ -419,6 +428,12 @@ export default function Page() {
     () => isAssignedTask(selectedTask),
     [selectedTask],
   );
+  const isSelectedTaskStatusWorkflowLocked = useMemo(
+    () => isAssignedTask(selectedTask),
+    [selectedTask],
+  );
+  const getTaskStatusDisplay = (status: TaskStatus) =>
+    statusOptions.find((option) => option.value === status)?.label ?? status;
 
   const syncTasks = useCallback(
     (next: Task[]) => {
@@ -692,6 +707,8 @@ export default function Page() {
     const isRunning = !!task.timerStartedAt;
     const totalSeconds = getLiveDuration(task);
     const canTrack = canTrackTask(task);
+    const usesTimerWorkflow = isAssignedTask(task);
+    const canCompleteReviewedTask = usesTimerWorkflow && task.status === 'review' && !isRunning;
     const showDetails = variant !== 'kanban';
     const assigneeName = task.assignedTo
       ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo)
@@ -738,21 +755,42 @@ export default function Page() {
 
           <p className="text-sm text-text">{formatDate(task.dueDate)}</p>
 
-          <div>
-            <select
-              value={task.status}
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-              onChange={(event) => handleQuickStatusChange(task, event.target.value as TaskStatus)}
-              disabled={!canTrack || statusBusyId === task.id}
-              className="w-full rounded-xl border border-[#407056]/30 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-2">
+            {usesTimerWorkflow ? (
+              <span className="inline-flex w-fit rounded-xl border border-[#407056]/25 bg-[#407056]/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]">
+                {getTaskStatusDisplay(task.status)}
+              </span>
+            ) : (
+              <select
+                value={task.status}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                onChange={(event) =>
+                  handleQuickStatusChange(task, event.target.value as TaskStatus)
+                }
+                disabled={!canTrack || statusBusyId === task.id}
+                className="w-full rounded-xl border border-[#407056]/30 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {canCompleteReviewedTask ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleQuickStatusChange(task, 'done');
+                }}
+                disabled={!canTrack || statusBusyId === task.id}
+                className="rounded-xl border border-emerald-500/40 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {statusBusyId === task.id ? 'Updating...' : 'Mark done'}
+              </button>
+            ) : null}
           </div>
 
           <span className="inline-flex w-fit rounded-full border border-[#407056]/25 bg-[#407056]/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]">
@@ -794,7 +832,7 @@ export default function Page() {
         key={task.id}
         role="button"
         tabIndex={0}
-        draggable={variant === 'kanban'}
+        draggable={variant === 'kanban' && !usesTimerWorkflow}
         onDragStart={
           variant === 'kanban'
             ? (event) => {
@@ -864,20 +902,26 @@ export default function Page() {
         ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <select
-            value={task.status}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onChange={(event) => handleQuickStatusChange(task, event.target.value as TaskStatus)}
-            disabled={!canTrack || statusBusyId === task.id}
-            className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          {usesTimerWorkflow ? (
+            <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-text">
+              {getTaskStatusDisplay(task.status)}
+            </span>
+          ) : (
+            <select
+              value={task.status}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              onChange={(event) => handleQuickStatusChange(task, event.target.value as TaskStatus)}
+              disabled={!canTrack || statusBusyId === task.id}
+              className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {statusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             onClick={(event) => {
@@ -897,6 +941,19 @@ export default function Page() {
           >
             {timerBusyId === task.id ? 'Updating...' : isRunning ? 'Stop timer' : 'Start timer'}
           </button>
+          {canCompleteReviewedTask ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleQuickStatusChange(task, 'done');
+              }}
+              disabled={!canTrack || statusBusyId === task.id}
+              className="rounded-full border border-emerald-500 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {statusBusyId === task.id ? 'Updating...' : 'Mark done'}
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -1040,7 +1097,12 @@ export default function Page() {
         description: formState.description.trim(),
         assignedTo: formState.assignedTo,
         assignedUsers: formState.assignedUsers,
-        status: formState.status,
+        status:
+          isEditing && isSelectedTaskStatusWorkflowLocked && selectedTask
+            ? selectedTask.status
+            : isFormAssignedTask
+              ? 'todo'
+              : formState.status,
         priority:
           isEditing && isSelectedTaskAssignmentLocked && selectedTask
             ? selectedTask.priority
@@ -1048,7 +1110,14 @@ export default function Page() {
         recurrence: formState.recurrence,
         quotationNumber: formState.quotationNumber,
         startDate: formState.startDate,
-        endDate: formState.status === 'done' ? todayKey() : formState.endDate,
+        endDate:
+          (isEditing && isSelectedTaskStatusWorkflowLocked && selectedTask
+            ? selectedTask.status
+            : isFormAssignedTask
+              ? 'todo'
+              : formState.status) === 'done'
+            ? todayKey()
+            : formState.endDate,
         dueDate:
           isEditing && isSelectedTaskAssignmentLocked && selectedTask
             ? selectedTask.dueDate
@@ -1227,10 +1296,15 @@ export default function Page() {
     try {
       const startedAt = new Date().toISOString();
       const startedDate = todayKey();
+      const nextStatus = isAssignedTask(task)
+        ? 'in-progress'
+        : task.status === 'todo'
+          ? 'in-progress'
+          : task.status;
       const updated = await firebaseTaskRepository.update(task.id, {
         timerStartedAt: startedAt,
         startDate: startedDate,
-        status: task.status === 'todo' ? 'in-progress' : task.status,
+        status: nextStatus,
         updatedAt: startedAt,
       });
       updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
@@ -1280,6 +1354,10 @@ export default function Page() {
     const startedMs = Date.parse(task.timerStartedAt);
     if (Number.isNaN(startedMs)) {
       setError('Unable to read the timer start time.');
+      return;
+    }
+    if (isAssignedTask(task)) {
+      setPendingTimerStopTask(task);
       return;
     }
     setTimerBusyId(task.id);
@@ -1333,6 +1411,82 @@ export default function Page() {
     }
   };
 
+  const handleFinalizeTaskTimerStop = async (task: Task, nextStep: 'break' | 'review') => {
+    if (!user) {
+      setError('You must be signed in to stop timers.');
+      return;
+    }
+    if (!canTrackTask(task)) {
+      setError('You do not have permission to stop this timer.');
+      return;
+    }
+    if (!task.timerStartedAt) {
+      return;
+    }
+    const startedMs = Date.parse(task.timerStartedAt);
+    if (Number.isNaN(startedMs)) {
+      setError('Unable to read the timer start time.');
+      return;
+    }
+    setTimerBusyId(task.id);
+    setError(null);
+    try {
+      const stoppedAt = new Date().toISOString();
+      const stoppedDate = todayKey();
+      const durationSeconds = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+      const totalSeconds = (task.totalTrackedSeconds ?? 0) + durationSeconds;
+      const nextStatus = nextStep === 'review' ? 'review' : task.status;
+      const updated = await firebaseTaskRepository.update(task.id, {
+        timerStartedAt: '',
+        lastTimerStoppedAt: stoppedAt,
+        lastTimerDurationSeconds: durationSeconds,
+        totalTrackedSeconds: totalSeconds,
+        endDate: stoppedDate,
+        status: nextStatus,
+        updatedAt: stoppedAt,
+      });
+      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      const recipients = buildRecipientList(
+        updated.createdBy,
+        [updated.assignedTo, ...(updated.assignedUsers ?? [])],
+        user.id,
+      );
+      await emitNotificationEventSafe({
+        type: 'task.timer_stopped',
+        title: nextStep === 'review' ? 'Task Sent To Review' : 'Task Timer Stopped',
+        body:
+          nextStep === 'review'
+            ? `${user.fullName} stopped the timer for ${updated.title} and moved it to review.`
+            : `${user.fullName} stopped the timer for ${updated.title}.`,
+        actorId: user.id,
+        recipients,
+        entityType: 'task',
+        entityId: updated.id,
+        requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
+        meta: {
+          durationSeconds,
+          totalSeconds,
+          status: updated.status,
+        },
+      });
+      const note =
+        nextStep === 'review'
+          ? `Task moved to review: ${task.title}. Duration ${formatDuration(durationSeconds)}. Total ${formatDuration(totalSeconds)}.`
+          : `Task timer stopped: ${task.title}. Duration ${formatDuration(durationSeconds)}. Total ${formatDuration(totalSeconds)}.`;
+      if (task.projectId) {
+        await logProjectActivity(task.projectId, note);
+      }
+      if (task.leadId) {
+        await logLeadActivity(task.leadId, note);
+      }
+    } catch {
+      setError('Unable to stop timer. Please try again.');
+    } finally {
+      setPendingTimerStopTask(null);
+      setTimerBusyId(null);
+    }
+  };
+
   const handleQuickStatusChange = async (task: Task, nextStatus: TaskStatus) => {
     if (!user) {
       setError('You must be signed in to update task status.');
@@ -1342,7 +1496,19 @@ export default function Page() {
       setError('You do not have permission to update this task status.');
       return;
     }
+    if (isAssignedTask(task)) {
+      if (nextStatus === 'done' && task.status === 'review') {
+        // Allow completion after review through the dedicated action.
+      } else {
+        setError('Assigned task status is controlled by timer actions and review completion.');
+        return;
+      }
+    }
     if (nextStatus === task.status) {
+      return;
+    }
+    if (nextStatus === 'done' && task.status !== 'review') {
+      setError('A task must be moved to review before it can be marked as done.');
       return;
     }
     setStatusBusyId(task.id);
@@ -1430,6 +1596,10 @@ export default function Page() {
     setDraggingTaskId(null);
     setDragOverStatus(null);
     if (!task || task.status === status) {
+      return;
+    }
+    if (isAssignedTask(task)) {
+      setError('Assigned task status is controlled by timer actions and review completion.');
       return;
     }
     await handleQuickStatusChange(task, status);
@@ -1829,7 +1999,8 @@ export default function Page() {
                           status: event.target.value as TaskStatus,
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                      disabled={isFormAssignedTask || isSelectedTaskStatusWorkflowLocked}
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
                     >
                       {statusOptions.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -1837,6 +2008,11 @@ export default function Page() {
                         </option>
                       ))}
                     </select>
+                    {isFormAssignedTask || isSelectedTaskStatusWorkflowLocked ? (
+                      <p className="mt-2 text-xs text-muted">
+                        Assigned tasks move through status via timer actions only.
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
@@ -2032,6 +2208,68 @@ export default function Page() {
           </DraggablePanel>
         </div>
       )}
+
+      {pendingTimerStopTask ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
+          onClick={() => setPendingTimerStopTask(null)}
+        >
+          <DraggablePanel
+            className="w-full max-w-lg rounded-3xl border border-border/60 bg-surface/95 p-6 shadow-floating"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+              Stop timer
+            </p>
+            <h3 className="mt-2 font-display text-2xl text-text">Choose the next step</h3>
+            <p className="mt-3 text-sm text-muted">
+              Stopping the timer records the current time. You can either pause work or move the
+              task to review.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void handleFinalizeTaskTimerStop(pendingTimerStopTask, 'break')}
+                disabled={timerBusyId === pendingTimerStopTask.id}
+                className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="block font-semibold uppercase tracking-[0.18em] text-text">
+                  Take a Break
+                </span>
+                <span className="mt-1 block text-muted">
+                  Stop the timer and keep the task in its current working state.
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleFinalizeTaskTimerStop(pendingTimerStopTask, 'review')}
+                disabled={timerBusyId === pendingTimerStopTask.id}
+                className="rounded-2xl border border-emerald-500/40 bg-emerald-50 px-4 py-3 text-left text-sm text-emerald-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="block font-semibold uppercase tracking-[0.18em]">
+                  Proceed to Review
+                </span>
+                <span className="mt-1 block text-emerald-800/80">
+                  Stop the timer and move the task into review.
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingTimerStopTask(null)}
+                disabled={timerBusyId === pendingTimerStopTask.id}
+                className="rounded-full border border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          </DraggablePanel>
+        </div>
+      ) : null}
     </div>
   );
 }
