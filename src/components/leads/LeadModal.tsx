@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   findCustomerByEmail,
@@ -110,6 +110,8 @@ const RFQ_PRIORITY_OPTIONS: Array<{ value: 'low' | 'medium' | 'high'; label: str
 
 const normalizeRfqTag = (value: string) => value.trim().toLowerCase();
 
+const LEAD_MODAL_DRAFT_STORAGE_KEY = 'lead-details-modal-draft';
+
 export function LeadModal({
   lead,
   ownerNameMap,
@@ -178,6 +180,42 @@ export function LeadModal({
     status: 'new' as LeadStatus,
   });
 
+  const getLeadDraftStorageKey = useCallback(
+    (leadId: string) => {
+      const actorId = user?.id ?? currentUserId ?? 'anonymous';
+      return [LEAD_MODAL_DRAFT_STORAGE_KEY, actorId, leadId].join(':');
+    },
+    [currentUserId, user?.id],
+  );
+
+  const readLeadDraft = useCallback(
+    (leadId: string) => {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(getLeadDraftStorageKey(leadId));
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as { formState?: typeof formState; isEditing?: boolean };
+      } catch {
+        return null;
+      }
+    },
+    [getLeadDraftStorageKey],
+  );
+
+  const clearLeadDraft = useCallback(
+    (leadId: string) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(getLeadDraftStorageKey(leadId));
+    },
+    [getLeadDraftStorageKey],
+  );
+
   const canAssignCustomers =
     !!user && hasPermission(user.permissions, ['admin', 'customer_assign']);
 
@@ -214,6 +252,7 @@ export function LeadModal({
     if (!lead) {
       return;
     }
+    const draft = readLeadDraft(lead.id);
     setIsEditing(false);
     setIsAddingSource(false);
     setIsFabOpen(false);
@@ -247,7 +286,7 @@ export function LeadModal({
       status: (lead.status as CustomerStatus) ?? 'active',
       assignedTo: lead.ownerId,
     });
-    setFormState({
+    const baseFormState = {
       name: lead.name,
       company: lead.company,
       email: lead.email,
@@ -255,8 +294,24 @@ export function LeadModal({
       value: String(lead.value ?? ''),
       source: lead.source,
       status: lead.status as LeadStatus,
-    });
-  }, [lead]);
+    };
+    setFormState(draft?.formState ? { ...baseFormState, ...draft.formState } : baseFormState);
+    setIsEditing(draft?.isEditing ?? false);
+  }, [lead, readLeadDraft]);
+
+  useEffect(() => {
+    if (!lead || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        getLeadDraftStorageKey(lead.id),
+        JSON.stringify({ formState, isEditing }),
+      );
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [formState, getLeadDraftStorageKey, isEditing, lead]);
 
   useEffect(() => {
     if (!lead) {
@@ -533,6 +588,7 @@ export function LeadModal({
     });
     setIsSaving(false);
     if (success) {
+      clearLeadDraft(lead.id);
       setIsEditing(false);
       const refreshed = await firebaseLeadRepository.listActivities(lead.id);
       setActivities(refreshed);
@@ -551,6 +607,7 @@ export function LeadModal({
     const success = await onDelete(lead.id);
     setIsDeleting(false);
     if (success) {
+      clearLeadDraft(lead.id);
       onClose();
     }
   };

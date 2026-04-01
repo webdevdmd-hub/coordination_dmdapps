@@ -84,6 +84,8 @@ const boardPriorityColor: Record<TaskPriority, string> = {
   urgent: 'bg-red-100 text-red-700 border border-red-200',
 };
 
+const TASK_MODAL_DRAFT_STORAGE_KEY = 'tasks-modal-draft';
+
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
 const formatDate = (value: string) => {
@@ -198,6 +200,70 @@ export default function Page() {
     isRevision: false,
     revisionNumber: '',
   });
+
+  const buildTaskFormState = (task: Task): TaskFormState => ({
+    title: task.title,
+    description: task.description,
+    assignedTo: task.assignedTo,
+    assignedUsers: task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []),
+    status: task.status,
+    priority: task.priority,
+    recurrence: task.recurrence,
+    quotationNumber: task.quotationNumber ?? '',
+    startDate: task.startDate,
+    endDate: task.endDate,
+    dueDate: task.dueDate,
+    parentTaskId: task.parentTaskId ?? '',
+    projectId: task.projectId ?? '',
+    referenceModelNumber: task.referenceModelNumber ?? '',
+    estimateNumber: task.estimateNumber ?? '',
+    estimateAmount:
+      typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
+        ? String(task.estimateAmount)
+        : '',
+    isRevision: task.isRevision === true,
+    revisionNumber: task.revisionNumber ?? '',
+  });
+
+  const getTaskDraftStorageKey = useCallback(
+    (taskId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [TASK_MODAL_DRAFT_STORAGE_KEY, user.id, taskId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readTaskDraft = useCallback(
+    (taskId: string | null) => {
+      const storageKey = getTaskDraftStorageKey(taskId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as Partial<TaskFormState>;
+      } catch {
+        return null;
+      }
+    },
+    [getTaskDraftStorageKey],
+  );
+
+  const clearTaskDraft = useCallback(
+    (taskId: string | null) => {
+      const storageKey = getTaskDraftStorageKey(taskId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getTaskDraftStorageKey],
+  );
 
   const [formState, setFormState] = useState<TaskFormState>(() => emptyTask(''));
 
@@ -964,35 +1030,17 @@ export default function Page() {
       return;
     }
     setSelectedTask(null);
-    setFormState(emptyTask(''));
+    const baseState = emptyTask('');
+    const draft = readTaskDraft(null);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (task: Task) => {
     setSelectedTask(task);
-    setFormState({
-      title: task.title,
-      description: task.description,
-      assignedTo: task.assignedTo,
-      assignedUsers: task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []),
-      status: task.status,
-      priority: task.priority,
-      recurrence: task.recurrence,
-      quotationNumber: task.quotationNumber ?? '',
-      startDate: task.startDate,
-      endDate: task.endDate,
-      dueDate: task.dueDate,
-      parentTaskId: task.parentTaskId ?? '',
-      projectId: task.projectId ?? '',
-      referenceModelNumber: task.referenceModelNumber ?? '',
-      estimateNumber: task.estimateNumber ?? '',
-      estimateAmount:
-        typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
-          ? String(task.estimateAmount)
-          : '',
-      isRevision: task.isRevision === true,
-      revisionNumber: task.revisionNumber ?? '',
-    });
+    const baseState = buildTaskFormState(task);
+    const draft = readTaskDraft(task.id);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
     setIsEditOpen(true);
   };
 
@@ -1000,6 +1048,21 @@ export default function Page() {
     setIsCreateOpen(false);
     setIsEditOpen(false);
   };
+
+  useEffect(() => {
+    if ((!isCreateOpen && !isEditOpen) || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getTaskDraftStorageKey(selectedTask?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(formState));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [formState, getTaskDraftStorageKey, isCreateOpen, isEditOpen, selectedTask, user]);
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1143,6 +1206,7 @@ export default function Page() {
           ...estimatePayload,
           updatedAt: new Date().toISOString(),
         });
+        clearTaskDraft(selectedTask.id);
         const updatedAssignedUsers =
           updated.assignedUsers ?? (updated.assignedTo ? [updated.assignedTo] : []);
         const previousAssignedUsers =
@@ -1251,6 +1315,7 @@ export default function Page() {
           sharedRoles: [],
           createdBy: user.id,
         });
+        clearTaskDraft(null);
         updateTasks((prev) => [created, ...prev]);
         const recipients = buildAssignedRecipients(
           created.assignedTo,
@@ -1628,6 +1693,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseTaskRepository.delete(selectedTask.id);
+      clearTaskDraft(selectedTask.id);
       updateTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
       handleCloseModal();
     } catch {

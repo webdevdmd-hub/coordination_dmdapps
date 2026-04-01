@@ -112,6 +112,8 @@ const statusStyles: Record<CustomerStatus, string> = {
   lost: 'bg-rose-500/20 text-rose-200',
 };
 
+const CUSTOMER_MODAL_DRAFT_STORAGE_KEY = 'customers-modal-draft';
+
 export default function Page() {
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
@@ -165,6 +167,80 @@ export default function Page() {
     assignedTo,
     sharedRoles: [],
   });
+
+  const buildCustomerFormState = (customer: Customer): CustomerFormState => {
+    const parsedContactName = parseContactName(customer.contactPerson);
+    return {
+      companyName: customer.companyName,
+      contactPerson: customer.contactPerson,
+      email: customer.email,
+      phone: customer.phone,
+      salutation: customer.salutation ?? '',
+      firstName: customer.firstName ?? parsedContactName.firstName,
+      lastName: customer.lastName ?? parsedContactName.lastName,
+      displayName: customer.displayName ?? customer.companyName,
+      vatNumber: customer.vatNumber ?? '',
+      website: customer.website ?? '',
+      workPhone: customer.workPhone ?? customer.phone,
+      mobile: customer.mobile ?? '',
+      customerLanguage: customer.customerLanguage ?? 'English',
+      currency: customer.currency ?? 'AED - UAE Dirham',
+      taxTreatment: customer.taxTreatment ?? '',
+      placeOfSupply: customer.placeOfSupply ?? '',
+      paymentTerms: customer.paymentTerms ?? '',
+      enablePortal: customer.enablePortal ?? false,
+      billingAddress: customer.billingAddress ?? emptyAddress(),
+      shippingAddress: customer.shippingAddress ?? customer.billingAddress ?? emptyAddress(),
+      useBillingAsShipping:
+        !customer.shippingAddress ||
+        addressesMatch(customer.billingAddress, customer.shippingAddress),
+      remarks: customer.remarks ?? '',
+      source: customer.source,
+      status: customer.status,
+      assignedTo: customer.assignedTo,
+      sharedRoles: customer.sharedRoles ?? [],
+    };
+  };
+
+  const getCustomerDraftStorageKey = useCallback(
+    (customerId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [CUSTOMER_MODAL_DRAFT_STORAGE_KEY, user.id, customerId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readCustomerDraft = useCallback(
+    (customerId: string | null) => {
+      const storageKey = getCustomerDraftStorageKey(customerId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as Partial<CustomerFormState>;
+      } catch {
+        return null;
+      }
+    },
+    [getCustomerDraftStorageKey],
+  );
+
+  const clearCustomerDraft = useCallback(
+    (customerId: string | null) => {
+      const storageKey = getCustomerDraftStorageKey(customerId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getCustomerDraftStorageKey],
+  );
 
   const [formState, setFormState] = useState<CustomerFormState>(() =>
     emptyCustomer(user?.id ?? ''),
@@ -444,44 +520,18 @@ export default function Page() {
       return;
     }
     setSelectedCustomer(null);
-    setFormState(emptyCustomer(user.id));
+    const baseState = emptyCustomer(user.id);
+    const draft = readCustomerDraft(null);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
     setCustomerFormTab('details');
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (customer: Customer) => {
-    const parsedContactName = parseContactName(customer.contactPerson);
     setSelectedCustomer(customer);
-    setFormState({
-      companyName: customer.companyName,
-      contactPerson: customer.contactPerson,
-      email: customer.email,
-      phone: customer.phone,
-      salutation: customer.salutation ?? '',
-      firstName: customer.firstName ?? parsedContactName.firstName,
-      lastName: customer.lastName ?? parsedContactName.lastName,
-      displayName: customer.displayName ?? customer.companyName,
-      vatNumber: customer.vatNumber ?? '',
-      website: customer.website ?? '',
-      workPhone: customer.workPhone ?? customer.phone,
-      mobile: customer.mobile ?? '',
-      customerLanguage: customer.customerLanguage ?? 'English',
-      currency: customer.currency ?? 'AED - UAE Dirham',
-      taxTreatment: customer.taxTreatment ?? '',
-      placeOfSupply: customer.placeOfSupply ?? '',
-      paymentTerms: customer.paymentTerms ?? '',
-      enablePortal: customer.enablePortal ?? false,
-      billingAddress: customer.billingAddress ?? emptyAddress(),
-      shippingAddress: customer.shippingAddress ?? customer.billingAddress ?? emptyAddress(),
-      useBillingAsShipping:
-        !customer.shippingAddress ||
-        addressesMatch(customer.billingAddress, customer.shippingAddress),
-      remarks: customer.remarks ?? '',
-      source: customer.source,
-      status: customer.status,
-      assignedTo: customer.assignedTo,
-      sharedRoles: customer.sharedRoles ?? [],
-    });
+    const baseState = buildCustomerFormState(customer);
+    const draft = readCustomerDraft(customer.id);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
     setCustomerFormTab('details');
     setIsEditOpen(true);
   };
@@ -508,6 +558,21 @@ export default function Page() {
     setIsEditOpen(false);
     setCustomerFormTab('details');
   };
+
+  useEffect(() => {
+    if ((!isCreateOpen && !isEditOpen) || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getCustomerDraftStorageKey(selectedCustomer?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(formState));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [formState, getCustomerDraftStorageKey, isCreateOpen, isEditOpen, selectedCustomer, user]);
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -597,12 +662,14 @@ export default function Page() {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
+        clearCustomerDraft(selectedCustomer.id);
         updateCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       } else {
         const created = await firebaseCustomerRepository.create({
           ...updates,
           createdBy: user.id,
         });
+        clearCustomerDraft(null);
         updateCustomers((prev) => [created, ...prev]);
       }
       handleCloseModal();
@@ -636,6 +703,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseCustomerRepository.delete(selectedCustomer.id);
+      clearCustomerDraft(selectedCustomer.id);
       updateCustomers((prev) => prev.filter((item) => item.id !== selectedCustomer.id));
       handleCloseModal();
     } catch {

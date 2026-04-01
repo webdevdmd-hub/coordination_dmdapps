@@ -188,6 +188,8 @@ const getNextOccurrenceStart = (date: Date, recurrenceType: TaskRecurrence) => {
   }
 };
 
+const CALENDAR_MODAL_DRAFT_STORAGE_KEY = 'calendar-modal-draft';
+
 export default function Page() {
   const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -207,6 +209,64 @@ export default function Page() {
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [formState, setFormState] = useState<CalendarFormState>(() =>
     createEmptyForm('', toDateKey(new Date())),
+  );
+
+  const buildCalendarFormState = (event: CalendarEvent): CalendarFormState => ({
+    title: event.title,
+    description: event.description ?? '',
+    startDate: event.startDate,
+    endDate: event.endDate,
+    type: event.type,
+    category: event.category,
+    ownerId: event.ownerId,
+    leadId: event.leadId ?? '',
+    isAllDay: event.is_all_day ?? true,
+    recurrenceType: event.recurrence_type ?? 'none',
+    startTime: event.startTime ?? '09:00',
+    endTime: event.endTime ?? '10:00',
+  });
+
+  const getCalendarDraftStorageKey = useCallback(
+    (eventId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [CALENDAR_MODAL_DRAFT_STORAGE_KEY, user.id, eventId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readCalendarDraft = useCallback(
+    (eventId: string | null) => {
+      const storageKey = getCalendarDraftStorageKey(eventId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as {
+          formState?: Partial<CalendarFormState>;
+          isDescriptionOpen?: boolean;
+        };
+      } catch {
+        return null;
+      }
+    },
+    [getCalendarDraftStorageKey],
+  );
+
+  const clearCalendarDraft = useCallback(
+    (eventId: string | null) => {
+      const storageKey = getCalendarDraftStorageKey(eventId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getCalendarDraftStorageKey],
   );
 
   const canView = !!user && hasPermission(user.permissions, ['admin', 'calendar_view']);
@@ -772,30 +832,36 @@ export default function Page() {
       (viewMode === 'day' || viewMode === 'week' || viewMode === 'four_days'
         ? selectedDate
         : toDateKey(new Date()));
-    setFormState(createEmptyForm(user.id, targetDate));
-    setIsDescriptionOpen(false);
+    const baseState = createEmptyForm(user.id, targetDate);
+    const draft = readCalendarDraft(null);
+    setFormState(draft?.formState ? { ...baseState, ...draft.formState } : baseState);
+    setIsDescriptionOpen(draft?.isDescriptionOpen ?? false);
     setIsCreateOpen(true);
   };
 
   const openEditModal = (event: CalendarEvent) => {
     setEditingEvent(event);
-    setFormState({
-      title: event.title,
-      description: event.description ?? '',
-      startDate: event.startDate,
-      endDate: event.endDate,
-      type: event.type,
-      category: event.category,
-      ownerId: event.ownerId,
-      leadId: event.leadId ?? '',
-      isAllDay: event.is_all_day ?? true,
-      recurrenceType: event.recurrence_type ?? 'none',
-      startTime: event.startTime ?? '09:00',
-      endTime: event.endTime ?? '10:00',
-    });
-    setIsDescriptionOpen(Boolean(event.description));
+    const baseState = buildCalendarFormState(event);
+    const draft = readCalendarDraft(event.id);
+    setFormState(draft?.formState ? { ...baseState, ...draft.formState } : baseState);
+    setIsDescriptionOpen(draft?.isDescriptionOpen ?? Boolean(event.description));
     setIsCreateOpen(true);
   };
+
+  useEffect(() => {
+    if (!isCreateOpen || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getCalendarDraftStorageKey(editingEvent?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ formState, isDescriptionOpen }));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [editingEvent, formState, getCalendarDraftStorageKey, isCreateOpen, isDescriptionOpen, user]);
 
   const openEditModalById = (eventId: string) => {
     const sourceEvent = events.find((entry) => entry.id === eventId);
@@ -879,6 +945,7 @@ export default function Page() {
         const updated = await firebaseCalendarRepository.update(editingEvent.id, {
           ...calendarPayload,
         });
+        clearCalendarDraft(editingEvent.id);
         updateEvents((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         await emitNotificationEventSafe({
           type: 'calendar.broadcast',
@@ -948,6 +1015,7 @@ export default function Page() {
         const created = await firebaseCalendarRepository.create({
           ...calendarPayload,
         });
+        clearCalendarDraft(null);
         updateEvents((prev) => [created, ...prev]);
         await emitNotificationEventSafe({
           type: 'calendar.broadcast',
@@ -1001,6 +1069,7 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseCalendarRepository.delete(editingEvent.id);
+      clearCalendarDraft(editingEvent.id);
       updateEvents((prev) => prev.filter((item) => item.id !== editingEvent.id));
       setIsCreateOpen(false);
     } catch {

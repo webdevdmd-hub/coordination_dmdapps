@@ -44,6 +44,8 @@ const createLeadStatusOptions: Array<{ label: string; value: LeadStatus }> = [
   { label: 'Lost', value: 'lost' },
 ];
 
+const LEAD_CREATE_DRAFT_STORAGE_KEY = 'leads-create-modal-draft';
+
 export default function Page() {
   const { user } = useAuth();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -66,6 +68,41 @@ export default function Page() {
     value: '',
     source: '',
   });
+
+  const getLeadCreateDraftStorageKey = useCallback(() => {
+    if (!user) {
+      return null;
+    }
+    return [LEAD_CREATE_DRAFT_STORAGE_KEY, user.id].join(':');
+  }, [user]);
+
+  const readLeadCreateDraft = useCallback(() => {
+    const storageKey = getLeadCreateDraftStorageKey();
+    if (!storageKey || typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        return null;
+      }
+      return JSON.parse(raw) as {
+        newLead?: typeof newLead;
+        isAddingSource?: boolean;
+        newSourceName?: string;
+      };
+    } catch {
+      return null;
+    }
+  }, [getLeadCreateDraftStorageKey]);
+
+  const clearLeadCreateDraft = useCallback(() => {
+    const storageKey = getLeadCreateDraftStorageKey();
+    if (!storageKey || typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.removeItem(storageKey);
+  }, [getLeadCreateDraftStorageKey]);
 
   const defaultLeadSources = useMemo(
     () => ['Referral', 'Email Campaign', 'Website', 'Cold Call', 'Event', 'Partner'],
@@ -329,6 +366,38 @@ export default function Page() {
     }
   }, [user, hasUserVisibility]);
 
+  useEffect(() => {
+    if (!isCreateOpen || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getLeadCreateDraftStorageKey();
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({ newLead, isAddingSource, newSourceName }),
+      );
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [getLeadCreateDraftStorageKey, isAddingSource, isCreateOpen, newLead, newSourceName, user]);
+
+  const handleOpenCreateLead = () => {
+    const draft = readLeadCreateDraft();
+    if (draft?.newLead) {
+      setNewLead(draft.newLead);
+    }
+    setIsAddingSource(draft?.isAddingSource ?? false);
+    setNewSourceName(draft?.newSourceName ?? '');
+    setIsCreateOpen(true);
+  };
+
+  const handleCloseCreateLead = () => {
+    setIsCreateOpen(false);
+  };
+
   const handleCreateLead = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user) {
@@ -360,6 +429,7 @@ export default function Page() {
       });
       updateLeads((prev) => [created, ...prev]);
       setSearch('');
+      clearLeadCreateDraft();
       setIsCreateOpen(false);
       setIsAddingSource(false);
       setNewSourceName('');
@@ -566,7 +636,7 @@ export default function Page() {
             {canCreateLead ? (
               <button
                 type="button"
-                onClick={() => setIsCreateOpen(true)}
+                onClick={handleOpenCreateLead}
                 className="rounded-2xl border border-[#00B67A]/30 bg-[#00B67A] px-6 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_20px_rgba(0,182,122,0.22)] transition hover:-translate-y-[1px] hover:bg-[#009f6b]"
               >
                 + New Lead
@@ -832,7 +902,7 @@ export default function Page() {
                 {canCreateLead ? (
                   <button
                     type="button"
-                    onClick={() => setIsCreateOpen(true)}
+                    onClick={handleOpenCreateLead}
                     className="rounded-3xl border-2 border-dashed border-border bg-[var(--surface-soft)] p-8 text-center transition hover:bg-[var(--surface-muted)]"
                   >
                     <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[var(--surface-muted)] text-4xl text-muted">
@@ -885,7 +955,7 @@ export default function Page() {
         <div
           data-modal-overlay="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
-          onClick={() => setIsCreateOpen(false)}
+          onClick={handleCloseCreateLead}
         >
           <DraggablePanel
             className="w-full max-w-2xl rounded-3xl border border-border/60 bg-surface/95 p-6 shadow-floating"
@@ -901,9 +971,7 @@ export default function Page() {
               <button
                 type="button"
                 onClick={() => {
-                  setIsCreateOpen(false);
-                  setIsAddingSource(false);
-                  setNewSourceName('');
+                  handleCloseCreateLead();
                 }}
                 className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80"
               >

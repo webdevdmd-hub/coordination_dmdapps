@@ -93,6 +93,9 @@ const calculateTotals = (items: QuotationLineItem[], taxRate: number) => {
   return { subtotal, taxAmount, total, taxRate: safeTax };
 };
 
+const QUOTATION_MODAL_DRAFT_STORAGE_KEY = 'quotations-modal-draft';
+const QUOTATION_QUICK_PROJECT_DRAFT_STORAGE_KEY = 'quotations-quick-project-draft';
+
 export default function Page() {
   const { user } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -140,6 +143,21 @@ export default function Page() {
     sharedRoles: [],
   });
 
+  const buildQuotationFormState = (quote: Quotation): QuotationFormState => ({
+    quoteNumber: quote.quoteNumber,
+    validUntil: quote.validUntil,
+    customerId: quote.customerId,
+    customerName: quote.customerName,
+    projectId: quote.projectId ?? '',
+    projectName: quote.projectName ?? '',
+    status: quote.status,
+    lineItems: quote.lineItems.length ? quote.lineItems : [createLineItem()],
+    notes: quote.notes,
+    taxRate: quote.taxRate ?? 0,
+    assignedTo: quote.assignedTo,
+    sharedRoles: quote.sharedRoles ?? [],
+  });
+
   const [formState, setFormState] = useState<QuotationFormState>(() =>
     emptyQuotation(user?.id ?? ''),
   );
@@ -148,6 +166,89 @@ export default function Page() {
     dueDate: todayKey(),
     description: '',
   });
+
+  const getQuotationDraftStorageKey = useCallback(
+    (quotationId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [QUOTATION_MODAL_DRAFT_STORAGE_KEY, user.id, quotationId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readQuotationDraft = useCallback(
+    (quotationId: string | null) => {
+      const storageKey = getQuotationDraftStorageKey(quotationId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as Partial<QuotationFormState>;
+      } catch {
+        return null;
+      }
+    },
+    [getQuotationDraftStorageKey],
+  );
+
+  const clearQuotationDraft = useCallback(
+    (quotationId: string | null) => {
+      const storageKey = getQuotationDraftStorageKey(quotationId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getQuotationDraftStorageKey],
+  );
+
+  const getQuotationQuickProjectDraftStorageKey = useCallback(
+    (quotationId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [QUOTATION_QUICK_PROJECT_DRAFT_STORAGE_KEY, user.id, quotationId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readQuotationQuickProjectDraft = useCallback(
+    (quotationId: string | null) => {
+      const storageKey = getQuotationQuickProjectDraftStorageKey(quotationId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as {
+          quickAddProjectState?: ProjectQuickAddState;
+          isQuickAddProjectOpen?: boolean;
+        };
+      } catch {
+        return null;
+      }
+    },
+    [getQuotationQuickProjectDraftStorageKey],
+  );
+
+  const clearQuotationQuickProjectDraft = useCallback(
+    (quotationId: string | null) => {
+      const storageKey = getQuotationQuickProjectDraftStorageKey(quotationId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getQuotationQuickProjectDraftStorageKey],
+  );
 
   const totals = useMemo(
     () => calculateTotals(formState.lineItems, formState.taxRate),
@@ -458,32 +559,29 @@ export default function Page() {
       return;
     }
     setSelectedQuotation(null);
-    setFormState(emptyQuotation(user.id));
-    setIsQuickAddProjectOpen(false);
+    const baseState = emptyQuotation(user.id);
+    const draft = readQuotationDraft(null);
+    const quickProjectDraft = readQuotationQuickProjectDraft(null);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
+    setIsQuickAddProjectOpen(quickProjectDraft?.isQuickAddProjectOpen ?? false);
     setQuickAddProjectError(null);
-    setQuickAddProjectState({ name: '', dueDate: todayKey(), description: '' });
+    setQuickAddProjectState(
+      quickProjectDraft?.quickAddProjectState ?? { name: '', dueDate: todayKey(), description: '' },
+    );
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (quote: Quotation) => {
     setSelectedQuotation(quote);
-    setFormState({
-      quoteNumber: quote.quoteNumber,
-      validUntil: quote.validUntil,
-      customerId: quote.customerId,
-      customerName: quote.customerName,
-      projectId: quote.projectId ?? '',
-      projectName: quote.projectName ?? '',
-      status: quote.status,
-      lineItems: quote.lineItems.length ? quote.lineItems : [createLineItem()],
-      notes: quote.notes,
-      taxRate: quote.taxRate ?? 0,
-      assignedTo: quote.assignedTo,
-      sharedRoles: quote.sharedRoles ?? [],
-    });
-    setIsQuickAddProjectOpen(false);
+    const baseState = buildQuotationFormState(quote);
+    const draft = readQuotationDraft(quote.id);
+    const quickProjectDraft = readQuotationQuickProjectDraft(quote.id);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
+    setIsQuickAddProjectOpen(quickProjectDraft?.isQuickAddProjectOpen ?? false);
     setQuickAddProjectError(null);
-    setQuickAddProjectState({ name: '', dueDate: todayKey(), description: '' });
+    setQuickAddProjectState(
+      quickProjectDraft?.quickAddProjectState ?? { name: '', dueDate: todayKey(), description: '' },
+    );
     setIsEditOpen(true);
   };
 
@@ -493,6 +591,47 @@ export default function Page() {
     setIsQuickAddProjectOpen(false);
     setQuickAddProjectError(null);
   };
+
+  useEffect(() => {
+    if (!(isCreateOpen || isEditOpen) || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getQuotationDraftStorageKey(selectedQuotation?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(formState));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [formState, getQuotationDraftStorageKey, isCreateOpen, isEditOpen, selectedQuotation, user]);
+
+  useEffect(() => {
+    if (!(isCreateOpen || isEditOpen) || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getQuotationQuickProjectDraftStorageKey(selectedQuotation?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({ quickAddProjectState, isQuickAddProjectOpen }),
+      );
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [
+    getQuotationQuickProjectDraftStorageKey,
+    isCreateOpen,
+    isEditOpen,
+    isQuickAddProjectOpen,
+    quickAddProjectState,
+    selectedQuotation,
+    user,
+  ]);
 
   const handleSelectCustomer = (customerId: string) => {
     const customer = customers.find((item) => item.id === customerId);
@@ -569,6 +708,7 @@ export default function Page() {
         projectName: created.name,
       }));
       setQuickAddProjectState({ name: '', dueDate: todayKey(), description: '' });
+      clearQuotationQuickProjectDraft(selectedQuotation?.id ?? null);
       setIsQuickAddProjectOpen(false);
     } catch {
       setQuickAddProjectError('Unable to create project. Please try again.');
@@ -736,6 +876,8 @@ export default function Page() {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
+        clearQuotationDraft(selectedQuotation.id);
+        clearQuotationQuickProjectDraft(selectedQuotation.id);
         updateQuotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         await syncProjectTimelineForQuotation(updated, previousStatus);
       } else {
@@ -743,6 +885,8 @@ export default function Page() {
           ...updates,
           createdBy: user.id,
         });
+        clearQuotationDraft(null);
+        clearQuotationQuickProjectDraft(null);
         updateQuotations((prev) => [created, ...prev]);
         await syncProjectTimelineForQuotation(created);
       }
@@ -777,6 +921,8 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseQuotationRepository.delete(selectedQuotation.id);
+      clearQuotationDraft(selectedQuotation.id);
+      clearQuotationQuickProjectDraft(selectedQuotation.id);
       updateQuotations((prev) => prev.filter((item) => item.id !== selectedQuotation.id));
       handleCloseModal();
     } catch {

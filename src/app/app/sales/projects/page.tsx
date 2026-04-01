@@ -144,6 +144,9 @@ type ProjectActivity = {
 };
 
 const TIMELINE_PAGE_SIZE = 12;
+const PROJECT_MODAL_DRAFT_STORAGE_KEY = 'projects-modal-draft';
+const PROJECT_TASK_MODAL_DRAFT_STORAGE_KEY = 'projects-task-modal-draft';
+const PROJECT_SALES_ORDER_MODAL_DRAFT_STORAGE_KEY = 'projects-sales-order-modal-draft';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const emptySalesOrderForm = (): SalesOrderRequestFormState => ({
@@ -308,6 +311,19 @@ export default function Page() {
     sharedRoles: [],
   });
 
+  const buildProjectFormState = (project: Project): ProjectFormState => ({
+    name: project.name,
+    customerId: project.customerId,
+    customerName: project.customerName,
+    assignedTo: project.assignedTo,
+    startDate: project.startDate,
+    dueDate: project.dueDate,
+    value: String(project.value ?? ''),
+    status: project.status,
+    description: project.description,
+    sharedRoles: project.sharedRoles ?? [],
+  });
+
   const [formState, setFormState] = useState<ProjectFormState>(() => emptyProject(user?.id ?? ''));
 
   const emptyTask = (): ProjectTaskFormState => ({
@@ -324,7 +340,144 @@ export default function Page() {
     revisionNumber: '',
   });
 
+  const buildProjectTaskFormState = (task: Task): ProjectTaskFormState => ({
+    title: task.title,
+    description: task.description,
+    assignedUsers: task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []),
+    status: task.status,
+    priority: task.priority,
+    dueDate: task.dueDate ?? '',
+    referenceModelNumber: task.referenceModelNumber ?? '',
+    estimateNumber: task.estimateNumber ?? '',
+    estimateAmount:
+      typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
+        ? String(task.estimateAmount)
+        : '',
+    isRevision: task.isRevision === true,
+    revisionNumber: task.revisionNumber ?? '',
+  });
+
   const [taskFormState, setTaskFormState] = useState<ProjectTaskFormState>(() => emptyTask());
+
+  const getProjectDraftStorageKey = useCallback(
+    (projectId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [PROJECT_MODAL_DRAFT_STORAGE_KEY, user.id, projectId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readProjectDraft = useCallback(
+    (projectId: string | null) => {
+      const storageKey = getProjectDraftStorageKey(projectId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as Partial<ProjectFormState>;
+      } catch {
+        return null;
+      }
+    },
+    [getProjectDraftStorageKey],
+  );
+
+  const clearProjectDraft = useCallback(
+    (projectId: string | null) => {
+      const storageKey = getProjectDraftStorageKey(projectId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getProjectDraftStorageKey],
+  );
+
+  const getProjectTaskDraftStorageKey = useCallback(
+    (projectId: string, taskId: string | null) => {
+      if (!user) {
+        return null;
+      }
+      return [PROJECT_TASK_MODAL_DRAFT_STORAGE_KEY, user.id, projectId, taskId ?? 'new'].join(':');
+    },
+    [user],
+  );
+
+  const readProjectTaskDraft = useCallback(
+    (projectId: string, taskId: string | null) => {
+      const storageKey = getProjectTaskDraftStorageKey(projectId, taskId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as Partial<ProjectTaskFormState>;
+      } catch {
+        return null;
+      }
+    },
+    [getProjectTaskDraftStorageKey],
+  );
+
+  const clearProjectTaskDraft = useCallback(
+    (projectId: string, taskId: string | null) => {
+      const storageKey = getProjectTaskDraftStorageKey(projectId, taskId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getProjectTaskDraftStorageKey],
+  );
+
+  const getProjectSalesOrderDraftStorageKey = useCallback(
+    (projectId: string) => {
+      if (!user) {
+        return null;
+      }
+      return [PROJECT_SALES_ORDER_MODAL_DRAFT_STORAGE_KEY, user.id, projectId].join(':');
+    },
+    [user],
+  );
+
+  const readProjectSalesOrderDraft = useCallback(
+    (projectId: string) => {
+      const storageKey = getProjectSalesOrderDraftStorageKey(projectId);
+      if (!storageKey || typeof window === 'undefined') {
+        return null;
+      }
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return null;
+        }
+        return JSON.parse(raw) as Partial<SalesOrderRequestFormState>;
+      } catch {
+        return null;
+      }
+    },
+    [getProjectSalesOrderDraftStorageKey],
+  );
+
+  const clearProjectSalesOrderDraft = useCallback(
+    (projectId: string) => {
+      const storageKey = getProjectSalesOrderDraftStorageKey(projectId);
+      if (!storageKey || typeof window === 'undefined') {
+        return;
+      }
+      window.localStorage.removeItem(storageKey);
+    },
+    [getProjectSalesOrderDraftStorageKey],
+  );
 
   const ownerNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -747,24 +900,17 @@ export default function Page() {
       return;
     }
     setSelectedProject(null);
-    setFormState(emptyProject(user.id));
+    const baseState = emptyProject(user.id);
+    const draft = readProjectDraft(null);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
     setIsCreateOpen(true);
   };
 
   const handleOpenEdit = (project: Project) => {
     setSelectedProject(project);
-    setFormState({
-      name: project.name,
-      customerId: project.customerId,
-      customerName: project.customerName,
-      assignedTo: project.assignedTo,
-      startDate: project.startDate,
-      dueDate: project.dueDate,
-      value: String(project.value ?? ''),
-      status: project.status,
-      description: project.description,
-      sharedRoles: project.sharedRoles ?? [],
-    });
+    const baseState = buildProjectFormState(project);
+    const draft = readProjectDraft(project.id);
+    setFormState(draft ? { ...baseState, ...draft } : baseState);
     setIsEditOpen(true);
   };
 
@@ -818,6 +964,7 @@ export default function Page() {
         : fallbackEstimateTask;
 
     const baseForm = emptySalesOrderForm();
+    const draft = readProjectSalesOrderDraft(selectedProject.id);
     setSalesOrderFormState({
       ...baseForm,
       estimateNumber: prefillTask?.estimateNumber ?? '',
@@ -826,6 +973,7 @@ export default function Page() {
         Number.isFinite(prefillTask.estimateAmount)
           ? String(prefillTask.estimateAmount)
           : '',
+      ...draft,
     });
     setSalesOrderError(null);
     setSalesOrderSuccess(null);
@@ -921,6 +1069,7 @@ export default function Page() {
 
       const requestNo = data.requestNo ?? 'Sales Order Req';
       setSalesOrderSuccess(`${requestNo} submitted for approval.`);
+      clearProjectSalesOrderDraft(selectedProject.id);
       setSalesOrderFormState(emptySalesOrderForm());
     } catch {
       setSalesOrderError('Unable to submit Sales Order Req. Please try again.');
@@ -981,25 +1130,14 @@ export default function Page() {
     setTaskError(null);
     if (task) {
       setSelectedTask(task);
-      setTaskFormState({
-        title: task.title,
-        description: task.description,
-        assignedUsers: task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []),
-        status: task.status,
-        priority: task.priority,
-        dueDate: task.dueDate ?? '',
-        referenceModelNumber: task.referenceModelNumber ?? '',
-        estimateNumber: task.estimateNumber ?? '',
-        estimateAmount:
-          typeof task.estimateAmount === 'number' && Number.isFinite(task.estimateAmount)
-            ? String(task.estimateAmount)
-            : '',
-        isRevision: task.isRevision === true,
-        revisionNumber: task.revisionNumber ?? '',
-      });
+      const baseState = buildProjectTaskFormState(task);
+      const draft = selectedProject ? readProjectTaskDraft(selectedProject.id, task.id) : null;
+      setTaskFormState(draft ? { ...baseState, ...draft } : baseState);
     } else {
       setSelectedTask(null);
-      setTaskFormState(emptyTask());
+      const baseState = emptyTask();
+      const draft = selectedProject ? readProjectTaskDraft(selectedProject.id, null) : null;
+      setTaskFormState(draft ? { ...baseState, ...draft } : baseState);
     }
     setIsTaskModalOpen(true);
   };
@@ -1007,6 +1145,64 @@ export default function Page() {
   const handleCloseTaskModal = () => {
     setIsTaskModalOpen(false);
   };
+
+  useEffect(() => {
+    if (!(isCreateOpen || isEditOpen) || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getProjectDraftStorageKey(selectedProject?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(formState));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [formState, getProjectDraftStorageKey, isCreateOpen, isEditOpen, selectedProject, user]);
+
+  useEffect(() => {
+    if (!isTaskModalOpen || !selectedProject || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getProjectTaskDraftStorageKey(selectedProject.id, selectedTask?.id ?? null);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(taskFormState));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [
+    getProjectTaskDraftStorageKey,
+    isTaskModalOpen,
+    selectedProject,
+    selectedTask,
+    taskFormState,
+    user,
+  ]);
+
+  useEffect(() => {
+    if (!isSalesOrderModalOpen || !selectedProject || !user || typeof window === 'undefined') {
+      return;
+    }
+    const storageKey = getProjectSalesOrderDraftStorageKey(selectedProject.id);
+    if (!storageKey) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(salesOrderFormState));
+    } catch {
+      // Ignore storage write failures and keep the in-memory form usable.
+    }
+  }, [
+    getProjectSalesOrderDraftStorageKey,
+    isSalesOrderModalOpen,
+    salesOrderFormState,
+    selectedProject,
+    user,
+  ]);
 
   const handleSaveTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1103,6 +1299,7 @@ export default function Page() {
             ...estimatePayload,
             updatedAt: new Date().toISOString(),
           });
+          clearProjectTaskDraft(selectedProject.id, selectedTask.id);
           setProjectTasks((prev) =>
             prev.map((item) => (item.id === selectedTask.id ? updated : item)),
           );
@@ -1134,6 +1331,7 @@ export default function Page() {
           isEstimateTemplateTask: estimateFlag,
           updatedAt: new Date().toISOString(),
         });
+        clearProjectTaskDraft(selectedProject.id, selectedTask.id);
         const previousAssignees =
           previous.assignedUsers ?? (previous.assignedTo ? [previous.assignedTo] : []);
         const assignmentChanged =
@@ -1236,6 +1434,7 @@ export default function Page() {
           sharedRoles: [],
           createdBy: user.id,
         });
+        clearProjectTaskDraft(selectedProject.id, null);
         const recipients = buildAssignedRecipients(assignedUsers, user.id);
         await emitNotificationEventSafe({
           type: 'task.assigned',
@@ -1480,6 +1679,7 @@ export default function Page() {
           ...updates,
           updatedAt: new Date().toISOString(),
         });
+        clearProjectDraft(selectedProject.id);
         updateProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         if (previous.assignedTo !== updated.assignedTo) {
           await emitNotificationEventSafe({
@@ -1548,6 +1748,7 @@ export default function Page() {
           ...updates,
           createdBy: user.id,
         });
+        clearProjectDraft(null);
         updateProjects((prev) => [created, ...prev]);
         await logProjectActivity(created.id, `Project created: ${created.name}.`);
         await emitNotificationEventSafe({
@@ -1595,6 +1796,8 @@ export default function Page() {
     setIsDeleting(true);
     try {
       await firebaseProjectRepository.delete(selectedProject.id);
+      clearProjectDraft(selectedProject.id);
+      clearProjectSalesOrderDraft(selectedProject.id);
       updateProjects((prev) => prev.filter((item) => item.id !== selectedProject.id));
       handleCloseModal();
     } catch {
