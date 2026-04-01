@@ -141,6 +141,11 @@ const getTaskNotificationPermissions = (task: Pick<Task, 'projectId' | 'quotatio
   return undefined;
 };
 
+const isAssignedTask = (task?: Pick<Task, 'assignedTo' | 'assignedUsers'> | null) =>
+  !!task &&
+  (Boolean(task.assignedTo?.trim()) ||
+    (task.assignedUsers ?? []).some((assigneeId) => Boolean(assigneeId)));
+
 export default function Page() {
   const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -409,6 +414,11 @@ export default function Page() {
     }
     return items;
   }, [selectedTask]);
+
+  const isSelectedTaskAssignmentLocked = useMemo(
+    () => isAssignedTask(selectedTask),
+    [selectedTask],
+  );
 
   const syncTasks = useCallback(
     (next: Task[]) => {
@@ -1031,12 +1041,18 @@ export default function Page() {
         assignedTo: formState.assignedTo,
         assignedUsers: formState.assignedUsers,
         status: formState.status,
-        priority: formState.priority,
+        priority:
+          isEditing && isSelectedTaskAssignmentLocked && selectedTask
+            ? selectedTask.priority
+            : formState.priority,
         recurrence: formState.recurrence,
         quotationNumber: formState.quotationNumber,
         startDate: formState.startDate,
         endDate: formState.status === 'done' ? todayKey() : formState.endDate,
-        dueDate: formState.dueDate,
+        dueDate:
+          isEditing && isSelectedTaskAssignmentLocked && selectedTask
+            ? selectedTask.dueDate
+            : formState.dueDate,
         parentTaskId: formState.parentTaskId,
         projectId: formState.projectId,
         referenceModelNumber: formState.referenceModelNumber,
@@ -1834,7 +1850,8 @@ export default function Page() {
                           priority: event.target.value as TaskPriority,
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                      disabled={isSelectedTaskAssignmentLocked}
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
                     >
                       {priorityOptions.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -1890,23 +1907,8 @@ export default function Page() {
                       onChange={(event) =>
                         setFormState((prev) => ({ ...prev, dueDate: event.target.value }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                      Reference Model No
-                    </label>
-                    <input
-                      value={formState.referenceModelNumber}
-                      onChange={(event) =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          referenceModelNumber: event.target.value,
-                        }))
-                      }
-                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                      placeholder="XYZ-123"
+                      disabled={isSelectedTaskAssignmentLocked}
+                      className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
                     />
                   </div>
                   <div>

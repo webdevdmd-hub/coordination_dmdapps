@@ -95,6 +95,11 @@ const isEstimateProjectTask = (task?: Pick<Task, 'isEstimateTemplateTask' | 'tit
 const buildAssignedRecipients = (assignedUsers: string[] | undefined, actorId: string) =>
   buildRecipientList('', assignedUsers ?? [], actorId);
 
+const isAssignedTask = (task?: Pick<Task, 'assignedTo' | 'assignedUsers'> | null) =>
+  !!task &&
+  (Boolean(task.assignedTo?.trim()) ||
+    (task.assignedUsers ?? []).some((assigneeId) => Boolean(assigneeId)));
+
 type ProjectFormState = {
   name: string;
   customerId: string;
@@ -1020,6 +1025,7 @@ export default function Page() {
       !!selectedTask &&
       !!user &&
       (selectedTask.assignedTo === user.id || selectedTaskAssignees.includes(user.id));
+    const isAssignedSelectedTask = isAssignedTask(selectedTask);
     const isEstimateTask = isEstimateProjectTask(selectedTask);
     if (selectedTask && !canEditTasks && !canEditEstimateOnly && !canEditAsParticipant) {
       setTaskError('You do not have permission to edit tasks.');
@@ -1119,8 +1125,8 @@ export default function Page() {
           assignedTo,
           projectId: selectedProject.id,
           status: taskFormState.status,
-          priority: taskFormState.priority,
-          dueDate: taskFormState.dueDate,
+          priority: isAssignedSelectedTask ? selectedTask.priority : taskFormState.priority,
+          dueDate: isAssignedSelectedTask ? selectedTask.dueDate : taskFormState.dueDate,
           referenceModelNumber: taskFormState.referenceModelNumber.trim(),
           isRevision: taskFormState.isRevision,
           revisionNumber: taskFormState.isRevision ? revisionNumber : '',
@@ -1367,6 +1373,10 @@ export default function Page() {
     }
     if (!canEditTasks) {
       setTaskError('You do not have permission to edit tasks.');
+      return;
+    }
+    if (isAssignedTask(task)) {
+      setTaskError('Due date cannot be changed once a task is assigned.');
       return;
     }
     try {
@@ -2253,6 +2263,7 @@ export default function Page() {
                       projectTasks.map((task) => {
                         const assignees =
                           task.assignedUsers ?? (task.assignedTo ? [task.assignedTo] : []);
+                        const isTaskAssignmentLocked = isAssignedTask(task);
                         const isEstimateTask = isEstimateProjectTask(task);
                         const canOpenSalesOrderFromEstimate =
                           isEstimateTask &&
@@ -2386,7 +2397,7 @@ export default function Page() {
                                   onChange={(event) =>
                                     handleUpdateTaskDueDate(task, event.target.value)
                                   }
-                                  disabled={!canEditTasks}
+                                  disabled={!canEditTasks || isTaskAssignmentLocked}
                                   className="rounded-2xl border border-border/60 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-black shadow-soft outline-none transition hover:bg-gray-50 focus:border-border/80 disabled:cursor-not-allowed disabled:opacity-60"
                                 />
                               </div>
@@ -2433,6 +2444,11 @@ export default function Page() {
             </div>
 
             <form className="mt-6 space-y-4" onSubmit={handleSaveTask}>
+              {selectedTask && isAssignedTask(selectedTask) ? (
+                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-100">
+                  Due date and priority are locked once a task is assigned.
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
@@ -2493,7 +2509,8 @@ export default function Page() {
                     onChange={(event) =>
                       setTaskFormState((prev) => ({ ...prev, dueDate: event.target.value }))
                     }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    disabled={isAssignedTask(selectedTask)}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
                   />
                 </div>
               </div>
@@ -2579,7 +2596,8 @@ export default function Page() {
                         priority: event.target.value as TaskPriority,
                       }))
                     }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
+                    disabled={isAssignedTask(selectedTask)}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
                   >
                     {taskPriorityOptions.map((option) => (
                       <option key={option.value} value={option.value}>
