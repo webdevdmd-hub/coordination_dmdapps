@@ -1805,7 +1805,9 @@ export default function Page() {
       updateProjects((prev) => prev.filter((item) => item.id !== selectedProject.id));
       handleCloseModal();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to delete project. Please try again.');
+      setError(
+        error instanceof Error ? error.message : 'Unable to delete project. Please try again.',
+      );
     } finally {
       setIsDeleting(false);
     }

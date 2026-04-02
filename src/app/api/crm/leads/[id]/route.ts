@@ -8,10 +8,7 @@ export const runtime = 'nodejs';
 const toErrorResponse = (message: string, status = 400) =>
   NextResponse.json({ error: message }, { status });
 
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   const authedUser = await getAuthedUserFromSession(request);
   if (!authedUser) {
     return toErrorResponse('Unauthorized.', 401);
@@ -19,7 +16,10 @@ export async function DELETE(
   if (!authedUser.active) {
     return toErrorResponse('Your account is inactive.', 403);
   }
-  if (!authedUser.permissions.includes('admin') && !authedUser.permissions.includes('lead_delete')) {
+  if (
+    !authedUser.permissions.includes('admin') &&
+    !authedUser.permissions.includes('lead_delete')
+  ) {
     return toErrorResponse('You do not have permission to delete leads.', 403);
   }
 

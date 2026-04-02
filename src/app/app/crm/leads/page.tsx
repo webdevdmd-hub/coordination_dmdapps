@@ -585,7 +585,9 @@ export default function Page() {
       }
       return true;
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to delete the lead. Please try again.');
+      setError(
+        error instanceof Error ? error.message : 'Unable to delete the lead. Please try again.',
+      );
       return false;
     }
   };

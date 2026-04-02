@@ -8,10 +8,7 @@ export const runtime = 'nodejs';
 const toErrorResponse = (message: string, status = 400) =>
   NextResponse.json({ error: message }, { status });
 
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   const authedUser = await getAuthedUserFromSession(request);
   if (!authedUser) {
     return toErrorResponse('Unauthorized.', 401);

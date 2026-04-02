@@ -205,7 +205,9 @@ const collectCustomerCascade = async (context: CascadeDeleteContext, customerId:
   ]);
 
   await collectQuery(context, quotationSnapshots.docs, 'quotations');
-  await Promise.all(projectSnapshots.docs.map((projectDoc) => collectProjectCascade(context, projectDoc.id)));
+  await Promise.all(
+    projectSnapshots.docs.map((projectDoc) => collectProjectCascade(context, projectDoc.id)),
+  );
   await collectQuotationRequestsForCustomer(context, customerId);
 };
 
@@ -313,7 +315,12 @@ export const cascadeDeleteLead = async (
   const [leadTaskSnapshots, leadActivitySnapshots, linkedCustomerSnapshots] = await Promise.all([
     db.collection('tasks').where('leadId', '==', leadId).get(),
     leadRef.collection('activities').get(),
-    db.collection('sales').doc(SALES_NAMESPACE_ID).collection('customers').where('leadId', '==', leadId).get(),
+    db
+      .collection('sales')
+      .doc(SALES_NAMESPACE_ID)
+      .collection('customers')
+      .where('leadId', '==', leadId)
+      .get(),
   ]);
 
   await Promise.all([
@@ -322,7 +329,11 @@ export const cascadeDeleteLead = async (
     collectQuotationRequestsForLead(context, leadId),
   ]);
 
-  await Promise.all(linkedCustomerSnapshots.docs.map((customerDoc) => collectCustomerCascade(context, customerDoc.id)));
+  await Promise.all(
+    linkedCustomerSnapshots.docs.map((customerDoc) =>
+      collectCustomerCascade(context, customerDoc.id),
+    ),
+  );
 
   const auditLogId = await archiveAndDelete(context, 'lead', leadId, actor);
   return {
