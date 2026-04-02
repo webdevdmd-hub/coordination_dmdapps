@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getFirebaseAdminAuth } from '@/frameworks/firebase/admin';
 import { AUTH_SESSION_COOKIE_NAME } from '@/lib/auth/sessionCookie';
-
-const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 5;
+import { SESSION_DURATION_MS } from '@/lib/auth/sessionPolicy';
 
 type SessionRequest = {
   idToken?: string;

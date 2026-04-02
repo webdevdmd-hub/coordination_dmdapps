@@ -1,14 +1,28 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, onIdTokenChanged, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 
 import { ALL_PERMISSIONS, PermissionKey } from '@/core/entities/permissions';
 import { UserRole } from '@/core/entities/user';
-import { clearServerSession, establishServerSession } from '@/frameworks/firebase/auth';
-import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
+import {
+  clearServerSession,
+  establishServerSession,
+  signOutUser,
+} from '@/frameworks/firebase/auth';
+import {
+  ensureFirebaseAuthPersistence,
+  getFirebaseAuth,
+  getFirebaseDb,
+} from '@/frameworks/firebase/client';
 import { isFirebaseConfigured } from '@/frameworks/firebase/config';
+import {
+  INACTIVITY_TIMEOUT_MS,
+  SESSION_ACTIVITY_STORAGE_KEY,
+  SESSION_REFRESH_INTERVAL_MS,
+  SESSION_REFRESH_STORAGE_KEY,
+} from '@/lib/auth/sessionPolicy';
 import { normalizeRoleRelations, RoleRelations } from '@/lib/roleVisibility';
 
 type UserProfile = {
@@ -159,6 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissionsSyncedAt, setPermissionsSyncedAt] = useState<number | null>(null);
+  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
@@ -168,27 +183,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const auth = getFirebaseAuth();
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        setUser(null);
-        setLoading(false);
-        setPermissionsSyncedAt(null);
+    let mounted = true;
+    let unsubscribe = () => {};
+
+    void (async () => {
+      try {
+        await ensureFirebaseAuthPersistence();
+      } catch {
+        // Keep auth boot resilient even when persistence setup is blocked.
+      }
+
+      if (!mounted) {
         return;
       }
 
-      try {
-        const profile = await toUserProfile(firebaseUser);
-        setUser(profile);
-        setPermissionsSyncedAt(Date.now());
-      } catch {
-        setUser(null);
-        setPermissionsSyncedAt(null);
-      } finally {
-        setLoading(false);
-      }
-    });
+      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (!firebaseUser) {
+          setUser(null);
+          setLoading(false);
+          setPermissionsSyncedAt(null);
+          return;
+        }
 
-    return () => unsubscribe();
+        try {
+          const profile = await toUserProfile(firebaseUser);
+          setUser(profile);
+          setPermissionsSyncedAt(Date.now());
+        } catch {
+          setUser(null);
+          setPermissionsSyncedAt(null);
+        } finally {
+          setLoading(false);
+        }
+      });
+    })();
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -198,7 +231,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const auth = getFirebaseAuth();
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        await clearServerSession();
+        if (!isSigningOutRef.current) {
+          await clearServerSession();
+        }
         return;
       }
 
@@ -212,6 +247,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) {
+      return;
+    }
+
+    const markActivity = () => {
+      window.localStorage.setItem(SESSION_ACTIVITY_STORAGE_KEY, String(Date.now()));
+    };
+
+    markActivity();
+
+    const events: Array<keyof WindowEventMap> = [
+      'click',
+      'keydown',
+      'mousemove',
+      'scroll',
+      'touchstart',
+    ];
+
+    events.forEach((eventName) =>
+      window.addEventListener(eventName, markActivity, { passive: true }),
+    );
+
+    const interval = window.setInterval(() => {
+      const lastActivity = Number(window.localStorage.getItem(SESSION_ACTIVITY_STORAGE_KEY) ?? '0');
+      if (
+        !lastActivity ||
+        Date.now() - lastActivity < INACTIVITY_TIMEOUT_MS ||
+        isSigningOutRef.current
+      ) {
+        return;
+      }
+
+      isSigningOutRef.current = true;
+      void signOutUser().finally(() => {
+        isSigningOutRef.current = false;
+      });
+    }, 60_000);
+
+    return () => {
+      events.forEach((eventName) =>
+        window.removeEventListener(eventName, markActivity as EventListener),
+      );
+      window.clearInterval(interval);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const auth = getFirebaseAuth();
+      const currentUser = auth.currentUser;
+      const lastRefresh = Number(window.localStorage.getItem(SESSION_REFRESH_STORAGE_KEY) ?? '0');
+
+      if (!currentUser || isSigningOutRef.current) {
+        return;
+      }
+
+      if (lastRefresh && Date.now() - lastRefresh < SESSION_REFRESH_INTERVAL_MS) {
+        return;
+      }
+
+      void currentUser
+        .getIdToken(true)
+        .then((idToken) => establishServerSession(idToken))
+        .catch(() => clearServerSession());
+    }, 60_000);
+
+    return () => window.clearInterval(interval);
+  }, [user]);
 
   const value = useMemo(() => {
     const permissions = user?.permissions ?? [];

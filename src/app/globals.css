@@ -149,6 +149,21 @@ a {
   }
 }
 
+@keyframes popup-corner {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 28px, 0) scale(0.94);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, -4px, 0) scale(1.01);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 @layer utilities {
   .shadow-soft {
     box-shadow: var(--shadow);
@@ -185,5 +200,11 @@ a {
 
   .float-slow {
     animation: float-slow 6s ease-in-out infinite;
+  }
+
+  .animate-popup-corner {
+    transform-origin: bottom right;
+    animation: popup-corner 0.72s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    will-change: transform, opacity;
   }
 }

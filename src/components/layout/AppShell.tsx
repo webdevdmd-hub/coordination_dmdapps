@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
+import { CookieConsentBanner } from '@/components/compliance/CookieConsentBanner';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -102,6 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className={`flex-1 px-6 pb-10 pt-8 ${isTasksRoute ? 'overflow-hidden' : ''}`}>
             {children}
           </main>
+          <CookieConsentBanner />
         </div>
       </div>
     </div>

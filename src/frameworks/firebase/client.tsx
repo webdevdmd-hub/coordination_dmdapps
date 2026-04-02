@@ -1,5 +1,11 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
-import { Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
+import {
+  Auth,
+  browserLocalPersistence,
+  connectAuthEmulator,
+  getAuth,
+  setPersistence,
+} from 'firebase/auth';
 import {
   Firestore,
   connectFirestoreEmulator,
@@ -16,6 +22,8 @@ import {
 
 let firebaseApp: FirebaseApp | null = null;
 let firebaseDb: Firestore | null = null;
+let firebaseAuth: Auth | null = null;
+let authPersistencePromise: Promise<void> | null = null;
 let emulatorsConnected = false;
 
 const getApp = () => {
@@ -42,11 +50,30 @@ const connectEmulators = (auth: Auth, firestore: Firestore) => {
 };
 
 export const getFirebaseAuth = () => {
+  if (firebaseAuth) {
+    return firebaseAuth;
+  }
   const auth = getAuth(getApp());
   if (shouldUseEmulators()) {
     connectEmulators(auth, getFirebaseDb());
   }
-  return auth;
+  firebaseAuth = auth;
+  return firebaseAuth;
+};
+
+export const ensureFirebaseAuthPersistence = async () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (!authPersistencePromise) {
+    authPersistencePromise = setPersistence(getFirebaseAuth(), browserLocalPersistence).catch(
+      (error) => {
+        authPersistencePromise = null;
+        throw error;
+      },
+    );
+  }
+  await authPersistencePromise;
 };
 
 export const getFirebaseDb = () => {

@@ -21,6 +21,10 @@ type TaskContext = {
 };
 
 const TaskModalContext = createContext<TaskModalContextValue | null>(null);
+const fallbackTaskModalContext: TaskModalContextValue = {
+  openTaskModal: () => {},
+  isSubmitting: false,
+};
 
 export function TaskModalProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -157,8 +161,5 @@ export function TaskModalProvider({ children }: { children: React.ReactNode }) {
 
 export function useTaskModal() {
   const context = useContext(TaskModalContext);
-  if (!context) {
-    throw new Error('useTaskModal must be used within TaskModalProvider.');
-  }
-  return context;
+  return context ?? fallbackTaskModalContext;
 }
