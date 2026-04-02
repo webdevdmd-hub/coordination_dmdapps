@@ -14,11 +14,13 @@ type CookiePreferences = {
   updatedAt: number;
 };
 
-const defaultPreferences = {
+type CookiePreferenceSelection = Pick<CookiePreferences, 'essential' | 'preferences' | 'analytics'>;
+
+const defaultPreferences: CookiePreferenceSelection = {
   essential: true,
   preferences: true,
   analytics: false,
-} as const;
+};
 
 const parseStoredConsent = (rawValue: string | null): CookiePreferences | null => {
   if (!rawValue) {
@@ -86,7 +88,10 @@ export function CookieConsentBanner() {
     return null;
   }
 
-  const savePreferences = (status: ConsentStatus, nextPreferences = defaultPreferences) => {
+  const savePreferences = (
+    status: ConsentStatus,
+    nextPreferences: CookiePreferenceSelection = defaultPreferences,
+  ) => {
     const consent: CookiePreferences = {
       essential: true,
       preferences: nextPreferences.preferences,
