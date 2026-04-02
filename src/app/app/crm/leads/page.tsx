@@ -571,22 +571,21 @@ export default function Page() {
       setError('You do not have permission to delete leads.');
       return false;
     }
-    if (!user.permissions.includes('admin')) {
-      const target = leads.find((lead) => lead.id === id);
-      if (target && target.ownerId !== user.id) {
-        setError('You do not have permission to delete this lead.');
-        return false;
-      }
-    }
     try {
-      await firebaseLeadRepository.delete(id);
+      const response = await fetch(`/api/crm/leads/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? 'Unable to delete the lead.');
+      }
       updateLeads((prev) => prev.filter((lead) => lead.id !== id));
       if (selectedLead?.id === id) {
         setSelectedLead(null);
       }
       return true;
-    } catch {
-      setError('Unable to delete the lead. Please try again.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to delete the lead. Please try again.');
       return false;
     }
   };

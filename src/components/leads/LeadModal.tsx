@@ -599,7 +599,9 @@ export function LeadModal({
     if (isDeleting) {
       return;
     }
-    const confirmed = window.confirm('Delete this lead? This action cannot be undone.');
+    const confirmed = window.confirm(
+      'Delete this lead and all dependent records? This will cascade to linked tasks, quotation requests, converted customer/project data, and archived recovery data will be created before final deletion.',
+    );
     if (!confirmed) {
       return;
     }

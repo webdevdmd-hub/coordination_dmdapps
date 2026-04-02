@@ -1785,23 +1785,27 @@ export default function Page() {
       setError('You do not have permission to delete projects.');
       return;
     }
-    if (!isAdmin && selectedProject.assignedTo !== user.id) {
-      setError('You can only delete projects assigned to you.');
-      return;
-    }
-    const confirmed = window.confirm('Delete this project? This action cannot be undone.');
+    const confirmed = window.confirm(
+      'Delete this project and all dependent records? This will cascade to linked tasks, quotations, sales order requests, project activities, and archived recovery data will be created before final deletion.',
+    );
     if (!confirmed) {
       return;
     }
     setIsDeleting(true);
     try {
-      await firebaseProjectRepository.delete(selectedProject.id);
+      const response = await fetch(`/api/sales/projects/${selectedProject.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? 'Unable to delete project.');
+      }
       clearProjectDraft(selectedProject.id);
       clearProjectSalesOrderDraft(selectedProject.id);
       updateProjects((prev) => prev.filter((item) => item.id !== selectedProject.id));
       handleCloseModal();
-    } catch {
-      setError('Unable to delete project. Please try again.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to delete project. Please try again.');
     } finally {
       setIsDeleting(false);
     }

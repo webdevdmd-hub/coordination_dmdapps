@@ -79,6 +79,8 @@ const togglePermission = (list: PermissionKey[], value: PermissionKey) => {
 
 const permissionLabels: Partial<Record<PermissionKey, string>> = {
   task_assign: 'Can Assign Tasks (Same Role)',
+  lead_delete: 'Cascade Delete Leads',
+  project_delete: 'Cascade Delete Projects',
 };
 
 const formatPermissionLabel = (permission: PermissionKey) => {
