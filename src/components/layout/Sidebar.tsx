@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import { NavIcon } from '@/components/icons/NavIcons';
 import { NotificationSidebar } from '@/components/notifications/NotificationSidebar';
@@ -19,23 +19,6 @@ type SidebarProps = {
 
 export function Sidebar({ activeItem, permissions = [], open, onClose }: SidebarProps) {
   const router = useRouter();
-  const collapsibleSections = useMemo(
-    () => new Set(['Admin', 'CRM', 'Operations', 'Sales', 'Accounts']),
-    [],
-  );
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    navigation.forEach((section) => {
-      if (collapsibleSections.has(section.title)) {
-        initial[section.title] = section.items.some((item) => item.label === activeItem);
-      }
-    });
-    return initial;
-  });
-
-  const toggleSection = (title: string) => {
-    setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }));
-  };
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const handleLogout = async () => {
     if (isLoggingOut) {
@@ -105,92 +88,35 @@ export function Sidebar({ activeItem, permissions = [], open, onClose }: Sidebar
               if (visibleItems.length === 0) {
                 return null;
               }
-              const isCollapsible = collapsibleSections.has(section.title);
-              const isExpanded =
-                openSections[section.title] ??
-                section.items.some((item) => item.label === activeItem);
               return (
                 <div key={section.title}>
-                  {isCollapsible ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => toggleSection(section.title)}
-                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.28em] text-muted transition hover:bg-hover/70 hover:text-text"
-                        aria-expanded={isExpanded}
-                        aria-controls={`section-${section.title}`}
-                      >
-                        <span>{section.title}</span>
-                        <svg
-                          viewBox="0 0 20 20"
-                          className={`h-4 w-4 transition ${isExpanded ? 'rotate-180' : ''}`}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
+                  {section.title !== 'Tasks' ? (
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-muted">
+                      {section.title}
+                    </p>
+                  ) : null}
+                  <div className="space-y-1">
+                    {visibleItems.map((item) => {
+                      const isActive = item.label === activeItem;
+                      return (
+                        <Link
+                          key={item.label}
+                          href={item.href}
+                          onClick={onClose}
+                          className={`lift-hover flex items-center justify-between rounded-xl px-3 py-2 transition ${
+                            isActive
+                              ? 'bg-accent/70 text-text shadow-soft'
+                              : 'text-muted hover:bg-hover/70 hover:text-text'
+                          }`}
                         >
-                          <path d="M5 7.5l5 5 5-5" />
-                        </svg>
-                      </button>
-                      <div
-                        id={`section-${section.title}`}
-                        className={`mt-2 space-y-1 pl-3 ${isExpanded ? 'block' : 'hidden'}`}
-                      >
-                        {visibleItems.map((item) => {
-                          const isActive = item.label === activeItem;
-                          return (
-                            <Link
-                              key={item.label}
-                              href={item.href}
-                              onClick={onClose}
-                              className={`lift-hover flex items-center justify-between rounded-xl px-3 py-2 transition ${
-                                isActive
-                                  ? 'bg-accent/70 text-text shadow-soft'
-                                  : 'text-muted hover:bg-hover/70 hover:text-text'
-                              }`}
-                            >
-                              <span className="flex items-center gap-3 font-medium">
-                                <NavIcon name={item.icon} className="h-4 w-4" />
-                                {item.label}
-                              </span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {section.title !== 'Tasks' ? (
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-muted">
-                          {section.title}
-                        </p>
-                      ) : null}
-                      <div className="space-y-1">
-                        {visibleItems.map((item) => {
-                          const isActive = item.label === activeItem;
-                          return (
-                            <Link
-                              key={item.label}
-                              href={item.href}
-                              onClick={onClose}
-                              className={`lift-hover flex items-center justify-between rounded-xl px-3 py-2 transition ${
-                                isActive
-                                  ? 'bg-accent/70 text-text shadow-soft'
-                                  : 'text-muted hover:bg-hover/70 hover:text-text'
-                              }`}
-                            >
-                              <span className="flex items-center gap-3 font-medium">
-                                <NavIcon name={item.icon} className="h-4 w-4" />
-                                {item.label}
-                              </span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
+                          <span className="flex items-center gap-3 font-medium">
+                            <NavIcon name={item.icon} className="h-4 w-4" />
+                            {item.label}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
