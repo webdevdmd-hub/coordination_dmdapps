@@ -78,11 +78,23 @@ const priorityOptions: Array<{ value: TaskPriority; label: string }> = [
 ];
 
 const boardPriorityColor: Record<TaskPriority, string> = {
-  low: 'bg-[var(--surface-muted)] text-muted border border-border',
-  medium: 'bg-orange-50 text-orange-600 border border-orange-200',
-  high: 'bg-rose-50 text-rose-600 border border-rose-200',
-  urgent: 'bg-red-100 text-red-700 border border-red-200',
+  low: 'border border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
+  medium: 'border border-cyan-400/25 bg-cyan-400/10 text-cyan-200',
+  high: 'border border-orange-400/30 bg-orange-400/12 text-orange-200',
+  urgent: 'border border-rose-400/35 bg-rose-400/14 text-rose-200',
 };
+
+const taskStatusStyles: Record<TaskStatus, string> = {
+  todo: 'border border-slate-500/30 bg-slate-400/10 text-slate-200',
+  'in-progress': 'border border-sky-400/35 bg-sky-400/12 text-sky-200',
+  review: 'border border-amber-400/35 bg-amber-400/12 text-amber-200',
+  done: 'border border-emerald-400/35 bg-emerald-400/12 text-emerald-200',
+};
+
+const taskBadgeSizeClass =
+  'w-[140px] justify-center text-center whitespace-nowrap';
+const taskSelectSizeClass =
+  'w-[140px] text-center text-center-last';
 
 const TASK_MODAL_DRAFT_STORAGE_KEY = 'tasks-modal-draft';
 
@@ -370,6 +382,9 @@ export default function Page() {
   };
 
   const canTrackTask = (task: Task) => {
+    if (task.status === 'done') {
+      return false;
+    }
     if (!user || !canEdit) {
       return false;
     }
@@ -491,12 +506,12 @@ export default function Page() {
   }, [selectedTask]);
 
   const isSelectedTaskAssignmentLocked = useMemo(
-    () => isAssignedTask(selectedTask),
-    [selectedTask],
+    () => !isAdmin && isAssignedTask(selectedTask),
+    [isAdmin, selectedTask],
   );
   const isSelectedTaskStatusWorkflowLocked = useMemo(
-    () => isAssignedTask(selectedTask),
-    [selectedTask],
+    () => !isAdmin && isAssignedTask(selectedTask),
+    [isAdmin, selectedTask],
   );
   const getTaskStatusDisplay = (status: TaskStatus) =>
     statusOptions.find((option) => option.value === status)?.label ?? status;
@@ -519,6 +534,11 @@ export default function Page() {
       }
       return next;
     });
+  };
+
+  const replaceTaskInState = (nextTask: Task) => {
+    updateTasks((current) => current.map((item) => (item.id === nextTask.id ? nextTask : item)));
+    setSelectedTask((current) => (current?.id === nextTask.id ? nextTask : current));
   };
 
   useEffect(() => {
@@ -774,7 +794,24 @@ export default function Page() {
     const totalSeconds = getLiveDuration(task);
     const canTrack = canTrackTask(task);
     const usesTimerWorkflow = isAssignedTask(task);
+    const timerLocked = task.status === 'done';
     const canCompleteReviewedTask = usesTimerWorkflow && task.status === 'review' && !isRunning;
+    const canResumeTimer =
+      !isRunning &&
+      !timerLocked &&
+      task.status === 'in-progress' &&
+      ((task.totalTrackedSeconds ?? 0) > 0 || Boolean(task.lastTimerStoppedAt));
+    const timerButtonLabel = timerBusyId === task.id
+      ? 'Updating...'
+      : timerLocked
+        ? 'Timer locked'
+        : isRunning
+          ? 'Stop timer'
+          : canResumeTimer
+            ? 'Continue'
+            : 'Start timer';
+    const primaryActionLabel = canCompleteReviewedTask ? 'Mark done' : timerButtonLabel;
+    const statusClassName = taskStatusStyles[task.status];
     const showDetails = variant !== 'kanban';
     const assigneeName = task.assignedTo
       ? (ownerNameMap.get(task.assignedTo) ?? task.assignedTo)
@@ -823,7 +860,9 @@ export default function Page() {
 
           <div className="flex flex-col gap-2">
             {usesTimerWorkflow ? (
-              <span className="inline-flex w-fit rounded-xl border border-[#407056]/25 bg-[#407056]/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]">
+              <span
+                className={`inline-flex rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${taskBadgeSizeClass} ${statusClassName}`}
+              >
                 {getTaskStatusDisplay(task.status)}
               </span>
             ) : (
@@ -835,7 +874,7 @@ export default function Page() {
                   handleQuickStatusChange(task, event.target.value as TaskStatus)
                 }
                 disabled={!canTrack || statusBusyId === task.id}
-                className="w-full rounded-xl border border-[#407056]/30 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] outline-none disabled:cursor-not-allowed disabled:opacity-60 ${taskSelectSizeClass} ${statusClassName}`}
               >
                 {statusOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -844,45 +883,45 @@ export default function Page() {
                 ))}
               </select>
             )}
-            {canCompleteReviewedTask ? (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void handleQuickStatusChange(task, 'done');
-                }}
-                disabled={!canTrack || statusBusyId === task.id}
-                className="rounded-xl border border-emerald-500/40 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {statusBusyId === task.id ? 'Updating...' : 'Mark done'}
-              </button>
-            ) : null}
           </div>
 
-          <span className="inline-flex w-fit rounded-full border border-[#407056]/25 bg-[#407056]/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#407056]">
+          <span
+            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${taskBadgeSizeClass} ${boardPriorityColor[task.priority]}`}
+          >
             {task.priority}
           </span>
 
-          <p className="text-sm text-text">Total {formatDuration(totalSeconds)}</p>
+          <p className="text-sm text-text">{formatDuration(totalSeconds)}</p>
 
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
+              if (canCompleteReviewedTask) {
+                void handleQuickStatusChange(task, 'done');
+                return;
+              }
+              if (timerLocked) {
+                return;
+              }
               if (isRunning) {
                 handleStopTaskTimer(task);
                 return;
               }
               handleStartTaskTimer(task);
             }}
-            disabled={!canTrack || timerBusyId === task.id}
-            className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${
-              isRunning
-                ? 'border border-[#407056] bg-[#407056] text-white'
-                : 'border border-[#407056]/40 bg-white text-[#407056]'
+            disabled={timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id}
+            className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${taskBadgeSizeClass} ${
+              canCompleteReviewedTask
+                ? 'border border-[#c08a7a]/45 bg-[rgba(192,138,122,0.14)] text-[#e7b8a7]'
+                : isRunning
+                  ? 'border border-[#407056] bg-[#407056] text-white'
+                  : timerLocked
+                    ? 'border border-border/60 bg-surface text-muted'
+                    : 'border border-[#407056]/40 bg-white text-[#407056]'
             }`}
           >
-            {timerBusyId === task.id ? 'Updating...' : isRunning ? 'Stop timer' : 'Start timer'}
+            {canCompleteReviewedTask && statusBusyId === task.id ? 'Updating...' : primaryActionLabel}
           </button>
         </div>
       );
@@ -963,13 +1002,15 @@ export default function Page() {
         {showDetails ? (
           <div className="mt-4 grid gap-2 text-sm text-muted sm:grid-cols-2">
             <p>Due {formatDate(task.dueDate)}</p>
-            <p className="sm:text-right">Total {formatDuration(totalSeconds)}</p>
+            <p className="sm:text-right">{formatDuration(totalSeconds)}</p>
           </div>
         ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {usesTimerWorkflow ? (
-            <span className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-text">
+            <span
+              className={`inline-flex rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] ${taskBadgeSizeClass} ${statusClassName}`}
+            >
               {getTaskStatusDisplay(task.status)}
             </span>
           ) : (
@@ -979,7 +1020,7 @@ export default function Page() {
               onKeyDown={(event) => event.stopPropagation()}
               onChange={(event) => handleQuickStatusChange(task, event.target.value as TaskStatus)}
               disabled={!canTrack || statusBusyId === task.id}
-              className="rounded-full border border-border bg-[var(--surface-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              className={`rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] outline-none disabled:cursor-not-allowed disabled:opacity-60 ${taskSelectSizeClass} ${statusClassName}`}
             >
               {statusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -992,34 +1033,32 @@ export default function Page() {
             type="button"
             onClick={(event) => {
               event.stopPropagation();
+              if (canCompleteReviewedTask) {
+                void handleQuickStatusChange(task, 'done');
+                return;
+              }
+              if (timerLocked) {
+                return;
+              }
               if (isRunning) {
                 handleStopTaskTimer(task);
                 return;
               }
               handleStartTaskTimer(task);
             }}
-            disabled={!canTrack || timerBusyId === task.id}
-            className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:opacity-60 ${
-              isRunning
-                ? 'border border-emerald-600 bg-emerald-500 text-white'
-                : 'border border-emerald-500 text-emerald-700'
+            disabled={timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id}
+            className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:opacity-60 ${taskBadgeSizeClass} ${
+              canCompleteReviewedTask
+                ? 'border border-[#c08a7a]/45 bg-[rgba(192,138,122,0.14)] text-[#e7b8a7]'
+                : isRunning
+                  ? 'border border-emerald-600 bg-emerald-500 text-white'
+                  : timerLocked
+                    ? 'border border-border text-muted'
+                    : 'border border-emerald-500 text-emerald-700'
             }`}
           >
-            {timerBusyId === task.id ? 'Updating...' : isRunning ? 'Stop timer' : 'Start timer'}
+            {canCompleteReviewedTask && statusBusyId === task.id ? 'Updating...' : primaryActionLabel}
           </button>
-          {canCompleteReviewedTask ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                void handleQuickStatusChange(task, 'done');
-              }}
-              disabled={!canTrack || statusBusyId === task.id}
-              className="rounded-full border border-emerald-500 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {statusBusyId === task.id ? 'Updating...' : 'Mark done'}
-            </button>
-          ) : null}
         </div>
       </div>
     );
@@ -1353,11 +1392,16 @@ export default function Page() {
       setError('You do not have permission to start this timer.');
       return;
     }
+    if (task.status === 'done') {
+      setError('Completed tasks cannot restart the timer.');
+      return;
+    }
     if (task.timerStartedAt) {
       return;
     }
     setTimerBusyId(task.id);
     setError(null);
+    const previousTask = task;
     try {
       const startedAt = new Date().toISOString();
       const startedDate = todayKey();
@@ -1366,19 +1410,27 @@ export default function Page() {
         : task.status === 'todo'
           ? 'in-progress'
           : task.status;
+      const optimisticTask: Task = {
+        ...task,
+        timerStartedAt: startedAt,
+        startDate: startedDate,
+        status: nextStatus,
+        updatedAt: startedAt,
+      };
+      replaceTaskInState(optimisticTask);
       const updated = await firebaseTaskRepository.update(task.id, {
         timerStartedAt: startedAt,
         startDate: startedDate,
         status: nextStatus,
         updatedAt: startedAt,
       });
-      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      replaceTaskInState(updated);
       const recipients = buildRecipientList(
         updated.createdBy,
         [updated.assignedTo, ...(updated.assignedUsers ?? [])],
         user.id,
       );
-      await emitNotificationEventSafe({
+      void emitNotificationEventSafe({
         type: 'task.timer_started',
         title: 'Task Timer Started',
         body: `${user.fullName} started the timer for ${updated.title}.`,
@@ -1392,12 +1444,13 @@ export default function Page() {
         },
       });
       if (task.projectId) {
-        await logProjectActivity(task.projectId, `Task started: ${task.title}.`);
+        void logProjectActivity(task.projectId, `Task started: ${task.title}.`);
       }
       if (task.leadId) {
-        await logLeadActivity(task.leadId, `Task started: ${task.title}.`);
+        void logLeadActivity(task.leadId, `Task started: ${task.title}.`);
       }
     } catch {
+      replaceTaskInState(previousTask);
       setError('Unable to start timer. Please try again.');
     } finally {
       setTimerBusyId(null);
@@ -1416,64 +1469,7 @@ export default function Page() {
     if (!task.timerStartedAt) {
       return;
     }
-    const startedMs = Date.parse(task.timerStartedAt);
-    if (Number.isNaN(startedMs)) {
-      setError('Unable to read the timer start time.');
-      return;
-    }
-    if (isAssignedTask(task)) {
-      setPendingTimerStopTask(task);
-      return;
-    }
-    setTimerBusyId(task.id);
-    setError(null);
-    try {
-      const stoppedAt = new Date().toISOString();
-      const stoppedDate = todayKey();
-      const durationSeconds = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
-      const totalSeconds = (task.totalTrackedSeconds ?? 0) + durationSeconds;
-      const updated = await firebaseTaskRepository.update(task.id, {
-        timerStartedAt: '',
-        lastTimerStoppedAt: stoppedAt,
-        lastTimerDurationSeconds: durationSeconds,
-        totalTrackedSeconds: totalSeconds,
-        endDate: stoppedDate,
-        updatedAt: stoppedAt,
-      });
-      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
-      const recipients = buildRecipientList(
-        updated.createdBy,
-        [updated.assignedTo, ...(updated.assignedUsers ?? [])],
-        user.id,
-      );
-      await emitNotificationEventSafe({
-        type: 'task.timer_stopped',
-        title: 'Task Timer Stopped',
-        body: `${user.fullName} stopped the timer for ${updated.title}.`,
-        actorId: user.id,
-        recipients,
-        entityType: 'task',
-        entityId: updated.id,
-        requiredPermissionsAnyOf: getTaskNotificationPermissions(updated),
-        meta: {
-          durationSeconds,
-          totalSeconds,
-        },
-      });
-      const note = `Task timer stopped: ${task.title}. Duration ${formatDuration(
-        durationSeconds,
-      )}. Total ${formatDuration(totalSeconds)}.`;
-      if (task.projectId) {
-        await logProjectActivity(task.projectId, note);
-      }
-      if (task.leadId) {
-        await logLeadActivity(task.leadId, note);
-      }
-    } catch {
-      setError('Unable to stop timer. Please try again.');
-    } finally {
-      setTimerBusyId(null);
-    }
+    setPendingTimerStopTask(task);
   };
 
   const handleFinalizeTaskTimerStop = async (task: Task, nextStep: 'break' | 'review') => {
@@ -1495,12 +1491,24 @@ export default function Page() {
     }
     setTimerBusyId(task.id);
     setError(null);
+    const previousTask = task;
     try {
       const stoppedAt = new Date().toISOString();
       const stoppedDate = todayKey();
       const durationSeconds = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
       const totalSeconds = (task.totalTrackedSeconds ?? 0) + durationSeconds;
-      const nextStatus = nextStep === 'review' ? 'review' : task.status;
+      const nextStatus = nextStep === 'review' ? 'review' : 'in-progress';
+      const optimisticTask: Task = {
+        ...task,
+        timerStartedAt: '',
+        lastTimerStoppedAt: stoppedAt,
+        lastTimerDurationSeconds: durationSeconds,
+        totalTrackedSeconds: totalSeconds,
+        endDate: stoppedDate,
+        status: nextStatus,
+        updatedAt: stoppedAt,
+      };
+      replaceTaskInState(optimisticTask);
       const updated = await firebaseTaskRepository.update(task.id, {
         timerStartedAt: '',
         lastTimerStoppedAt: stoppedAt,
@@ -1510,13 +1518,13 @@ export default function Page() {
         status: nextStatus,
         updatedAt: stoppedAt,
       });
-      updateTasks((prev) => prev.map((item) => (item.id === task.id ? updated : item)));
+      replaceTaskInState(updated);
       const recipients = buildRecipientList(
         updated.createdBy,
         [updated.assignedTo, ...(updated.assignedUsers ?? [])],
         user.id,
       );
-      await emitNotificationEventSafe({
+      void emitNotificationEventSafe({
         type: 'task.timer_stopped',
         title: nextStep === 'review' ? 'Task Sent To Review' : 'Task Timer Stopped',
         body:
@@ -1537,14 +1545,15 @@ export default function Page() {
       const note =
         nextStep === 'review'
           ? `Task moved to review: ${task.title}. Duration ${formatDuration(durationSeconds)}. Total ${formatDuration(totalSeconds)}.`
-          : `Task timer stopped: ${task.title}. Duration ${formatDuration(durationSeconds)}. Total ${formatDuration(totalSeconds)}.`;
+          : `Task paused for break: ${task.title}. Duration ${formatDuration(durationSeconds)}. Total ${formatDuration(totalSeconds)}.`;
       if (task.projectId) {
-        await logProjectActivity(task.projectId, note);
+        void logProjectActivity(task.projectId, note);
       }
       if (task.leadId) {
-        await logLeadActivity(task.leadId, note);
+        void logLeadActivity(task.leadId, note);
       }
     } catch {
+      replaceTaskInState(previousTask);
       setError('Unable to stop timer. Please try again.');
     } finally {
       setPendingTimerStopTask(null);
@@ -1561,7 +1570,7 @@ export default function Page() {
       setError('You do not have permission to update this task status.');
       return;
     }
-    if (isAssignedTask(task)) {
+    if (!isAdmin && isAssignedTask(task)) {
       if (nextStatus === 'done' && task.status === 'review') {
         // Allow completion after review through the dedicated action.
       } else {
@@ -1572,7 +1581,7 @@ export default function Page() {
     if (nextStatus === task.status) {
       return;
     }
-    if (nextStatus === 'done' && task.status !== 'review') {
+    if (!isAdmin && nextStatus === 'done' && task.status !== 'review') {
       setError('A task must be moved to review before it can be marked as done.');
       return;
     }
@@ -1663,7 +1672,7 @@ export default function Page() {
     if (!task || task.status === status) {
       return;
     }
-    if (isAssignedTask(task)) {
+    if (!isAdmin && isAssignedTask(task)) {
       setError('Assigned task status is controlled by timer actions and review completion.');
       return;
     }
