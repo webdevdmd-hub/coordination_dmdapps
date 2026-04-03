@@ -91,10 +91,8 @@ const taskStatusStyles: Record<TaskStatus, string> = {
   done: 'border border-emerald-400/35 bg-emerald-400/12 text-emerald-200',
 };
 
-const taskBadgeSizeClass =
-  'w-[140px] justify-center text-center whitespace-nowrap';
-const taskSelectSizeClass =
-  'w-[140px] text-center text-center-last';
+const taskBadgeSizeClass = 'w-[140px] justify-center text-center whitespace-nowrap';
+const taskSelectSizeClass = 'w-[140px] text-center text-center-last';
 
 const TASK_MODAL_DRAFT_STORAGE_KEY = 'tasks-modal-draft';
 
@@ -801,15 +799,16 @@ export default function Page() {
       !timerLocked &&
       task.status === 'in-progress' &&
       ((task.totalTrackedSeconds ?? 0) > 0 || Boolean(task.lastTimerStoppedAt));
-    const timerButtonLabel = timerBusyId === task.id
-      ? 'Updating...'
-      : timerLocked
-        ? 'Timer locked'
-        : isRunning
-          ? 'Stop timer'
-          : canResumeTimer
-            ? 'Continue'
-            : 'Start timer';
+    const timerButtonLabel =
+      timerBusyId === task.id
+        ? 'Updating...'
+        : timerLocked
+          ? 'Timer locked'
+          : isRunning
+            ? 'Stop timer'
+            : canResumeTimer
+              ? 'Continue'
+              : 'Start timer';
     const primaryActionLabel = canCompleteReviewedTask ? 'Mark done' : timerButtonLabel;
     const statusClassName = taskStatusStyles[task.status];
     const showDetails = variant !== 'kanban';
@@ -910,7 +909,9 @@ export default function Page() {
               }
               handleStartTaskTimer(task);
             }}
-            disabled={timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id}
+            disabled={
+              timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id
+            }
             className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${taskBadgeSizeClass} ${
               canCompleteReviewedTask
                 ? 'border border-[#c08a7a]/45 bg-[rgba(192,138,122,0.14)] text-[#e7b8a7]'
@@ -921,7 +922,9 @@ export default function Page() {
                     : 'border border-[#407056]/40 bg-white text-[#407056]'
             }`}
           >
-            {canCompleteReviewedTask && statusBusyId === task.id ? 'Updating...' : primaryActionLabel}
+            {canCompleteReviewedTask && statusBusyId === task.id
+              ? 'Updating...'
+              : primaryActionLabel}
           </button>
         </div>
       );
@@ -1046,7 +1049,9 @@ export default function Page() {
               }
               handleStartTaskTimer(task);
             }}
-            disabled={timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id}
+            disabled={
+              timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id
+            }
             className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:opacity-60 ${taskBadgeSizeClass} ${
               canCompleteReviewedTask
                 ? 'border border-[#c08a7a]/45 bg-[rgba(192,138,122,0.14)] text-[#e7b8a7]'
@@ -1057,7 +1062,9 @@ export default function Page() {
                     : 'border border-emerald-500 text-emerald-700'
             }`}
           >
-            {canCompleteReviewedTask && statusBusyId === task.id ? 'Updating...' : primaryActionLabel}
+            {canCompleteReviewedTask && statusBusyId === task.id
+              ? 'Updating...'
+              : primaryActionLabel}
           </button>
         </div>
       </div>
