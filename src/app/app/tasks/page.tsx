@@ -95,6 +95,8 @@ const taskBadgeSizeClass = 'w-[140px] justify-center text-center whitespace-nowr
 const taskSelectSizeClass = 'w-[140px] text-center text-center-last';
 
 const TASK_MODAL_DRAFT_STORAGE_KEY = 'tasks-modal-draft';
+const TASK_LIST_PAGE_SIZE_STORAGE_KEY = 'tasks-list-page-size';
+const TASK_VISIBLE_COLUMNS_STORAGE_KEY = 'tasks-visible-columns';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -136,6 +138,36 @@ const normalizeStatus = (value: string): TaskStatus => {
   }
   return 'todo';
 };
+
+type TaskListColumnKey =
+  | 'assignee'
+  | 'task'
+  | 'linked'
+  | 'date'
+  | 'status'
+  | 'priority'
+  | 'time'
+  | 'action';
+
+const TASK_LIST_COLUMNS: Array<{
+  key: TaskListColumnKey;
+  label: string;
+  width: string;
+}> = [
+  { key: 'assignee', label: 'Assigned To', width: '1.15fr' },
+  { key: 'task', label: 'Task Name', width: '1.45fr' },
+  { key: 'linked', label: 'Linked Record', width: '1.1fr' },
+  { key: 'date', label: 'Date', width: '0.9fr' },
+  { key: 'status', label: 'Status', width: '0.9fr' },
+  { key: 'priority', label: 'Priority', width: '0.9fr' },
+  { key: 'time', label: 'Time', width: '0.75fr' },
+  { key: 'action', label: 'Action', width: '0.95fr' },
+];
+
+const DEFAULT_VISIBLE_TASK_COLUMNS: TaskListColumnKey[] = TASK_LIST_COLUMNS.map(
+  (column) => column.key,
+);
+const TASK_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 const buildAssignedRecipients = (
   assignedTo: string,
@@ -180,6 +212,39 @@ export default function Page() {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
   const [pendingTimerStopTask, setPendingTimerStopTask] = useState<Task | null>(null);
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState<number>(() => {
+    if (typeof window === 'undefined') {
+      return 10;
+    }
+    const stored = window.localStorage.getItem(TASK_LIST_PAGE_SIZE_STORAGE_KEY);
+    const parsed = Number(stored);
+    return TASK_LIST_PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : 10;
+  });
+  const [visibleListColumns, setVisibleListColumns] = useState<TaskListColumnKey[]>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_VISIBLE_TASK_COLUMNS;
+    }
+    try {
+      const raw = window.localStorage.getItem(TASK_VISIBLE_COLUMNS_STORAGE_KEY);
+      if (!raw) {
+        return DEFAULT_VISIBLE_TASK_COLUMNS;
+      }
+      const parsed = JSON.parse(raw) as TaskListColumnKey[];
+      const filtered = parsed.filter((key) =>
+        TASK_LIST_COLUMNS.some((column) => column.key === key),
+      );
+      return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_TASK_COLUMNS;
+    } catch {
+      return DEFAULT_VISIBLE_TASK_COLUMNS;
+    }
+  });
+  const [isCustomizeColumnsOpen, setIsCustomizeColumnsOpen] = useState(false);
+  const [columnSearch, setColumnSearch] = useState('');
+  const [columnDraft, setColumnDraft] = useState<TaskListColumnKey[]>(DEFAULT_VISIBLE_TASK_COLUMNS);
+  const [columnSnapshot, setColumnSnapshot] = useState<TaskListColumnKey[]>(
+    DEFAULT_VISIBLE_TASK_COLUMNS,
+  );
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
@@ -756,6 +821,46 @@ export default function Page() {
     });
   }, [tasks, search, statusFilter]);
 
+  const visibleTaskColumns = useMemo(() => {
+    const validKeys = new Set(TASK_LIST_COLUMNS.map((column) => column.key));
+    const filtered = visibleListColumns.filter((key) => validKeys.has(key));
+    return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_TASK_COLUMNS;
+  }, [visibleListColumns]);
+
+  const selectedTaskColumns = useMemo(
+    () => TASK_LIST_COLUMNS.filter((column) => visibleTaskColumns.includes(column.key)),
+    [visibleTaskColumns],
+  );
+
+  const listGridTemplateColumns = useMemo(
+    () => selectedTaskColumns.map((column) => `minmax(0, ${column.width})`).join(' '),
+    [selectedTaskColumns],
+  );
+
+  const listPageCount = Math.max(1, Math.ceil(filteredTasks.length / listPageSize));
+  const paginatedTasks = useMemo(() => {
+    const start = (listPage - 1) * listPageSize;
+    return filteredTasks.slice(start, start + listPageSize);
+  }, [filteredTasks, listPage, listPageSize]);
+  const listRangeStart = filteredTasks.length === 0 ? 0 : (listPage - 1) * listPageSize + 1;
+  const listRangeEnd = Math.min(filteredTasks.length, listPage * listPageSize);
+
+  const filteredColumnOptions = useMemo(() => {
+    const term = columnSearch.trim().toLowerCase();
+    return TASK_LIST_COLUMNS.filter((column) =>
+      term.length === 0 ? true : column.label.toLowerCase().includes(term),
+    );
+  }, [columnSearch]);
+
+  const pageSizeOptions = useMemo(
+    () =>
+      TASK_LIST_PAGE_SIZE_OPTIONS.map((size) => ({
+        id: String(size),
+        name: `${size}`,
+      })),
+    [],
+  );
+
   const totals = useMemo(() => {
     const todo = tasks.filter((task) => task.status === 'todo').length;
     const inProgress = tasks.filter((task) => task.status === 'in-progress').length;
@@ -786,6 +891,66 @@ export default function Page() {
     () => Math.max(0, taskStatusFilterOptions.indexOf(statusFilter)),
     [statusFilter],
   );
+
+  useEffect(() => {
+    if (listPage > listPageCount) {
+      setListPage(listPageCount);
+    }
+  }, [listPage, listPageCount]);
+
+  useEffect(() => {
+    setListPage(1);
+  }, [search, statusFilter, listPageSize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(TASK_LIST_PAGE_SIZE_STORAGE_KEY, String(listPageSize));
+  }, [listPageSize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(
+      TASK_VISIBLE_COLUMNS_STORAGE_KEY,
+      JSON.stringify(visibleTaskColumns),
+    );
+  }, [visibleTaskColumns]);
+
+  const openCustomizeColumns = () => {
+    setColumnSnapshot(visibleTaskColumns);
+    setColumnDraft(visibleTaskColumns);
+    setColumnSearch('');
+    setIsCustomizeColumnsOpen(true);
+  };
+
+  const handleToggleColumnDraft = (key: TaskListColumnKey) => {
+    setColumnDraft((current) => {
+      if (current.includes(key)) {
+        if (current.length === 1) {
+          return current;
+        }
+        return current.filter((item) => item !== key);
+      }
+      const next = TASK_LIST_COLUMNS.map((column) => column.key).filter(
+        (columnKey) => current.includes(columnKey) || columnKey === key,
+      );
+      return next;
+    });
+  };
+
+  const handleSaveColumnDraft = () => {
+    setVisibleListColumns(columnDraft);
+    setIsCustomizeColumnsOpen(false);
+  };
+
+  const handleCancelColumnDraft = () => {
+    setColumnDraft(columnSnapshot);
+    setIsCustomizeColumnsOpen(false);
+    setColumnSearch('');
+  };
 
   const renderBoardTaskCard = (task: Task, variant: 'list' | 'cards' | 'kanban' = 'list') => {
     const isRunning = !!task.timerStartedAt;
@@ -836,96 +1001,132 @@ export default function Page() {
               handleOpenEdit(task);
             }
           }}
-          className="grid cursor-pointer gap-3 border-b border-border px-3 py-3 transition hover:bg-[var(--surface-soft)] last:border-b-0 md:grid-cols-[1.25fr_1.3fr_1.1fr_0.9fr_1fr_0.8fr_0.8fr_auto_auto] md:items-center md:gap-2 md:px-4"
+          className="grid cursor-pointer gap-3 border-b border-border px-3 py-3 transition hover:bg-[var(--surface-soft)] last:border-b-0 md:items-center md:gap-3 md:px-4"
+          style={{ gridTemplateColumns: listGridTemplateColumns }}
         >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[#407056]">
-              {assigneeInitial || 'NA'}
-            </span>
-            <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
-              {assigneeName}
-            </p>
-          </div>
-
-          <p className="truncate text-base font-semibold text-text">{task.title}</p>
-
-          <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-            {task.projectId
-              ? (taskProjectNameMap.get(task.projectId) ?? task.projectId)
-              : task.leadReference || 'No linked record'}
-          </p>
-
-          <p className="text-sm text-text">{formatDate(task.dueDate)}</p>
-
-          <div className="flex flex-col gap-2">
-            {usesTimerWorkflow ? (
-              <span
-                className={`inline-flex rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${taskBadgeSizeClass} ${statusClassName}`}
-              >
-                {getTaskStatusDisplay(task.status)}
-              </span>
-            ) : (
-              <select
-                value={task.status}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-                onChange={(event) =>
-                  handleQuickStatusChange(task, event.target.value as TaskStatus)
-                }
-                disabled={!canTrack || statusBusyId === task.id}
-                className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] outline-none disabled:cursor-not-allowed disabled:opacity-60 ${taskSelectSizeClass} ${statusClassName}`}
-              >
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <span
-            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${taskBadgeSizeClass} ${boardPriorityColor[task.priority]}`}
-          >
-            {task.priority}
-          </span>
-
-          <p className="text-sm text-text">{formatDuration(totalSeconds)}</p>
-
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (canCompleteReviewedTask) {
-                void handleQuickStatusChange(task, 'done');
-                return;
-              }
-              if (timerLocked) {
-                return;
-              }
-              if (isRunning) {
-                handleStopTaskTimer(task);
-                return;
-              }
-              handleStartTaskTimer(task);
-            }}
-            disabled={
-              timerLocked || !canTrack || timerBusyId === task.id || statusBusyId === task.id
+          {selectedTaskColumns.map((column) => {
+            switch (column.key) {
+              case 'assignee':
+                return (
+                  <div key={column.key} className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[#407056]">
+                      {assigneeInitial || 'NA'}
+                    </span>
+                    <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+                      {assigneeName}
+                    </p>
+                  </div>
+                );
+              case 'task':
+                return (
+                  <p key={column.key} className="truncate text-base font-semibold text-text">
+                    {task.title}
+                  </p>
+                );
+              case 'linked':
+                return (
+                  <p
+                    key={column.key}
+                    className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted"
+                  >
+                    {task.projectId
+                      ? (taskProjectNameMap.get(task.projectId) ?? task.projectId)
+                      : task.leadReference || 'No linked record'}
+                  </p>
+                );
+              case 'date':
+                return (
+                  <p key={column.key} className="text-sm text-text">
+                    {formatDate(task.dueDate)}
+                  </p>
+                );
+              case 'status':
+                return (
+                  <div key={column.key} className="flex flex-col gap-2">
+                    {usesTimerWorkflow ? (
+                      <span
+                        className={`inline-flex rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${taskBadgeSizeClass} ${statusClassName}`}
+                      >
+                        {getTaskStatusDisplay(task.status)}
+                      </span>
+                    ) : (
+                      <select
+                        value={task.status}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          handleQuickStatusChange(task, event.target.value as TaskStatus)
+                        }
+                        disabled={!canTrack || statusBusyId === task.id}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] outline-none disabled:cursor-not-allowed disabled:opacity-60 ${taskSelectSizeClass} ${statusClassName}`}
+                      >
+                        {statusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              case 'priority':
+                return (
+                  <span
+                    key={column.key}
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${taskBadgeSizeClass} ${boardPriorityColor[task.priority]}`}
+                  >
+                    {task.priority}
+                  </span>
+                );
+              case 'time':
+                return (
+                  <p key={column.key} className="text-sm text-text">
+                    {formatDuration(totalSeconds)}
+                  </p>
+                );
+              case 'action':
+                return (
+                  <button
+                    key={column.key}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (canCompleteReviewedTask) {
+                        void handleQuickStatusChange(task, 'done');
+                        return;
+                      }
+                      if (timerLocked) {
+                        return;
+                      }
+                      if (isRunning) {
+                        handleStopTaskTimer(task);
+                        return;
+                      }
+                      handleStartTaskTimer(task);
+                    }}
+                    disabled={
+                      timerLocked ||
+                      !canTrack ||
+                      timerBusyId === task.id ||
+                      statusBusyId === task.id
+                    }
+                    className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${taskBadgeSizeClass} ${
+                      canCompleteReviewedTask
+                        ? 'border border-[#c08a7a]/45 bg-[rgba(192,138,122,0.14)] text-[#e7b8a7]'
+                        : isRunning
+                          ? 'border border-[#407056] bg-[#407056] text-white'
+                          : timerLocked
+                            ? 'border border-border/60 bg-surface text-muted'
+                            : 'border border-[#407056]/40 bg-white text-[#407056]'
+                    }`}
+                  >
+                    {canCompleteReviewedTask && statusBusyId === task.id
+                      ? 'Updating...'
+                      : primaryActionLabel}
+                  </button>
+                );
             }
-            className={`rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${taskBadgeSizeClass} ${
-              canCompleteReviewedTask
-                ? 'border border-[#c08a7a]/45 bg-[rgba(192,138,122,0.14)] text-[#e7b8a7]'
-                : isRunning
-                  ? 'border border-[#407056] bg-[#407056] text-white'
-                  : timerLocked
-                    ? 'border border-border/60 bg-surface text-muted'
-                    : 'border border-[#407056]/40 bg-white text-[#407056]'
-            }`}
-          >
-            {canCompleteReviewedTask && statusBusyId === task.id
-              ? 'Updating...'
-              : primaryActionLabel}
-          </button>
+          })}
         </div>
       );
     }
@@ -1803,8 +2004,8 @@ export default function Page() {
       </section>
 
       <section className="rounded-[30px] border border-border bg-surface p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between xl:gap-6">
+          <div className="flex flex-col gap-3 xl:min-w-0 xl:flex-1 lg:flex-row lg:flex-wrap lg:items-center xl:flex-nowrap">
             <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2.5 text-xs text-muted sm:w-auto sm:min-w-[250px]">
               <input
                 type="search"
@@ -1836,7 +2037,7 @@ export default function Page() {
                 </div>
               </div>
             </div>
-            <div className="relative hidden rounded-2xl border border-border bg-[var(--surface-muted)] p-1 md:block md:w-auto">
+            <div className="relative hidden rounded-2xl border border-border bg-[var(--surface-muted)] p-1 lg:block lg:w-auto">
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-xl bg-emerald-500 shadow-[0_8px_16px_rgba(16,185,129,0.25)] transition-transform duration-300 ease-out"
@@ -1869,8 +2070,68 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-sm text-muted/80">{filteredTasks.length} tasks visible</p>
+          <div className="flex flex-wrap items-center gap-2 xl:ml-auto xl:flex-nowrap xl:justify-end">
+            {viewMode === 'list' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={openCustomizeColumns}
+                  aria-label="Customize columns"
+                  title="Customize columns"
+                  className="rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-text transition hover:bg-hover/80"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <line x1="4" y1="6" x2="20" y2="6" />
+                    <line x1="4" y1="12" x2="20" y2="12" />
+                    <line x1="4" y1="18" x2="20" y2="18" />
+                    <circle cx="9" cy="6" r="2" />
+                    <circle cx="15" cy="12" r="2" />
+                    <circle cx="11" cy="18" r="2" />
+                  </svg>
+                </button>
+                <FilterDropdown
+                  value={String(listPageSize)}
+                  onChange={(value) => setListPageSize(Number(value))}
+                  options={pageSizeOptions}
+                  ariaLabel="Tasks per page"
+                  prefixLabel="Per page"
+                  buttonClassName="min-w-[136px] gap-2 bg-[var(--surface-soft)] px-3 py-2 text-[11px] shadow-none"
+                />
+                <div className="flex items-center overflow-hidden rounded-2xl border border-border bg-[var(--surface-soft)]">
+                  <button
+                    type="button"
+                    onClick={() => setListPage((current) => Math.max(1, current - 1))}
+                    disabled={listPage === 1}
+                    className="px-2.5 py-2 text-sm text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Prev
+                  </button>
+                  <span className="border-x border-border px-2.5 py-2 text-sm text-muted">
+                    {listRangeStart}-{listRangeEnd}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setListPage((current) => Math.min(listPageCount, current + 1))}
+                    disabled={listPage === listPageCount}
+                    className="px-2.5 py-2 text-sm text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </>
+            ) : null}
+            <p className="whitespace-nowrap text-[11px] text-muted/70">
+              {filteredTasks.length} tasks visible
+            </p>
           </div>
         </div>
 
@@ -1885,8 +2146,55 @@ export default function Page() {
         ) : (
           <div key={viewMode} className="animate-fade-up">
             {viewMode === 'list' ? (
-              <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
-                {filteredTasks.map((task) => renderBoardTaskCard(task, 'list'))}
+              <div className="mt-6">
+                <div
+                  className="mb-3 hidden rounded-3xl border border-border bg-[var(--surface-soft)] px-4 py-3 md:grid md:items-center md:gap-3"
+                  style={{ gridTemplateColumns: listGridTemplateColumns }}
+                >
+                  {selectedTaskColumns.map((column) => (
+                    <p
+                      key={column.key}
+                      className="truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-muted"
+                    >
+                      {column.label}
+                    </p>
+                  ))}
+                </div>
+
+                <div className="overflow-hidden rounded-3xl border border-border bg-surface">
+                  {paginatedTasks.map((task) => renderBoardTaskCard(task, 'list'))}
+                  {paginatedTasks.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted">
+                      No tasks match the current filters.
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex flex-col gap-3 rounded-3xl border border-border bg-[var(--surface-soft)] px-4 py-4 text-sm text-muted md:flex-row md:items-center md:justify-between">
+                  <p>
+                    Showing {listRangeStart}-{listRangeEnd} of {filteredTasks.length} tasks
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setListPage((current) => Math.max(1, current - 1))}
+                      disabled={listPage === 1}
+                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                      Page {listPage} / {listPageCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setListPage((current) => Math.min(listPageCount, current + 1))}
+                      disabled={listPage === listPageCount}
+                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : viewMode === 'cards' ? (
               <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1965,6 +2273,93 @@ export default function Page() {
       {error ? (
         <div className="rounded-2xl border border-border/60 bg-rose-500/10 p-4 text-sm text-rose-100">
           {error}
+        </div>
+      ) : null}
+
+      {isCustomizeColumnsOpen ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
+          onClick={handleCancelColumnDraft}
+        >
+          <DraggablePanel
+            className="w-full max-w-xl rounded-3xl border border-border/60 bg-surface/95 p-5 shadow-floating"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                  Customize Columns
+                </p>
+                <h3 className="mt-2 font-display text-2xl text-text">Task list columns</h3>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  {columnDraft.length} of {TASK_LIST_COLUMNS.length} selected
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancelColumnDraft}
+                  className="mt-2 rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted transition hover:bg-hover/80"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <input
+                type="search"
+                value={columnSearch}
+                onChange={(event) => setColumnSearch(event.target.value)}
+                placeholder="Search columns..."
+                className="w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none placeholder:text-muted/80"
+              />
+            </div>
+
+            <div className="mt-5 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+              {filteredColumnOptions.map((column) => {
+                const checked = columnDraft.includes(column.key);
+                return (
+                  <label
+                    key={column.key}
+                    className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text"
+                  >
+                    <span className="font-medium">{column.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => handleToggleColumnDraft(column.key)}
+                      disabled={checked && columnDraft.length === 1}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                );
+              })}
+              {filteredColumnOptions.length === 0 ? (
+                <div className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-6 text-center text-sm text-muted">
+                  No columns match your search.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelColumnDraft}
+                className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm font-semibold text-text transition hover:bg-hover/80"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveColumnDraft}
+                className="rounded-2xl border border-emerald-500 bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600"
+              >
+                Save
+              </button>
+            </div>
+          </DraggablePanel>
         </div>
       ) : null}
 

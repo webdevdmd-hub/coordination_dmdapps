@@ -14,6 +14,8 @@ type FilterDropdownProps = {
   ariaLabel: string;
   disabled?: boolean;
   className?: string;
+  buttonClassName?: string;
+  prefixLabel?: string;
 };
 
 export function FilterDropdown({
@@ -23,6 +25,8 @@ export function FilterDropdown({
   ariaLabel,
   disabled = false,
   className = '',
+  buttonClassName = '',
+  prefixLabel,
 }: FilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -48,12 +52,19 @@ export function FilterDropdown({
           }
         }}
         disabled={disabled}
-        className="flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80 disabled:cursor-not-allowed disabled:text-muted/80"
+        className={`flex min-w-[190px] items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.14em] text-text shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition hover:border-border/80 disabled:cursor-not-allowed disabled:text-muted/80 ${buttonClassName}`.trim()}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={ariaLabel}
       >
-        <span className="truncate">{selectedLabel}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {prefixLabel ? (
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+              {prefixLabel}
+            </span>
+          ) : null}
+          <span className="truncate">{selectedLabel}</span>
+        </span>
         <svg
           viewBox="0 0 20 20"
           className={`h-4 w-4 shrink-0 text-muted transition ${isOpen ? 'rotate-180' : ''}`}
