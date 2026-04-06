@@ -1,5 +1,6 @@
 'use client';
 
+import { collection, onSnapshot } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { firebaseProjectRepository } from '@/adapters/repositories/firebaseProjectRepository';
@@ -15,7 +16,7 @@ import {
   QuotationRequestStatus,
 } from '@/core/entities/quotationRequest';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getFirebaseAuth } from '@/frameworks/firebase/client';
+import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
 import {
   getModuleCacheEntry,
   isModuleCacheFresh,
@@ -29,6 +30,7 @@ import {
   emitNotificationEventSafe,
   getModuleNotificationPermissions,
 } from '@/lib/notifications';
+import { sortRecordsNewestFirst } from '@/lib/recordSort';
 import { filterAssignableUsers } from '@/lib/assignees';
 import { filterUsersByRole, hasUserVisibilityAccess } from '@/lib/roleVisibility';
 
@@ -480,31 +482,37 @@ export default function Page() {
     if (!activeRequestId) {
       return;
     }
-    let active = true;
-    const refreshActiveRequestTasks = async () => {
-      try {
-        const latestTasks = (await firebaseQuotationRequestRepository.listTasks(
-          activeRequestId,
-        )) as QuotationRequestTask[];
-        if (!active) {
-          return;
-        }
+
+    const tasksCollection = collection(
+      getFirebaseDb(),
+      'sales',
+      'main',
+      'quotation_requests',
+      activeRequestId,
+      'tasks',
+    );
+
+    const unsubscribe = onSnapshot(
+      tasksCollection,
+      (snapshot) => {
+        const latestTasks = sortRecordsNewestFirst(
+          snapshot.docs.map((snap) => ({
+            id: snap.id,
+            ...(snap.data() as Omit<QuotationRequestTask, 'id'>),
+          })) as QuotationRequestTask[],
+        );
+
         updateTasksByRequest((prev) => ({
           ...prev,
           [activeRequestId]: latestTasks,
         }));
-      } catch {
-        // Keep the current modal state if the refresh fails.
-      }
-    };
-    void refreshActiveRequestTasks();
-    const intervalId = window.setInterval(() => {
-      void refreshActiveRequestTasks();
-    }, 5000);
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-    };
+      },
+      () => {
+        // Keep the current modal state if the realtime sync fails.
+      },
+    );
+
+    return () => unsubscribe();
   }, [activeRequestId, updateTasksByRequest]);
 
   const filtered = useMemo(() => {

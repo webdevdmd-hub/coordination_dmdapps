@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
 import { firebaseQuotationRequestRepository } from '@/adapters/repositories/firebaseQuotationRequestRepository';
@@ -14,12 +14,7 @@ import { Task, TaskPriority, TaskRecurrence, TaskStatus } from '@/core/entities/
 import { Project } from '@/core/entities/project';
 import { User } from '@/core/entities/user';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
-import {
-  getModuleCacheEntry,
-  isModuleCacheFresh,
-  MODULE_CACHE_TTL_MS,
-  setModuleCacheEntry,
-} from '@/lib/moduleDataCache';
+import { getModuleCacheEntry, setModuleCacheEntry } from '@/lib/moduleDataCache';
 import { hasPermission } from '@/lib/permissions';
 import { fetchRoleSummaries, RoleSummary } from '@/lib/roles';
 import { filterAssignableUsers } from '@/lib/assignees';
@@ -604,6 +599,53 @@ export default function Page() {
     setSelectedTask((current) => (current?.id === nextTask.id ? nextTask : current));
   };
 
+  const buildVisibleTasks = useCallback(
+    (allTasks: Task[]) => {
+      const normalized = allTasks.map((task) => ({
+        ...task,
+        status: normalizeStatus(task.status),
+      }));
+      if (user?.permissions.includes('admin')) {
+        return ownerFilter === 'all'
+          ? normalized
+          : normalized.filter(
+              (task) =>
+                task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
+            );
+      }
+
+      if (hasUserVisibility) {
+        const sameRoleTasks = normalized.filter((task) => {
+          if (visibleUserIds.has(task.assignedTo)) {
+            return true;
+          }
+          return (task.assignedUsers ?? []).some((assigneeId) => visibleUserIds.has(assigneeId));
+        });
+        return ownerFilter === 'all'
+          ? sameRoleTasks
+          : sameRoleTasks.filter(
+              (task) =>
+                task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
+            );
+      }
+
+      if (!user) {
+        return [];
+      }
+
+      return normalized.filter((task) => {
+        if (task.assignedTo === user.id) {
+          return true;
+        }
+        if ((task.assignedUsers ?? []).includes(user.id)) {
+          return true;
+        }
+        return task.createdBy === user.id;
+      });
+    },
+    [hasUserVisibility, ownerFilter, user, visibleUserIds],
+  );
+
   useEffect(() => {
     const cachedEntry = tasksCacheKey ? getModuleCacheEntry<Task[]>(tasksCacheKey) : null;
     if (!cachedEntry) {
@@ -664,89 +706,44 @@ export default function Page() {
   }, [user, hasUserVisibility]);
 
   useEffect(() => {
-    let active = true;
-    const loadTasks = async () => {
-      if (!user) {
-        setTasks([]);
+    if (!user) {
+      setTasks([]);
+      setLoading(false);
+      return;
+    }
+    if (!canView) {
+      setTasks([]);
+      setLoading(false);
+      return;
+    }
+
+    const cachedEntry = tasksCacheKey ? getModuleCacheEntry<Task[]>(tasksCacheKey) : null;
+    if (cachedEntry) {
+      setTasks(cachedEntry.data);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    const unsubscribe = onSnapshot(
+      collection(getFirebaseDb(), 'tasks'),
+      (snapshot) => {
+        const allTasks = snapshot.docs.map((snap) => ({
+          id: snap.id,
+          ...(snap.data() as Omit<Task, 'id'>),
+        }));
+        syncTasks(buildVisibleTasks(allTasks));
         setLoading(false);
-        return;
-      }
-      if (!canView) {
-        setTasks([]);
+      },
+      () => {
+        setError('Unable to load tasks. Please try again.');
         setLoading(false);
-        return;
-      }
-      const cachedEntry = tasksCacheKey ? getModuleCacheEntry<Task[]>(tasksCacheKey) : null;
-      if (cachedEntry) {
-        setTasks(cachedEntry.data);
-        setLoading(false);
-        if (isModuleCacheFresh(cachedEntry, MODULE_CACHE_TTL_MS)) {
-          return;
-        }
-      } else {
-        setLoading(true);
-      }
-      setError(null);
-      try {
-        let nextTasks: Task[] = [];
-        if (user.permissions.includes('admin')) {
-          const allTasks = await firebaseTaskRepository.listAll();
-          if (ownerFilter === 'all') {
-            nextTasks = allTasks.map((task) => ({ ...task, status: normalizeStatus(task.status) }));
-          } else {
-            const filtered = allTasks.filter((task) => {
-              const matchesOwner =
-                task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter);
-              return matchesOwner;
-            });
-            nextTasks = filtered.map((task) => ({ ...task, status: normalizeStatus(task.status) }));
-          }
-        } else if (hasUserVisibility) {
-          const allTasks = await firebaseTaskRepository.listAll();
-          const sameRoleTasks = allTasks.filter((task) => {
-            if (visibleUserIds.has(task.assignedTo)) {
-              return true;
-            }
-            return (task.assignedUsers ?? []).some((assigneeId) => visibleUserIds.has(assigneeId));
-          });
-          if (ownerFilter === 'all') {
-            nextTasks = sameRoleTasks.map((task) => ({
-              ...task,
-              status: normalizeStatus(task.status),
-            }));
-          } else {
-            const filtered = sameRoleTasks.filter(
-              (task) =>
-                task.assignedTo === ownerFilter || (task.assignedUsers ?? []).includes(ownerFilter),
-            );
-            nextTasks = filtered.map((task) => ({
-              ...task,
-              status: normalizeStatus(task.status),
-            }));
-          }
-        } else {
-          const result = await firebaseTaskRepository.listForUser(user.id, user.role);
-          nextTasks = result.map((task) => ({ ...task, status: normalizeStatus(task.status) }));
-        }
-        if (!active) {
-          return;
-        }
-        syncTasks(nextTasks);
-      } catch {
-        if (active) {
-          setError('Unable to load tasks. Please try again.');
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-    loadTasks();
-    return () => {
-      active = false;
-    };
-  }, [user, canView, hasUserVisibility, ownerFilter, visibleUserIds, tasksCacheKey, syncTasks]);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [user, canView, tasksCacheKey, syncTasks, buildVisibleTasks]);
 
   useEffect(() => {
     if (!tasks.some((task) => task.timerStartedAt)) {
