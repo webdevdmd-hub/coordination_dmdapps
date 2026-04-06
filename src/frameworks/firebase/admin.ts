@@ -4,8 +4,17 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 let adminApp: App | null = null;
 
+const readEnv = (key: string) => {
+  const value = process.env[key];
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.replace(/^['"]|['"]$/g, '');
+};
+
 const getAdminCredential = () => {
-  const serviceJson = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON;
+  const serviceJson = readEnv('FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON');
   if (serviceJson) {
     const parsed = JSON.parse(serviceJson) as {
       project_id?: string;
@@ -22,9 +31,9 @@ const getAdminCredential = () => {
   }
 
   const projectId =
-    process.env.FIREBASE_ADMIN_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    readEnv('FIREBASE_ADMIN_PROJECT_ID') || readEnv('NEXT_PUBLIC_FIREBASE_PROJECT_ID');
+  const clientEmail = readEnv('FIREBASE_ADMIN_CLIENT_EMAIL');
+  const privateKey = readEnv('FIREBASE_ADMIN_PRIVATE_KEY').replace(/\\n/g, '\n');
 
   if (projectId && clientEmail && privateKey) {
     return cert({ projectId, clientEmail, privateKey });

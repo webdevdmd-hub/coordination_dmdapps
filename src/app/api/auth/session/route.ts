@@ -8,6 +8,19 @@ type SessionRequest = {
   idToken?: string;
 };
 
+const toErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  const code = typeof error === 'object' && error ? (error as { code?: string }).code : undefined;
+  if (typeof code === 'string' && code.trim()) {
+    return code;
+  }
+
+  return 'Invalid authentication token.';
+};
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as SessionRequest;
@@ -32,8 +45,8 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch {
-    return NextResponse.json({ error: 'Invalid authentication token.' }, { status: 401 });
+  } catch (error) {
+    return NextResponse.json({ error: toErrorMessage(error) }, { status: 401 });
   }
 }
 

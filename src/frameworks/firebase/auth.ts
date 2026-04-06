@@ -15,7 +15,16 @@ const syncServerSession = async (method: 'POST' | 'DELETE', idToken?: string) =>
   });
 
   if (!response.ok) {
-    throw new Error('Unable to synchronize authentication session.');
+    let errorMessage = 'Unable to synchronize authentication session.';
+    try {
+      const payload = (await response.json()) as { error?: string };
+      if (typeof payload.error === 'string' && payload.error.trim()) {
+        errorMessage = payload.error;
+      }
+    } catch {
+      // Fall back to the generic message when the response is not JSON.
+    }
+    throw new Error(errorMessage);
   }
 };
 
