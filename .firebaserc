@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "dmd-project-7d5bc"
+    "dev": "dmd-project-7d5bc",
+    "prod": "hsappdata"
   }
 }
