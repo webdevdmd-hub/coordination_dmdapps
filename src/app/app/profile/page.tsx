@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
-import { sendPasswordResetEmail, updateEmail } from 'firebase/auth';
+import { updateEmail, updatePassword } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -19,6 +19,11 @@ type ProfileForm = {
   active: boolean;
   createdAt: string;
   avatarUrl: string;
+};
+
+type PasswordForm = {
+  newPassword: string;
+  confirmPassword: string;
 };
 
 const formatDate = (value?: string) => {
@@ -39,9 +44,14 @@ export default function Page() {
   const [profileSnapshot, setProfileSnapshot] = useState<ProfileForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [passwordForm, setPasswordForm] = useState<PasswordForm>({
+    newPassword: '',
+    confirmPassword: '',
+  });
 
   const canViewProfile = hasPermission(permissions ?? [], ['admin', 'profile_view_self']);
   const canEditName = hasPermission(permissions ?? [], ['admin', 'profile_edit_name']);
@@ -49,7 +59,7 @@ export default function Page() {
   const canEditPhone = hasPermission(permissions ?? [], ['admin', 'profile_edit_phone']);
   const canEditAvatar = hasPermission(permissions ?? [], ['admin', 'profile_edit_avatar']);
   const canEditRole = hasPermission(permissions ?? [], ['admin', 'profile_edit_role']);
-  const canResetPassword = hasPermission(permissions ?? [], ['admin', 'profile_password_reset']);
+  const canChangePassword = hasPermission(permissions ?? [], ['admin', 'profile_password_reset']);
 
   useEffect(() => {
     if (!user || !canViewProfile) {
@@ -138,15 +148,52 @@ export default function Page() {
     }
   };
 
-  const handlePasswordReset = async () => {
-    if (!user || !canResetPassword || !profileForm?.email) {
+  const handlePasswordChange = async () => {
+    if (!user || !canChangePassword) {
       return;
     }
+
+    const auth = getFirebaseAuth();
+    const currentUser = auth.currentUser;
+    const newPassword = passwordForm.newPassword;
+    const confirmPassword = passwordForm.confirmPassword;
+
+    if (!currentUser || !currentUser.email) {
+      setError('Unable to update password.');
+      setNotice(null);
+      return;
+    }
+    if (!newPassword || !confirmPassword) {
+      setError('Fill in all password fields.');
+      setNotice(null);
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters.');
+      setNotice(null);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
+      setNotice(null);
+      return;
+    }
+
+    setPasswordSaving(true);
+    setError(null);
+    setNotice(null);
     try {
-      await sendPasswordResetEmail(getFirebaseAuth(), profileForm.email);
-      setNotice('Password reset email sent.');
-    } catch {
-      setError('Unable to send password reset email.');
+      await updatePassword(currentUser, newPassword);
+      setPasswordForm({
+        newPassword: '',
+        confirmPassword: '',
+      });
+      setNotice('Password updated.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to update password.';
+      setError(message);
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -245,119 +292,180 @@ export default function Page() {
               >
                 {avatarUploading ? 'Uploading...' : 'Upload photo'}
               </button>
-              <button
-                type="button"
-                disabled={!canResetPassword}
-                onClick={handlePasswordReset}
-                className="rounded-full border border-border/60 bg-bg/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Send reset link
-              </button>
+              <div className="rounded-full border border-border/60 bg-bg/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                Password managed below
+              </div>
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-border/60 bg-bg/70 p-6 shadow-soft">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Full name
-                </label>
-                <input
-                  value={profileForm.fullName}
-                  onChange={(event) =>
-                    setProfileForm((prev) =>
-                      prev ? { ...prev, fullName: event.target.value } : prev,
-                    )
-                  }
-                  disabled={!canEditName}
-                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-                />
+          <div className="space-y-6">
+            <div className="rounded-[28px] border border-border/60 bg-bg/70 p-6 shadow-soft">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Full name
+                  </label>
+                  <input
+                    value={profileForm.fullName}
+                    onChange={(event) =>
+                      setProfileForm((prev) =>
+                        prev ? { ...prev, fullName: event.target.value } : prev,
+                      )
+                    }
+                    disabled={!canEditName}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={profileForm.email}
+                    onChange={(event) =>
+                      setProfileForm((prev) =>
+                        prev ? { ...prev, email: event.target.value } : prev,
+                      )
+                    }
+                    disabled={!canEditEmail}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Phone
+                  </label>
+                  <input
+                    value={profileForm.phone}
+                    onChange={(event) =>
+                      setProfileForm((prev) =>
+                        prev ? { ...prev, phone: event.target.value } : prev,
+                      )
+                    }
+                    disabled={!canEditPhone}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Role
+                  </label>
+                  <input
+                    value={profileForm.role}
+                    onChange={(event) =>
+                      setProfileForm((prev) =>
+                        prev ? { ...prev, role: event.target.value } : prev,
+                      )
+                    }
+                    disabled={!canEditRole}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={profileForm.email}
-                  onChange={(event) =>
-                    setProfileForm((prev) => (prev ? { ...prev, email: event.target.value } : prev))
-                  }
-                  disabled={!canEditEmail}
-                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-                />
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Status
+                  </label>
+                  <input
+                    value={profileForm.active ? 'Active' : 'Inactive'}
+                    readOnly
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Created
+                  </label>
+                  <input
+                    value={formatDate(profileForm.createdAt)}
+                    readOnly
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Phone
-                </label>
-                <input
-                  value={profileForm.phone}
-                  onChange={(event) =>
-                    setProfileForm((prev) => (prev ? { ...prev, phone: event.target.value } : prev))
-                  }
-                  disabled={!canEditPhone}
-                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Role
-                </label>
-                <input
-                  value={profileForm.role}
-                  onChange={(event) =>
-                    setProfileForm((prev) => (prev ? { ...prev, role: event.target.value } : prev))
-                  }
-                  disabled={!canEditRole}
-                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
-                />
+
+              {error ? (
+                <div className="mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
+                  {error}
+                </div>
+              ) : null}
+              {notice ? (
+                <div className="mt-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
+                  {notice}
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-full border border-border/60 bg-accent/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? 'Saving...' : 'Save changes'}
+                </button>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Status
-                </label>
-                <input
-                  value={profileForm.active ? 'Active' : 'Inactive'}
-                  readOnly
-                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                  Created
-                </label>
-                <input
-                  value={formatDate(profileForm.createdAt)}
-                  readOnly
-                  className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
-                />
-              </div>
-            </div>
+            <div className="rounded-[28px] border border-border/60 bg-bg/70 p-6 shadow-soft">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                Security
+              </p>
+              <h2 className="mt-2 font-display text-2xl text-text">Change password</h2>
+              <p className="mt-2 text-sm text-muted">
+                Passwords are managed in Firebase Authentication and are never stored in Firestore.
+              </p>
 
-            {error ? (
-              <div className="mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
-                {error}
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    New password
+                  </label>
+                  <input
+                    type="password"
+                    value={passwordForm.newPassword}
+                    onChange={(event) =>
+                      setPasswordForm((prev) => ({
+                        ...prev,
+                        newPassword: event.target.value,
+                      }))
+                    }
+                    disabled={!canChangePassword}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Confirm new password
+                  </label>
+                  <input
+                    type="password"
+                    value={passwordForm.confirmPassword}
+                    onChange={(event) =>
+                      setPasswordForm((prev) => ({
+                        ...prev,
+                        confirmPassword: event.target.value,
+                      }))
+                    }
+                    disabled={!canChangePassword}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none disabled:cursor-not-allowed disabled:text-muted/70"
+                  />
+                </div>
               </div>
-            ) : null}
-            {notice ? (
-              <div className="mt-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
-                {notice}
-              </div>
-            ) : null}
 
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-full border border-border/60 bg-accent/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? 'Saving...' : 'Save changes'}
-              </button>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handlePasswordChange}
+                  disabled={!canChangePassword || passwordSaving}
+                  className="rounded-full border border-border/60 bg-accent/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {passwordSaving ? 'Updating...' : 'Update password'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

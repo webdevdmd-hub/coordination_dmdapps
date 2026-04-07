@@ -81,6 +81,7 @@ const permissionLabels: Partial<Record<PermissionKey, string>> = {
   task_assign: 'Can Assign Tasks (Same Role)',
   lead_delete: 'Cascade Delete Leads',
   project_delete: 'Cascade Delete Projects',
+  profile_password_reset: 'Change Own Password',
 };
 
 const formatPermissionLabel = (permission: PermissionKey) => {
