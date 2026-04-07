@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
@@ -536,9 +537,21 @@ export function TopBar({
                 <p className="text-sm font-semibold text-text">{userName}</p>
               </div>
             )}
-            <div className="grid h-11 w-11 place-items-center rounded-full border border-accent/40 bg-accent/20 text-sm font-semibold uppercase text-accent">
-              {userName.slice(0, 1)}
-            </div>
+            {user?.avatarUrl ? (
+              <div className="h-11 w-11 overflow-hidden rounded-full border border-accent/40 bg-accent/20">
+                <Image
+                  src={user.avatarUrl}
+                  alt={`${userName} avatar`}
+                  width={44}
+                  height={44}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="grid h-11 w-11 place-items-center rounded-full border border-accent/40 bg-accent/20 text-sm font-semibold uppercase text-accent">
+                {userName.slice(0, 1)}
+              </div>
+            )}
           </div>
         </div>
       </div>
