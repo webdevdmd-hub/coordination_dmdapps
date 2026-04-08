@@ -160,6 +160,7 @@ const permissionGroups: Array<
         keys: [
           'project_create',
           'project_view',
+          'project_view_all',
           'project_edit',
           'project_delete',
           'project_assign',
