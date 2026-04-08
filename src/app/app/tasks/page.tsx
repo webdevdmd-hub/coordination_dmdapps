@@ -1382,18 +1382,29 @@ export default function Page() {
     setError(null);
     try {
       const syncQuotationRequestStatus = async (quotationRequestId: string) => {
+        const request = await firebaseQuotationRequestRepository.getById(quotationRequestId);
+        if (!request) {
+          return;
+        }
         const requestTasks = (await firebaseQuotationRequestRepository.listTasks(
           quotationRequestId,
         )) as Array<{ status?: string }>;
         if (requestTasks.length === 0) {
           return;
         }
-        const isCompleted = requestTasks.every(
+        const isReviewReady = requestTasks.every(
           (entry) => String(entry.status ?? '').toLowerCase() === 'done',
         );
-        if (isCompleted) {
+        const nextStatus = isReviewReady
+          ? request.status === 'completed'
+            ? 'completed'
+            : 'review'
+          : requestTasks.some((entry) => String(entry.status ?? '').toLowerCase() === 'assigned')
+            ? 'pending'
+            : 'new';
+        if (nextStatus !== request.status) {
           await firebaseQuotationRequestRepository.update(quotationRequestId, {
-            status: 'completed',
+            status: nextStatus,
             updatedAt: new Date().toISOString(),
           });
         }
@@ -1794,18 +1805,29 @@ export default function Page() {
     setError(null);
     try {
       const syncQuotationRequestStatus = async (quotationRequestId: string) => {
+        const request = await firebaseQuotationRequestRepository.getById(quotationRequestId);
+        if (!request) {
+          return;
+        }
         const requestTasks = (await firebaseQuotationRequestRepository.listTasks(
           quotationRequestId,
         )) as Array<{ status?: string }>;
         if (requestTasks.length === 0) {
           return;
         }
-        const isCompleted = requestTasks.every(
+        const isReviewReady = requestTasks.every(
           (entry) => String(entry.status ?? '').toLowerCase() === 'done',
         );
-        if (isCompleted) {
+        const nextStatus = isReviewReady
+          ? request.status === 'completed'
+            ? 'completed'
+            : 'review'
+          : requestTasks.some((entry) => String(entry.status ?? '').toLowerCase() === 'assigned')
+            ? 'pending'
+            : 'new';
+        if (nextStatus !== request.status) {
           await firebaseQuotationRequestRepository.update(quotationRequestId, {
-            status: 'completed',
+            status: nextStatus,
             updatedAt: new Date().toISOString(),
           });
         }

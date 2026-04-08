@@ -1,5 +1,5 @@
 export type QuotationRequestPriority = 'low' | 'medium' | 'high';
-export type QuotationRequestStatus = 'new' | 'review' | 'approved' | 'rejected' | 'completed';
+export type QuotationRequestStatus = 'new' | 'pending' | 'review' | 'completed';
 
 export type QuotationRequestRecipient = {
   id: string;
@@ -37,4 +37,20 @@ export type QuotationRequestTask = {
   estimateAmount?: number;
   updatedAt?: string;
   createdAt: string;
+};
+
+export const normalizeQuotationRequestStatus = (value: unknown): QuotationRequestStatus => {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'pending' || normalized === 'review' || normalized === 'completed') {
+    return normalized;
+  }
+
+  if (normalized === 'approved' || normalized === 'rejected') {
+    return 'review';
+  }
+
+  return 'new';
 };

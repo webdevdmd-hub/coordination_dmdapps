@@ -14,6 +14,7 @@ import {
   QuotationRequest,
   QuotationRequestTask,
   QuotationRequestStatus,
+  normalizeQuotationRequestStatus,
 } from '@/core/entities/quotationRequest';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getFirebaseAuth, getFirebaseDb } from '@/frameworks/firebase/client';
@@ -58,9 +59,8 @@ const priorityStyles: Record<string, string> = {
 
 const statusStyles: Record<QuotationRequestStatus, string> = {
   new: 'bg-surface-strong text-text',
-  review: 'bg-[#00B67A]/16 text-[#00B67A]',
-  approved: 'bg-[#00B67A]/22 text-[#00B67A]',
-  rejected: 'bg-amber-200 text-amber-800',
+  pending: 'bg-blue-100 text-blue-700',
+  review: 'bg-amber-100 text-amber-700',
   completed: 'bg-emerald-600 text-white',
 };
 
@@ -71,6 +71,9 @@ const taskStatusStyles: Record<string, string> = {
 };
 
 const normalizeTaskTag = (value: string) => value.trim().toLowerCase();
+
+const formatRequestStatusLabel = (status: QuotationRequestStatus) =>
+  status.charAt(0).toUpperCase() + status.slice(1);
 
 const formatDate = (value: string) => {
   if (!value) {
@@ -106,7 +109,7 @@ const normalizeRequest = (raw: Record<string, unknown>): QuotationRequest => {
     priority: (raw.priority as QuotationRequest['priority']) ?? 'medium',
     notes: String(raw.notes ?? ''),
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
-    status: (raw.status as QuotationRequestStatus) ?? 'new',
+    status: normalizeQuotationRequestStatus(raw.status),
     createdAt: String(raw.createdAt ?? new Date().toISOString()),
   };
 };
@@ -117,7 +120,7 @@ export default function Page() {
   const [allUsers, setAllUsers] = useState<Array<{ id: string; role: string; active: boolean }>>(
     [],
   );
-  const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<QuotationRequestStatus | 'all'>('new');
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -531,22 +534,14 @@ export default function Page() {
   const totals = useMemo(() => {
     return {
       newCount: requests.filter((request) => request.status === 'new').length,
+      pending: requests.filter((request) => request.status === 'pending').length,
       review: requests.filter((request) => request.status === 'review').length,
-      approved: requests.filter((request) => request.status === 'approved').length,
-      rejected: requests.filter((request) => request.status === 'rejected').length,
       completed: requests.filter((request) => request.status === 'completed').length,
     };
   }, [requests]);
 
   const selectedViewIndex = viewMode === 'cards' ? 1 : 0;
-  const requestStatusFilterOptions = [
-    'all',
-    'new',
-    'review',
-    'approved',
-    'rejected',
-    'completed',
-  ] as const;
+  const requestStatusFilterOptions = ['all', 'new', 'pending', 'review', 'completed'] as const;
   const selectedRequestStatusIndex = Math.max(0, requestStatusFilterOptions.indexOf(statusFilter));
 
   const activeRequest = useMemo(
@@ -691,6 +686,15 @@ export default function Page() {
         date: now,
         createdBy: user.id,
       });
+      const updatedRequest = await firebaseQuotationRequestRepository.update(activeRequest.id, {
+        status: 'completed',
+        updatedAt: now,
+      });
+      updateRequests((prev) =>
+        prev.map((item) =>
+          item.id === activeRequest.id ? (updatedRequest as QuotationRequest) : item,
+        ),
+      );
       const requestNo = data.requestNo ?? 'Sales Order Req';
       setSalesOrderSuccess(`${requestNo} submitted for approval.`);
     } catch {
@@ -776,6 +780,13 @@ export default function Page() {
       status: 'assigned',
       updatedAt: now,
     })) as QuotationRequestTask;
+    const updatedRequest = await firebaseQuotationRequestRepository.update(request.id, {
+      status: 'pending',
+      updatedAt: now,
+    });
+    updateRequests((prev) =>
+      prev.map((item) => (item.id === request.id ? (updatedRequest as QuotationRequest) : item)),
+    );
     updateTasksByRequest((prev) => ({
       ...prev,
       [request.id]: (prev[request.id] ?? []).map((item) => (item.id === task.id ? updated : item)),
@@ -871,6 +882,13 @@ export default function Page() {
         },
       ]);
       const created = createdTasks[0];
+      const updatedRequest = await firebaseQuotationRequestRepository.update(request.id, {
+        status: customTaskAssignee ? 'pending' : 'new',
+        updatedAt: now,
+      });
+      updateRequests((prev) =>
+        prev.map((item) => (item.id === request.id ? (updatedRequest as QuotationRequest) : item)),
+      );
       if (taskId && created?.id) {
         await firebaseTaskRepository.update(taskId, {
           quotationRequestTaskId: created.id,
@@ -1032,28 +1050,22 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-5">
+        <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">New</p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.newCount}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-              In review
+              Pending
+            </p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.pending}</p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Review
             </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.review}</p>
-          </div>
-          <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-              Approved
-            </p>
-            <p className="mt-4 text-5xl font-semibold text-text">{totals.approved}</p>
-          </div>
-          <div className="rounded-3xl border border-border bg-surface p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-              Rejected
-            </p>
-            <p className="mt-4 text-5xl font-semibold text-text">{totals.rejected}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
@@ -1103,7 +1115,7 @@ export default function Page() {
                           : 'text-muted hover:text-text'
                       }`}
                     >
-                      {status === 'all' ? 'All' : status}
+                      {status === 'all' ? 'All' : formatRequestStatusLabel(status)}
                     </button>
                   ))}
                 </div>
@@ -1133,7 +1145,7 @@ export default function Page() {
                       statusFilter === status ? 'text-white' : 'text-muted hover:text-text'
                     }`}
                   >
-                    {status === 'all' ? 'All' : status}
+                    {status === 'all' ? 'All' : formatRequestStatusLabel(status)}
                   </button>
                 ))}
               </div>
@@ -1226,7 +1238,7 @@ export default function Page() {
                           statusStyles[request.status]
                         }`}
                       >
-                        {request.status}
+                        {formatRequestStatusLabel(request.status)}
                       </span>
                       <span
                         className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] ${
@@ -1313,7 +1325,7 @@ export default function Page() {
                     statusStyles[activeRequest.status]
                   }`}
                 >
-                  {activeRequest.status}
+                  {formatRequestStatusLabel(activeRequest.status)}
                 </span>
                 <button
                   type="button"

@@ -883,9 +883,11 @@ export function LeadModal({
             requestId,
             tagsToCreate.map((tag) => ({ tag, status: 'pending', createdAt: now, updatedAt: now })),
           );
-          if (String(matchingRequest.status ?? '').toLowerCase() === 'completed') {
+          if (
+            ['completed', 'review'].includes(String(matchingRequest.status ?? '').toLowerCase())
+          ) {
             await firebaseQuotationRequestRepository.update(requestId, {
-              status: 'review',
+              status: 'new',
               updatedAt: now,
             });
           }

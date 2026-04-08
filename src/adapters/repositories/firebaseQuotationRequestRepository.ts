@@ -1,6 +1,10 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
 
-import { QuotationRequest, QuotationRequestTask } from '@/core/entities/quotationRequest';
+import {
+  QuotationRequest,
+  QuotationRequestTask,
+  normalizeQuotationRequestStatus,
+} from '@/core/entities/quotationRequest';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
 import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
@@ -15,7 +19,7 @@ export type CreateQuotationRequestInput = {
   recipients: Array<{ id: string; name: string; roleKey: string }>;
   priority: 'low' | 'medium' | 'high';
   tags: string[];
-  status?: 'new' | 'review' | 'approved' | 'rejected' | 'completed';
+  status?: 'new' | 'pending' | 'review' | 'completed';
   notes?: string;
   createdAt?: string;
 };
@@ -38,6 +42,7 @@ type QuotationRequestTaskFirestore = Omit<QuotationRequestTask, 'id'>;
 const toQuotationRequest = (id: string, data: QuotationRequestFirestore): QuotationRequest => ({
   id,
   ...data,
+  status: normalizeQuotationRequestStatus(data.status),
 });
 
 const toQuotationRequestTask = (
@@ -61,7 +66,7 @@ export const firebaseQuotationRequestRepository = {
     const now = new Date().toISOString();
     const payload: QuotationRequestFirestore = {
       ...input,
-      status: input.status ?? 'new',
+      status: normalizeQuotationRequestStatus(input.status),
       notes: input.notes ?? '',
       createdAt: input.createdAt ?? now,
     };
@@ -75,6 +80,13 @@ export const firebaseQuotationRequestRepository = {
         toQuotationRequest(snap.id, snap.data() as QuotationRequestFirestore),
       ),
     );
+  },
+  async getById(id: string) {
+    const snap = await getDoc(quotationRequestDoc(id));
+    if (!snap.exists()) {
+      return null;
+    }
+    return toQuotationRequest(snap.id, snap.data() as QuotationRequestFirestore);
   },
   async update(id: string, updates: Record<string, unknown>) {
     const docRef = quotationRequestDoc(id);
