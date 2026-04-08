@@ -3,14 +3,12 @@
 import { useState } from 'react';
 
 import { FirebaseError } from 'firebase/app';
-import { sendPasswordResetEmail } from 'firebase/auth';
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { establishServerSession, signInWithEmail } from '@/frameworks/firebase/auth';
-import { getFirebaseAuth } from '@/frameworks/firebase/client';
 
 const getSignInErrorMessage = (code: string, fallback: string) => {
   switch (code) {
@@ -38,14 +36,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const onSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
-    setNotice(null);
     setLoading(true);
     try {
       const credential = await signInWithEmail(email.trim(), password);
@@ -73,35 +68,6 @@ export default function LoginPage() {
       setError(getSignInErrorMessage(errorCode, message));
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setError('Enter your email address first to receive a reset link.');
-      setNotice(null);
-      return;
-    }
-
-    setError(null);
-    setNotice(null);
-    setForgotPasswordLoading(true);
-    try {
-      await sendPasswordResetEmail(getFirebaseAuth(), trimmedEmail);
-      setNotice('Password reset email sent. Check your inbox.');
-    } catch (err) {
-      const errorCode =
-        err instanceof FirebaseError ? err.code : ((err as { code?: string })?.code ?? 'unknown');
-      const message =
-        err instanceof FirebaseError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : ((err as { message?: string })?.message ?? 'Unable to send reset email.');
-      setError(getSignInErrorMessage(errorCode, message));
-    } finally {
-      setForgotPasswordLoading(false);
     }
   };
 
@@ -202,24 +168,11 @@ export default function LoginPage() {
           >
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
-          <button
-            type="button"
-            onClick={() => void handleForgotPassword()}
-            disabled={forgotPasswordLoading}
-            className="w-full text-center text-sm font-medium text-muted transition hover:text-text disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {forgotPasswordLoading ? 'Sending reset link...' : 'Forgot password?'}
-          </button>
         </form>
 
         {error ? (
           <div className="mt-4 rounded-2xl border border-border/60 bg-bg/70 p-3 text-xs text-muted">
             {error}
-          </div>
-        ) : null}
-        {notice ? (
-          <div className="mt-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-            {notice}
           </div>
         ) : null}
       </div>
