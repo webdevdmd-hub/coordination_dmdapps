@@ -250,8 +250,6 @@ export default function Page() {
   const [roleRelationsDraft, setRoleRelationsDraft] = useState<RoleRelations>(emptyRoleRelations);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
-  const [saveDialogMode, setSaveDialogMode] = useState<'confirm' | 'success'>('confirm');
 
   const syncRoles = useCallback((next: Role[]) => {
     setRoles(next);
@@ -445,14 +443,16 @@ export default function Page() {
     setError(null);
     setSaveStatus('saving');
     setIsSavingPermissions(true);
+    const nextPermissions = [...permissionDraft];
+    const nextRoleRelations = normalizeRoleRelations(roleRelationsDraft) as RoleRelations;
     try {
       const response = await fetch('/api/admin/roles', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: selectedRole.id,
-          permissions: permissionDraft,
-          roleRelations: roleRelationsDraft,
+          permissions: nextPermissions,
+          roleRelations: nextRoleRelations,
         }),
       });
       if (!response.ok) {
@@ -461,7 +461,17 @@ export default function Page() {
         } | null;
         throw new Error(payload?.error ?? 'Unable to update permissions.');
       }
-      await refreshRoles({ force: true });
+      syncRoles(
+        roles.map((role) =>
+          role.id === selectedRole.id
+            ? {
+                ...role,
+                permissions: nextPermissions,
+                roleRelations: nextRoleRelations,
+              }
+            : role,
+        ),
+      );
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
       return true;
@@ -489,21 +499,6 @@ export default function Page() {
     setPermissionDraft(selectedRole.permissions ?? []);
     setRoleRelationsDraft(selectedRole.roleRelations ?? emptyRoleRelations());
     setSaveStatus('idle');
-  };
-
-  const openSaveDialog = () => {
-    if (!selectedRole || isAdminRole || isSavingPermissions) {
-      return;
-    }
-    setSaveDialogMode('confirm');
-    setIsSaveDialogOpen(true);
-  };
-
-  const handleConfirmSavePermissions = async () => {
-    const didSave = await handleSavePermissions();
-    if (didSave) {
-      setSaveDialogMode('success');
-    }
   };
 
   const openEditRole = () => {
@@ -952,7 +947,9 @@ export default function Page() {
                         <button
                           type="button"
                           disabled={isSavingPermissions || isAdminRole}
-                          onClick={openSaveDialog}
+                          onClick={() => {
+                            void handleSavePermissions();
+                          }}
                           className="rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isSavingPermissions
@@ -1122,114 +1119,6 @@ export default function Page() {
                 {isUpdatingRole ? 'Updating...' : 'Update role'}
               </button>
             </form>
-          </DraggablePanel>
-        </div>
-      ) : null}
-
-      {isSaveDialogOpen ? (
-        <div
-          data-modal-overlay="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
-          onClick={() => {
-            if (!isSavingPermissions) {
-              setIsSaveDialogOpen(false);
-            }
-          }}
-        >
-          <DraggablePanel
-            role="dialog"
-            aria-modal="true"
-            aria-label={
-              saveDialogMode === 'success' ? 'Permissions saved' : 'Confirm save permissions'
-            }
-            className={`w-full animate-fade-up rounded-3xl border border-border/60 bg-surface/95 shadow-floating ${
-              saveDialogMode === 'success' ? 'max-w-sm p-5' : 'max-w-xl p-6'
-            }`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            {saveDialogMode === 'success' ? (
-              <div className="flex flex-col items-center text-center">
-                <div className="relative grid h-20 w-20 place-items-center">
-                  <span className="absolute inset-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 animate-ping" />
-                  <span className="absolute inset-1 rounded-full border border-emerald-400/40 bg-emerald-500/12" />
-                  <span className="relative grid h-14 w-14 place-items-center rounded-full bg-emerald-500 text-white shadow-[0_10px_24px_rgba(16,185,129,0.28)]">
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-7 w-7"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="m5 12 5 5L19 8" />
-                    </svg>
-                  </span>
-                </div>
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.28em] text-emerald-300">
-                  Saved
-                </p>
-                <h3 className="mt-2 font-display text-2xl text-text">Permissions updated</h3>
-                <p className="mt-2 text-sm text-muted">
-                  {selectedRole?.name ?? 'This role'} permissions were saved successfully.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsSaveDialogOpen(false)}
-                  className="mt-5 w-full rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
-                      Confirm
-                    </p>
-                    <h3 className="mt-2 font-display text-2xl text-text">
-                      Save permission changes
-                    </h3>
-                    <p className="mt-2 text-sm text-muted">
-                      Apply the current permission matrix and module role access changes to{' '}
-                      {selectedRole?.name ?? 'this role'}?
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!isSavingPermissions) {
-                        setIsSaveDialogOpen(false);
-                      }
-                    }}
-                    className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={isSavingPermissions}
-                  >
-                    Close
-                  </button>
-                </div>
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setIsSaveDialogOpen(false)}
-                    disabled={isSavingPermissions}
-                    className="rounded-full border border-border/60 bg-bg/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmSavePermissions}
-                    disabled={isSavingPermissions}
-                    className="rounded-full border border-border/60 bg-accent/80 px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-accent-strong/80 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isSavingPermissions ? 'Saving...' : 'Save permissions'}
-                  </button>
-                </div>
-              </>
-            )}
           </DraggablePanel>
         </div>
       ) : null}
