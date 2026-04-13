@@ -137,6 +137,7 @@ const normalizeStatus = (value: string): TaskStatus => {
 type TaskListColumnKey =
   | 'assignee'
   | 'task'
+  | 'customer'
   | 'linked'
   | 'date'
   | 'status'
@@ -151,6 +152,7 @@ const TASK_LIST_COLUMNS: Array<{
 }> = [
   { key: 'assignee', label: 'Assigned To', width: '1.15fr' },
   { key: 'task', label: 'Task Name', width: '1.45fr' },
+  { key: 'customer', label: 'Customer', width: '1.15fr' },
   { key: 'linked', label: 'Linked Record', width: '1.1fr' },
   { key: 'date', label: 'Date', width: '0.9fr' },
   { key: 'status', label: 'Status', width: '0.9fr' },
@@ -190,7 +192,7 @@ export default function Page() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [projectNameOverrides, setProjectNameOverrides] = useState<Record<string, string>>({});
+  const [projectOverrides, setProjectOverrides] = useState<Record<string, Partial<Project>>>({});
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<TaskViewMode>('list');
   const [search, setSearch] = useState('');
@@ -518,21 +520,55 @@ export default function Page() {
     return map;
   }, [user, users]);
 
-  const projectNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    projects.forEach((project) => map.set(project.id, project.name));
-    return map;
-  }, [projects]);
-
-  const taskProjectNameMap = useMemo(() => {
-    const map = new Map(projectNameMap);
-    Object.entries(projectNameOverrides).forEach(([id, name]) => {
-      if (!map.has(id)) {
-        map.set(id, name);
+  const taskProjectMetaMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        name: string;
+        customerId: string;
+        customerName: string;
       }
+    >();
+    projects.forEach((project) => {
+      map.set(project.id, {
+        name: project.name,
+        customerId: project.customerId,
+        customerName: project.customerName,
+      });
+    });
+    Object.entries(projectOverrides).forEach(([id, project]) => {
+      const current = map.get(id);
+      map.set(id, {
+        name: project.name ?? current?.name ?? '',
+        customerId: project.customerId ?? current?.customerId ?? '',
+        customerName: project.customerName ?? current?.customerName ?? '',
+      });
     });
     return map;
-  }, [projectNameMap, projectNameOverrides]);
+  }, [projects, projectOverrides]);
+
+  const getTaskProjectName = useCallback(
+    (task: Pick<Task, 'projectId'>) => {
+      if (!task.projectId) {
+        return '';
+      }
+      return taskProjectMetaMap.get(task.projectId)?.name ?? task.projectId;
+    },
+    [taskProjectMetaMap],
+  );
+
+  const getTaskCustomerName = useCallback(
+    (task: Pick<Task, 'projectId' | 'customerName'>) => {
+      if (task.customerName?.trim()) {
+        return task.customerName;
+      }
+      if (!task.projectId) {
+        return '';
+      }
+      return taskProjectMetaMap.get(task.projectId)?.customerName ?? '';
+    },
+    [taskProjectMetaMap],
+  );
 
   const activityItems = useMemo(() => {
     if (!selectedTask) {
@@ -760,7 +796,7 @@ export default function Page() {
       new Set(
         tasks.reduce<string[]>((acc, task) => {
           const { projectId } = task;
-          if (!projectId || projectNameMap.has(projectId) || projectNameOverrides[projectId]) {
+          if (!projectId || taskProjectMetaMap.has(projectId)) {
             return acc;
           }
           acc.push(projectId);
@@ -779,33 +815,43 @@ export default function Page() {
           if (!snap.exists()) {
             return null;
           }
-          const data = snap.data() as { name?: unknown };
-          const name =
-            typeof data.name === 'string' && data.name.trim().length > 0 ? data.name : null;
-          if (!name) {
+          const data = snap.data() as {
+            name?: unknown;
+            customerId?: unknown;
+            customerName?: unknown;
+          };
+          const name = typeof data.name === 'string' ? data.name.trim() : '';
+          const customerId = typeof data.customerId === 'string' ? data.customerId.trim() : '';
+          const customerName =
+            typeof data.customerName === 'string' ? data.customerName.trim() : '';
+          if (!name && !customerName) {
             return null;
           }
-          return { projectId, name } as const;
+          return { projectId, name, customerId, customerName } as const;
         }),
       );
       if (!active) {
         return;
       }
-      const updates: Record<string, string> = {};
+      const updates: Record<string, Partial<Project>> = {};
       resolved.forEach((item) => {
         if (item) {
-          updates[item.projectId] = item.name;
+          updates[item.projectId] = {
+            name: item.name,
+            customerId: item.customerId,
+            customerName: item.customerName,
+          };
         }
       });
       if (Object.keys(updates).length > 0) {
-        setProjectNameOverrides((prev) => ({ ...prev, ...updates }));
+        setProjectOverrides((prev) => ({ ...prev, ...updates }));
       }
     };
     loadMissingNames();
     return () => {
       active = false;
     };
-  }, [tasks, projectNameMap, projectNameOverrides]);
+  }, [tasks, taskProjectMetaMap]);
 
   const filteredTasks = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -813,10 +859,12 @@ export default function Page() {
       const matchesStatus = statusFilter === 'all' ? true : task.status === statusFilter;
       const matchesSearch =
         term.length === 0 ||
-        [task.title, task.description].some((value) => value.toLowerCase().includes(term));
+        [task.title, task.description, getTaskCustomerName(task), getTaskProjectName(task)].some(
+          (value) => value.toLowerCase().includes(term),
+        );
       return matchesStatus && matchesSearch;
     });
-  }, [tasks, search, statusFilter]);
+  }, [tasks, search, statusFilter, getTaskCustomerName, getTaskProjectName]);
 
   const visibleTaskColumns = useMemo(() => {
     const validKeys = new Set(TASK_LIST_COLUMNS.map((column) => column.key));
@@ -1020,6 +1068,15 @@ export default function Page() {
                     {task.title}
                   </p>
                 );
+              case 'customer':
+                return (
+                  <p
+                    key={column.key}
+                    className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted"
+                  >
+                    {getTaskCustomerName(task) || 'No customer'}
+                  </p>
+                );
               case 'linked':
                 return (
                   <p
@@ -1027,7 +1084,7 @@ export default function Page() {
                     className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted"
                   >
                     {task.projectId
-                      ? (taskProjectNameMap.get(task.projectId) ?? task.projectId)
+                      ? getTaskProjectName(task)
                       : task.leadReference || 'No linked record'}
                   </p>
                 );
@@ -1194,11 +1251,17 @@ export default function Page() {
 
         <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted/80">
           {task.projectId
-            ? `Project: ${taskProjectNameMap.get(task.projectId) ?? task.projectId}`
+            ? `Project: ${getTaskProjectName(task)}`
             : task.leadReference
               ? `Lead: ${task.leadReference}`
               : 'No linked record'}
         </div>
+
+        {getTaskCustomerName(task) ? (
+          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted/80">
+            Customer: {getTaskCustomerName(task)}
+          </div>
+        ) : null}
 
         {showDetails ? (
           <div className="mt-4 grid gap-2 text-sm text-muted sm:grid-cols-2">
@@ -1307,6 +1370,21 @@ export default function Page() {
       // Ignore storage write failures and keep the in-memory form usable.
     }
   }, [formState, getTaskDraftStorageKey, isCreateOpen, isEditOpen, selectedTask, user]);
+
+  const selectedProjectForForm = useMemo(
+    () => projects.find((project) => project.id === formState.projectId) ?? null,
+    [projects, formState.projectId],
+  );
+
+  const selectedProjectCustomerName =
+    selectedProjectForForm?.customerName ||
+    (formState.projectId ? taskProjectMetaMap.get(formState.projectId)?.customerName : '') ||
+    (selectedTask?.projectId === formState.projectId ? (selectedTask.customerName ?? '') : '');
+
+  const selectedProjectCustomerId =
+    selectedProjectForForm?.customerId ||
+    (formState.projectId ? taskProjectMetaMap.get(formState.projectId)?.customerId : '') ||
+    (selectedTask?.projectId === formState.projectId ? (selectedTask.customerId ?? '') : '');
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1442,6 +1520,8 @@ export default function Page() {
             : formState.dueDate,
         parentTaskId: formState.parentTaskId,
         projectId: formState.projectId,
+        customerId: formState.projectId ? selectedProjectCustomerId : '',
+        customerName: formState.projectId ? selectedProjectCustomerName : '',
         referenceModelNumber: formState.referenceModelNumber,
         isRevision: formState.isRevision,
         revisionNumber: formState.isRevision ? revisionNumber : '',
@@ -2652,6 +2732,22 @@ export default function Page() {
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
+                    Customer
+                  </label>
+                  <input
+                    value={selectedProjectCustomerName}
+                    readOnly
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/50 px-4 py-2 text-sm text-text outline-none"
+                    placeholder={
+                      formState.projectId
+                        ? 'Customer will be pulled from the selected project'
+                        : 'Select a project to inherit the customer'
+                    }
+                  />
                 </div>
 
                 <div className="col-span-2 flex flex-wrap items-center justify-end gap-3">

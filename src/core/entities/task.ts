@@ -16,6 +16,8 @@ export type Task = {
   dueDate: string;
   parentTaskId?: string;
   projectId?: string;
+  customerId?: string;
+  customerName?: string;
   leadId?: string;
   leadReference?: string;
   quotationRequestId?: string;
