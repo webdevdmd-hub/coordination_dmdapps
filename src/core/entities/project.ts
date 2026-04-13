@@ -1,4 +1,5 @@
 export type ProjectStatus = 'not-started' | 'in-progress' | 'on-hold' | 'completed' | 'canceled';
+export type ProjectStatusOverride = 'completed' | 'canceled';
 
 export type Project = {
   id: string;
@@ -11,6 +12,7 @@ export type Project = {
   dueDate: string;
   value: number;
   status: ProjectStatus;
+  statusOverride?: ProjectStatusOverride | null;
   description: string;
   createdBy: string;
   createdAt: string;

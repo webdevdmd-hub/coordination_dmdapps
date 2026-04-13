@@ -27,6 +27,7 @@ export type CreateQuotationRequestInput = {
 export type QuotationRequestTaskInput = {
   tag: string;
   status?: 'pending' | 'assigned' | 'done';
+  dueDate?: string;
   assignedTo?: string;
   assignedName?: string;
   taskId?: string;

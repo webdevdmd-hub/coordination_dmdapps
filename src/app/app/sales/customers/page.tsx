@@ -586,8 +586,8 @@ export default function Page() {
       formState.contactPerson,
     );
     const nextCompanyName = buildCompanyName(formState.companyName, nextContactPerson);
-    if (!nextCompanyName || !nextContactPerson) {
-      setError('Company and primary contact are required.');
+    if (!nextCompanyName) {
+      setError('Company is required.');
       return;
     }
     const isEditing = !!selectedCustomer;
@@ -1240,7 +1240,6 @@ export default function Page() {
                           First name
                         </label>
                         <input
-                          required
                           value={formState.firstName}
                           onChange={(event) => updateField('firstName', event.target.value)}
                           className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"

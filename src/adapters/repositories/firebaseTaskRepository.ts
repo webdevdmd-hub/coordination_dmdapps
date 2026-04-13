@@ -13,6 +13,7 @@ import {
 import { Task } from '@/core/entities/task';
 import { CreateTaskInput, TaskRepository } from '@/core/ports/TaskRepository';
 import { getFirebaseDb } from '@/frameworks/firebase/client';
+import { syncProjectWorkflowStatusesForTaskMutation } from '@/lib/projectStatusWorkflow';
 import { sortRecordsNewestFirst } from '@/lib/recordSort';
 
 type TaskFirestore = Omit<Task, 'id'>;
@@ -70,20 +71,55 @@ export const firebaseTaskRepository: TaskRepository = {
       updatedAt: input.updatedAt ?? now,
     };
     const docRef = await addDoc(taskCollection(), payload);
+    if (payload.projectId) {
+      await syncProjectWorkflowStatusesForTaskMutation({
+        nextProjectId: payload.projectId,
+        reason: 'task-created',
+      });
+    }
     return toTask(docRef.id, payload);
   },
   async update(id, updates) {
+    const docRef = doc(taskCollection(), id);
+    const previousSnap = await getDoc(docRef);
+    if (!previousSnap.exists()) {
+      throw new Error('Task not found.');
+    }
+    const previousTask = toTask(previousSnap.id, previousSnap.data() as TaskFirestore);
     const rest = { ...updates };
     delete (rest as { id?: string }).id;
-    const docRef = doc(taskCollection(), id);
     await updateDoc(docRef, rest);
     const snap = await getDoc(docRef);
     if (!snap.exists()) {
       throw new Error('Task not found after update.');
     }
-    return toTask(snap.id, snap.data() as TaskFirestore);
+    const updatedTask = toTask(snap.id, snap.data() as TaskFirestore);
+    const assignmentChanged =
+      previousTask.assignedTo !== updatedTask.assignedTo ||
+      (previousTask.assignedUsers ?? []).join('|') !== (updatedTask.assignedUsers ?? []).join('|');
+    const workflowInputsChanged =
+      previousTask.projectId !== updatedTask.projectId ||
+      previousTask.status !== updatedTask.status ||
+      assignmentChanged;
+    if (workflowInputsChanged) {
+      await syncProjectWorkflowStatusesForTaskMutation({
+        previousProjectId: previousTask.projectId,
+        nextProjectId: updatedTask.projectId,
+        reason: 'task-updated',
+      });
+    }
+    return updatedTask;
   },
   async delete(id) {
-    await deleteDoc(doc(taskCollection(), id));
+    const docRef = doc(taskCollection(), id);
+    const snap = await getDoc(docRef);
+    const existingTask = snap.exists() ? toTask(snap.id, snap.data() as TaskFirestore) : null;
+    await deleteDoc(docRef);
+    if (existingTask?.projectId) {
+      await syncProjectWorkflowStatusesForTaskMutation({
+        previousProjectId: existingTask.projectId,
+        reason: 'task-deleted',
+      });
+    }
   },
 };

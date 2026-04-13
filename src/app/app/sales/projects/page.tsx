@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   addDoc,
   collection,
+  doc,
   getDocs,
   limit,
   onSnapshot,
@@ -43,21 +44,22 @@ import {
   emitNotificationEventSafe,
   getModuleNotificationPermissions,
 } from '@/lib/notifications';
+import { getProjectStatusLabel, setProjectStatusOverride } from '@/lib/projectStatusWorkflow';
 
 const statusOptions: Array<{ value: ProjectStatus; label: string }> = [
-  { value: 'not-started', label: 'Not Started' },
+  { value: 'not-started', label: 'Pending' },
   { value: 'in-progress', label: 'In Progress' },
-  { value: 'on-hold', label: 'Hold On' },
+  { value: 'on-hold', label: 'On Hold' },
   { value: 'completed', label: 'Completed' },
   { value: 'canceled', label: 'Canceled' },
 ];
 
 const statusStyles: Record<ProjectStatus, string> = {
-  'not-started': 'bg-surface-strong text-text',
-  'in-progress': 'bg-[#00B67A]/16 text-[#00B67A]',
-  'on-hold': 'bg-amber-500/20 text-amber-200',
-  completed: 'bg-[#00B67A]/22 text-[#00B67A]',
-  canceled: 'bg-rose-500/20 text-rose-200',
+  'not-started': 'border border-slate-500/30 bg-slate-400/10 text-slate-200',
+  'in-progress': 'border border-sky-400/35 bg-sky-400/12 text-sky-200',
+  'on-hold': 'border border-amber-400/35 bg-amber-400/12 text-amber-200',
+  completed: 'border border-emerald-400/35 bg-emerald-400/12 text-emerald-200',
+  canceled: 'border border-rose-400/35 bg-rose-400/14 text-rose-200',
 };
 
 const taskStatusOptions: Array<{ value: TaskStatus; label: string }> = [
@@ -108,7 +110,6 @@ type ProjectFormState = {
   startDate: string;
   dueDate: string;
   value: string;
-  status: ProjectStatus;
   description: string;
   sharedRoles: string[];
 };
@@ -196,11 +197,7 @@ const taskTemplates = [
   { title: 'Catalog', description: 'Assemble catalog package.' },
 ];
 
-const formatStatusLabel = (value: string) =>
-  value
-    .split('-')
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(' ');
+const formatStatusLabel = (value: string) => getProjectStatusLabel(value as ProjectStatus);
 
 const activityDotClass = (activity: ProjectActivity) => {
   const note = activity.note.toLowerCase();
@@ -254,6 +251,7 @@ export default function Page() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isStatusOverrideSaving, setIsStatusOverrideSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [projectTasks, setProjectTasks] = useState<Task[]>([]);
@@ -306,7 +304,6 @@ export default function Page() {
     startDate: todayKey(),
     dueDate: todayKey(),
     value: '',
-    status: 'not-started',
     description: '',
     sharedRoles: [],
   });
@@ -319,7 +316,6 @@ export default function Page() {
     startDate: project.startDate,
     dueDate: project.dueDate,
     value: String(project.value ?? ''),
-    status: project.status,
     description: project.description,
     sharedRoles: project.sharedRoles ?? [],
   });
@@ -566,15 +562,18 @@ export default function Page() {
     [projectsCacheKey],
   );
 
-  const updateProjects = (updater: (current: Project[]) => Project[]) => {
-    setProjects((current) => {
-      const next = updater(current);
-      if (projectsCacheKey) {
-        setModuleCacheEntry(projectsCacheKey, next);
-      }
-      return next;
-    });
-  };
+  const updateProjects = useCallback(
+    (updater: (current: Project[]) => Project[]) => {
+      setProjects((current) => {
+        const next = updater(current);
+        if (projectsCacheKey) {
+          setModuleCacheEntry(projectsCacheKey, next);
+        }
+        return next;
+      });
+    },
+    [projectsCacheKey],
+  );
 
   const timelineItems = useMemo(
     () => [...timelineBaseItems, ...timelineExtraItems],
@@ -779,6 +778,27 @@ export default function Page() {
   }, [isViewOpen, selectedProject]);
 
   useEffect(() => {
+    if (!isViewOpen || !selectedProject?.id) {
+      return;
+    }
+    const projectRef = doc(getFirebaseDb(), 'sales', 'main', 'projects', selectedProject.id);
+    const unsubscribe = onSnapshot(projectRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        return;
+      }
+      const nextProject = {
+        id: snapshot.id,
+        ...(snapshot.data() as Omit<Project, 'id'>),
+      };
+      setSelectedProject(nextProject);
+      updateProjects((current) =>
+        current.map((project) => (project.id === nextProject.id ? nextProject : project)),
+      );
+    });
+    return () => unsubscribe();
+  }, [isViewOpen, selectedProject?.id, updateProjects]);
+
+  useEffect(() => {
     if (!isViewOpen || !selectedProject) {
       setTimelineReady(false);
       setTimelineBaseItems([]);
@@ -883,11 +903,11 @@ export default function Page() {
   }, [projects, search, statusFilter]);
 
   const totals = useMemo(() => {
-    const notStarted = projects.filter((project) => project.status === 'not-started').length;
+    const pending = projects.filter((project) => project.status === 'not-started').length;
     const inProgress = projects.filter((project) => project.status === 'in-progress').length;
     const onHold = projects.filter((project) => project.status === 'on-hold').length;
     const completed = projects.filter((project) => project.status === 'completed').length;
-    return { notStarted, inProgress, onHold, completed };
+    return { pending, inProgress, onHold, completed };
   }, [projects]);
   const projectStatusFilterOptions = [
     'all',
@@ -1251,6 +1271,11 @@ export default function Page() {
         return;
       }
     }
+    if (assignedUsers.length > 0 && !taskFormState.dueDate.trim()) {
+      setTaskError('Please set a due date before assigning this task.');
+      setIsTaskSaving(false);
+      return;
+    }
     const canEditEstimateDetails =
       isEstimateTask && !!user && (assignedTo === user.id || assignedUsers.includes(user.id));
     const estimateNumber = taskFormState.estimateNumber.trim();
@@ -1536,6 +1561,10 @@ export default function Page() {
       setTaskError('You do not have permission to assign tasks.');
       return;
     }
+    if (assigneeId && !task.dueDate?.trim()) {
+      setTaskError('Please set a due date before assigning this task.');
+      return;
+    }
     const assignedUsers = assigneeId ? [assigneeId] : [];
     const assignedTo = assigneeId ?? '';
     try {
@@ -1670,8 +1699,13 @@ export default function Page() {
     }
 
     const updates = {
-      ...formState,
       name: formState.name.trim(),
+      customerId: formState.customerId,
+      customerName: formState.customerName,
+      assignedTo: formState.assignedTo,
+      startDate: formState.startDate,
+      dueDate: formState.dueDate,
+      sharedRoles: formState.sharedRoles,
       description: formState.description.trim(),
       value: Number(formState.value) || 0,
     };
@@ -1702,23 +1736,6 @@ export default function Page() {
             },
           });
         }
-        if (previous.status !== updated.status) {
-          await emitNotificationEventSafe({
-            type: 'project.status_changed',
-            title: 'Project Status Updated',
-            body: `${user.fullName} changed ${updated.name} to ${formatStatusLabel(
-              updated.status,
-            )}.`,
-            actorId: user.id,
-            recipients: buildRecipientList(updated.createdBy, [updated.assignedTo], user.id),
-            entityType: 'project',
-            entityId: updated.id,
-            requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
-            meta: {
-              status: updated.status,
-            },
-          });
-        }
         const changes: string[] = [];
         if (previous.name !== updated.name) {
           changes.push(`Name updated to ${updated.name}.`);
@@ -1730,9 +1747,6 @@ export default function Page() {
           changes.push(
             `Owner updated to ${ownerNameMap.get(updated.assignedTo) ?? updated.assignedTo}.`,
           );
-        }
-        if (previous.status !== updated.status) {
-          changes.push(`Status updated to ${formatStatusLabel(updated.status)}.`);
         }
         if (previous.value !== updated.value) {
           changes.push(`Value updated to AED ${updated.value.toLocaleString()}.`);
@@ -1752,6 +1766,7 @@ export default function Page() {
       } else {
         const created = await firebaseProjectRepository.create({
           ...updates,
+          status: 'not-started',
           createdBy: user.id,
         });
         clearProjectDraft(null);
@@ -1770,6 +1785,11 @@ export default function Page() {
             status: created.status,
           },
         });
+        setSelectedProject(created);
+        setProjectDetailsView('general');
+        setIsCreateOpen(false);
+        setIsViewOpen(true);
+        return;
       }
       handleCloseModal();
     } catch {
@@ -1819,21 +1839,91 @@ export default function Page() {
     }
   };
 
-  const handleQuickStatusChange = async (project: Project, nextStatus: ProjectStatus) => {
-    if (!user || !canEdit) {
+  const handleSetManualProjectStatus = async (nextStatus: 'completed' | 'canceled') => {
+    if (!selectedProject || !user || !canEdit) {
       return;
     }
-    if (!isAdmin && project.assignedTo !== user.id) {
+    if (!isAdmin && selectedProject.assignedTo !== user.id) {
       return;
     }
+    const actionLabel =
+      nextStatus === 'completed' ? 'mark this project as completed' : 'cancel this project';
+    const confirmed = window.confirm(
+      `Are you sure you want to ${actionLabel}? This manual status will override task-based workflow updates until you resume the workflow.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsStatusOverrideSaving(true);
+    setError(null);
     try {
-      const updated = await firebaseProjectRepository.update(project.id, {
-        status: nextStatus,
-        updatedAt: new Date().toISOString(),
-      });
+      const updated = await setProjectStatusOverride(selectedProject.id, nextStatus);
+      setSelectedProject(updated);
       updateProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      await emitNotificationEventSafe({
+        type: 'project.status_changed',
+        title: 'Project Status Updated',
+        body: `${user.fullName} changed ${updated.name} to ${formatStatusLabel(updated.status)}.`,
+        actorId: user.id,
+        recipients: buildRecipientList(updated.createdBy, [updated.assignedTo], user.id),
+        entityType: 'project',
+        entityId: updated.id,
+        requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
+        meta: {
+          status: updated.status,
+        },
+      });
+      await logProjectActivity(
+        updated.id,
+        `Project marked as ${formatStatusLabel(updated.status)} manually.`,
+      );
     } catch {
       setError('Unable to update project status.');
+    } finally {
+      setIsStatusOverrideSaving(false);
+    }
+  };
+
+  const handleResumeProjectWorkflow = async () => {
+    if (!selectedProject || !user || !canEdit) {
+      return;
+    }
+    if (!isAdmin && selectedProject.assignedTo !== user.id) {
+      return;
+    }
+    const confirmed = window.confirm(
+      'Resume automatic workflow status updates for this project based on its tasks?',
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsStatusOverrideSaving(true);
+    setError(null);
+    try {
+      const updated = await setProjectStatusOverride(selectedProject.id, null);
+      setSelectedProject(updated);
+      updateProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      await emitNotificationEventSafe({
+        type: 'project.status_changed',
+        title: 'Project Status Updated',
+        body: `${user.fullName} resumed workflow tracking for ${updated.name}.`,
+        actorId: user.id,
+        recipients: buildRecipientList(updated.createdBy, [updated.assignedTo], user.id),
+        entityType: 'project',
+        entityId: updated.id,
+        requiredPermissionsAnyOf: getModuleNotificationPermissions('projects'),
+        meta: {
+          status: updated.status,
+        },
+      });
+      await logProjectActivity(
+        updated.id,
+        `Project workflow resumed. Status is now ${formatStatusLabel(updated.status)}.`,
+      );
+    } catch {
+      setError('Unable to resume project workflow.');
+    } finally {
+      setIsStatusOverrideSaving(false);
     }
   };
 
@@ -1902,9 +1992,9 @@ export default function Page() {
         <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-              Not started
+              Pending
             </p>
-            <p className="mt-4 text-5xl font-semibold text-text">{totals.notStarted}</p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.pending}</p>
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
@@ -1914,7 +2004,7 @@ export default function Page() {
           </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
-              Hold on
+              On hold
             </p>
             <p className="mt-4 text-5xl font-semibold text-text">{totals.onHold}</p>
           </div>
@@ -2142,24 +2232,13 @@ export default function Page() {
 
                 <p className="text-sm text-text">{formatDate(project.dueDate)}</p>
 
-                <div>
-                  <select
-                    value={project.status}
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                    onChange={(event) =>
-                      handleQuickStatusChange(project, event.target.value as ProjectStatus)
-                    }
-                    disabled={!canEdit || (!isAdmin && project.assignedTo !== user?.id)}
-                    className="w-full rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <span
+                  className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${
+                    statusStyles[project.status]
+                  }`}
+                >
+                  {formatStatusLabel(project.status)}
+                </span>
 
                 <span className="inline-flex w-fit rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text">
                   AED {project.value.toLocaleString()}
@@ -2415,6 +2494,41 @@ export default function Page() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-3">
+                      {canEdit && (isAdmin || selectedProject.assignedTo === user?.id) ? (
+                        selectedProject.statusOverride ? (
+                          <button
+                            type="button"
+                            onClick={handleResumeProjectWorkflow}
+                            disabled={isStatusOverrideSaving}
+                            className="rounded-full border border-border/60 bg-surface/80 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-text transition hover:-translate-y-[1px] hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isStatusOverrideSaving ? 'Saving...' : 'Resume workflow'}
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSetManualProjectStatus('completed')}
+                              disabled={
+                                isStatusOverrideSaving || selectedProject.status === 'completed'
+                              }
+                              className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-200 transition hover:-translate-y-[1px] hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isStatusOverrideSaving ? 'Saving...' : 'Mark completed'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSetManualProjectStatus('canceled')}
+                              disabled={
+                                isStatusOverrideSaving || selectedProject.status === 'canceled'
+                              }
+                              className="rounded-full border border-rose-500/40 bg-rose-500/10 px-6 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-rose-200 transition hover:-translate-y-[1px] hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isStatusOverrideSaving ? 'Saving...' : 'Mark canceled'}
+                            </button>
+                          </>
+                        )
+                      ) : null}
                       {canEdit && (isAdmin || selectedProject.assignedTo === user?.id) ? (
                         <button
                           type="button"
@@ -3172,24 +3286,13 @@ export default function Page() {
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-                    Status
+                    Workflow status
                   </label>
-                  <select
-                    value={formState.status}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        status: event.target.value as ProjectStatus,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-text outline-none"
-                  >
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    value={selectedProject ? formatStatusLabel(selectedProject.status) : 'Pending'}
+                    className="mt-2 w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm text-muted"
+                    readOnly
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">

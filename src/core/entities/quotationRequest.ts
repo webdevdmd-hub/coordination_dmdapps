@@ -30,6 +30,7 @@ export type QuotationRequestTask = {
   id: string;
   tag: string;
   status: QuotationRequestTaskStatus;
+  dueDate?: string;
   assignedTo?: string;
   assignedName?: string;
   taskId?: string;

@@ -129,6 +129,7 @@ export default function Page() {
   const [activeAddTaskId, setActiveAddTaskId] = useState<string | null>(null);
   const [customTaskTitle, setCustomTaskTitle] = useState('');
   const [customTaskAssignee, setCustomTaskAssignee] = useState('');
+  const [customTaskDueDate, setCustomTaskDueDate] = useState('');
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() =>
@@ -716,6 +717,10 @@ export default function Page() {
     if (!selected) {
       return;
     }
+    if (!task.dueDate?.trim()) {
+      setError('Please set a due date before assigning this task.');
+      return;
+    }
     const now = new Date().toISOString();
     let taskId = task.taskId;
     if (!taskId) {
@@ -729,7 +734,7 @@ export default function Page() {
         recurrence: 'none',
         startDate: now.slice(0, 10),
         endDate: now.slice(0, 10),
-        dueDate: now.slice(0, 10),
+        dueDate: task.dueDate,
         parentTaskId: '',
         projectId: '',
         sharedRoles: [],
@@ -746,6 +751,7 @@ export default function Page() {
         await firebaseTaskRepository.update(taskId, {
           assignedTo: selected.id,
           assignedUsers: [selected.id],
+          dueDate: task.dueDate,
           updatedAt: now,
         });
       } catch {
@@ -759,7 +765,7 @@ export default function Page() {
           recurrence: 'none',
           startDate: now.slice(0, 10),
           endDate: now.slice(0, 10),
-          dueDate: now.slice(0, 10),
+          dueDate: task.dueDate,
           parentTaskId: '',
           projectId: '',
           sharedRoles: [],
@@ -777,6 +783,7 @@ export default function Page() {
       assignedTo: selected.id,
       assignedName: selected.name,
       taskId,
+      dueDate: task.dueDate,
       status: 'assigned',
       updatedAt: now,
     })) as QuotationRequestTask;
@@ -827,6 +834,39 @@ export default function Page() {
     setActiveAddTaskId(requestId);
     setCustomTaskTitle('');
     setCustomTaskAssignee('');
+    setCustomTaskDueDate('');
+  };
+
+  const handleUpdateTaskDueDate = async (
+    request: QuotationRequest,
+    task: QuotationRequestTask,
+    dueDate: string,
+  ) => {
+    if (!user || !canAssign) {
+      return;
+    }
+    setError(null);
+    try {
+      const now = new Date().toISOString();
+      const updated = (await firebaseQuotationRequestRepository.updateTask(request.id, task.id, {
+        dueDate,
+        updatedAt: now,
+      })) as QuotationRequestTask;
+      updateTasksByRequest((prev) => ({
+        ...prev,
+        [request.id]: (prev[request.id] ?? []).map((item) =>
+          item.id === task.id ? updated : item,
+        ),
+      }));
+      if (task.taskId) {
+        await firebaseTaskRepository.update(task.taskId, {
+          dueDate,
+          updatedAt: now,
+        });
+      }
+    } catch {
+      setError('Unable to update due date. Please try again.');
+    }
   };
 
   const handleAddCustomTask = async (request: QuotationRequest) => {
@@ -835,6 +875,10 @@ export default function Page() {
     }
     if (!customTaskTitle.trim()) {
       setError('Task title is required.');
+      return;
+    }
+    if (customTaskAssignee && !customTaskDueDate.trim()) {
+      setError('Please set a due date before assigning this task.');
       return;
     }
     setIsAddingTask(true);
@@ -851,12 +895,13 @@ export default function Page() {
             title: customTaskTitle.trim(),
             description: `RFQ task for ${request.leadName}`,
             assignedTo: selected.id,
+            assignedUsers: [selected.id],
             status: 'todo',
             priority: 'medium',
             recurrence: 'none',
             startDate: now.slice(0, 10),
             endDate: now.slice(0, 10),
-            dueDate: now.slice(0, 10),
+            dueDate: customTaskDueDate,
             parentTaskId: '',
             projectId: '',
             sharedRoles: [],
@@ -874,6 +919,7 @@ export default function Page() {
         {
           tag: customTaskTitle.trim(),
           status: customTaskAssignee ? 'assigned' : 'pending',
+          dueDate: customTaskDueDate || undefined,
           assignedTo: customTaskAssignee || undefined,
           assignedName: assignedName || undefined,
           taskId,
@@ -931,6 +977,7 @@ export default function Page() {
       setActiveAddTaskId(null);
       setCustomTaskTitle('');
       setCustomTaskAssignee('');
+      setCustomTaskDueDate('');
     } catch {
       setError('Unable to add task. Please try again.');
     } finally {
@@ -1439,6 +1486,20 @@ export default function Page() {
                       ) : null}
                       <div className="mt-3">
                         <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                          Due date
+                        </label>
+                        <input
+                          type="date"
+                          value={task.dueDate ?? ''}
+                          onChange={(event) =>
+                            handleUpdateTaskDueDate(activeRequest, task, event.target.value)
+                          }
+                          disabled={!canAssign}
+                          className="mt-2 w-full rounded-lg border border-border bg-[var(--surface-soft)] px-3 py-2 text-sm text-text outline-none"
+                        />
+                      </div>
+                      <div className="mt-3">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
                           Assign to
                         </label>
                         <select
@@ -1513,10 +1574,24 @@ export default function Page() {
                             ))}
                           </select>
                         </label>
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                          Due date
+                          <input
+                            type="date"
+                            value={customTaskDueDate}
+                            onChange={(event) => setCustomTaskDueDate(event.target.value)}
+                            className="mt-2 w-full rounded-lg border border-border bg-[var(--surface-soft)] px-3 py-2 text-sm text-text outline-none"
+                          />
+                        </label>
                         <div className="flex items-center justify-end gap-3">
                           <button
                             type="button"
-                            onClick={() => setActiveAddTaskId(null)}
+                            onClick={() => {
+                              setActiveAddTaskId(null);
+                              setCustomTaskTitle('');
+                              setCustomTaskAssignee('');
+                              setCustomTaskDueDate('');
+                            }}
                             className="text-xs font-semibold uppercase tracking-[0.22em] text-muted"
                           >
                             Cancel
