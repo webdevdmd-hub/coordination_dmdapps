@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { firebaseCustomerRepository } from '@/adapters/repositories/firebaseCustomerRepository';
 import { firebaseUserRepository } from '@/adapters/repositories/firebaseUserRepository';
@@ -116,6 +117,9 @@ const CUSTOMER_MODAL_DRAFT_STORAGE_KEY = 'customers-modal-draft';
 
 export default function Page() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
@@ -129,6 +133,7 @@ export default function Page() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerFormTab, setCustomerFormTab] = useState<'details' | 'billing'>('details');
+  const openCustomerId = searchParams.get('open');
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'customer_view']);
@@ -241,6 +246,16 @@ export default function Page() {
     },
     [getCustomerDraftStorageKey],
   );
+
+  const clearOpenCustomerParam = useCallback(() => {
+    if (!searchParams.has('open')) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('open');
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const [formState, setFormState] = useState<CustomerFormState>(() =>
     emptyCustomer(user?.id ?? ''),
@@ -470,6 +485,23 @@ export default function Page() {
     syncCustomers,
   ]);
 
+  useEffect(() => {
+    if (!openCustomerId || loading) {
+      return;
+    }
+    const targetCustomer = customers.find((customer) => customer.id === openCustomerId);
+    if (targetCustomer) {
+      setSelectedCustomer(targetCustomer);
+      const baseState = buildCustomerFormState(targetCustomer);
+      const draft = readCustomerDraft(targetCustomer.id);
+      setFormState(draft ? { ...baseState, ...draft } : baseState);
+      setCustomerFormTab('details');
+      setIsEditOpen(true);
+      return;
+    }
+    clearOpenCustomerParam();
+  }, [openCustomerId, loading, customers, clearOpenCustomerParam, readCustomerDraft]);
+
   const totals = useMemo(() => {
     const active = customers.filter((customer) => customer.status === 'active').length;
     const fresh = customers.filter((customer) => customer.status === 'new').length;
@@ -557,6 +589,7 @@ export default function Page() {
     setIsCreateOpen(false);
     setIsEditOpen(false);
     setCustomerFormTab('details');
+    clearOpenCustomerParam();
   };
 
   useEffect(() => {

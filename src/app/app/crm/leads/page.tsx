@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { firebaseLeadRepository } from '@/adapters/repositories/firebaseLeadRepository';
 import {
@@ -48,6 +49,9 @@ const LEAD_CREATE_DRAFT_STORAGE_KEY = 'leads-create-modal-draft';
 
 export default function Page() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [view, setView] = useState<'cards' | 'list'>('cards');
   const [search, setSearch] = useState('');
@@ -68,6 +72,17 @@ export default function Page() {
     value: '',
     source: '',
   });
+  const openLeadId = searchParams.get('open');
+
+  const clearOpenLeadParam = useCallback(() => {
+    if (!searchParams.has('open')) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('open');
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const getLeadCreateDraftStorageKey = useCallback(() => {
     if (!user) {
@@ -337,6 +352,18 @@ export default function Page() {
   }, [user, defaultLeadSources]);
 
   useEffect(() => {
+    if (!openLeadId || loading) {
+      return;
+    }
+    const targetLead = leads.find((lead) => lead.id === openLeadId);
+    if (targetLead) {
+      setSelectedLead(targetLead);
+      return;
+    }
+    clearOpenLeadParam();
+  }, [openLeadId, loading, leads, clearOpenLeadParam]);
+
+  useEffect(() => {
     const loadUsers = async () => {
       if (!user) {
         setUsers([]);
@@ -406,10 +433,6 @@ export default function Page() {
     }
     if (!hasPermission(user.permissions, ['admin', 'lead_create'])) {
       setError('You do not have permission to create leads.');
-      return;
-    }
-    if (!newLead.name.trim() || !newLead.company.trim() || !newLead.email.trim()) {
-      setError('Name, company, and email are required.');
       return;
     }
     setError(null);
@@ -937,7 +960,10 @@ export default function Page() {
         }
         onCreateSource={handleCreateSource}
         ownerNameMap={Object.fromEntries(ownerNameMap.entries())}
-        onClose={() => setSelectedLead(null)}
+        onClose={() => {
+          setSelectedLead(null);
+          clearOpenLeadParam();
+        }}
         onUpdate={handleUpdateLead}
         onDelete={handleDeleteLead}
         currentUserId={user?.id}
@@ -991,7 +1017,6 @@ export default function Page() {
                   <input
                     id="lead-name"
                     name="lead-name"
-                    required
                     value={newLead.name}
                     onChange={(event) =>
                       setNewLead((prev) => ({ ...prev, name: event.target.value }))
@@ -1009,7 +1034,6 @@ export default function Page() {
                   <input
                     id="lead-company"
                     name="lead-company"
-                    required
                     value={newLead.company}
                     onChange={(event) =>
                       setNewLead((prev) => ({ ...prev, company: event.target.value }))
@@ -1027,7 +1051,6 @@ export default function Page() {
                   <input
                     id="lead-email"
                     name="lead-email"
-                    required
                     type="email"
                     value={newLead.email}
                     onChange={(event) =>
@@ -1046,6 +1069,7 @@ export default function Page() {
                   <input
                     id="lead-phone"
                     name="lead-phone"
+                    placeholder="+971 50 123 4567"
                     value={newLead.phone}
                     onChange={(event) =>
                       setNewLead((prev) => ({ ...prev, phone: event.target.value }))

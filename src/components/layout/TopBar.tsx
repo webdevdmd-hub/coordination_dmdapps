@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -116,6 +117,8 @@ export function TopBar({
       .map((module) => ({ module, items: grouped.get(module) ?? [] }))
       .filter((group) => group.items.length > 0);
   }, [results]);
+
+  const buildResultHref = (href: string, id: string) => `${href}?open=${encodeURIComponent(id)}`;
 
   useEffect(() => {
     if (!showDropdown) {
@@ -502,14 +505,18 @@ export function TopBar({
                       </p>
                       <div className="mt-2 space-y-2">
                         {group.items.map((item) => (
-                          <a
+                          <Link
                             key={`${item.module}-${item.id}`}
-                            href={item.href}
+                            href={buildResultHref(item.href, item.id)}
+                            onClick={() => {
+                              setShowDropdown(false);
+                              setQuery('');
+                            }}
                             className="block rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-2 transition hover:bg-[var(--surface-muted)]"
                           >
                             <p className="text-sm font-semibold text-text">{item.title}</p>
                             <p className="text-xs text-muted">{item.subtitle}</p>
-                          </a>
+                          </Link>
                         ))}
                       </div>
                     </div>

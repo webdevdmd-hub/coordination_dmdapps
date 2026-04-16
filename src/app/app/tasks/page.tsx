@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { addDoc, collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 import { firebaseTaskRepository } from '@/adapters/repositories/firebaseTaskRepository';
@@ -189,6 +190,9 @@ const isAssignedTask = (task?: Pick<Task, 'assignedTo' | 'assignedUsers'> | null
 
 export default function Page() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -242,6 +246,7 @@ export default function Page() {
   const [columnSnapshot, setColumnSnapshot] = useState<TaskListColumnKey[]>(
     DEFAULT_VISIBLE_TASK_COLUMNS,
   );
+  const openTaskId = searchParams.get('open');
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'task_view']);
@@ -336,6 +341,16 @@ export default function Page() {
     },
     [getTaskDraftStorageKey],
   );
+
+  const clearOpenTaskParam = useCallback(() => {
+    if (!searchParams.has('open')) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('open');
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const [formState, setFormState] = useState<TaskFormState>(() => emptyTask(''));
 
@@ -1354,6 +1369,7 @@ export default function Page() {
   const handleCloseModal = () => {
     setIsCreateOpen(false);
     setIsEditOpen(false);
+    clearOpenTaskParam();
   };
 
   useEffect(() => {
@@ -1370,6 +1386,22 @@ export default function Page() {
       // Ignore storage write failures and keep the in-memory form usable.
     }
   }, [formState, getTaskDraftStorageKey, isCreateOpen, isEditOpen, selectedTask, user]);
+
+  useEffect(() => {
+    if (!openTaskId || loading) {
+      return;
+    }
+    const targetTask = tasks.find((task) => task.id === openTaskId);
+    if (targetTask) {
+      setSelectedTask(targetTask);
+      const baseState = buildTaskFormState(targetTask);
+      const draft = readTaskDraft(targetTask.id);
+      setFormState(draft ? { ...baseState, ...draft } : baseState);
+      setIsEditOpen(true);
+      return;
+    }
+    clearOpenTaskParam();
+  }, [openTaskId, loading, tasks, clearOpenTaskParam, readTaskDraft]);
 
   const selectedProjectForForm = useMemo(
     () => projects.find((project) => project.id === formState.projectId) ?? null,

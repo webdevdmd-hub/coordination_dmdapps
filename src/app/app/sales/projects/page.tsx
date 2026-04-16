@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   addDoc,
   collection,
@@ -239,6 +240,9 @@ const activityDotClass = (activity: ProjectActivity) => {
 
 export default function Page() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
@@ -279,6 +283,7 @@ export default function Page() {
   const [salesOrderFormState, setSalesOrderFormState] = useState<SalesOrderRequestFormState>(() =>
     emptySalesOrderForm(),
   );
+  const openProjectId = searchParams.get('open');
 
   const isAdmin = !!user?.permissions.includes('admin');
   const canView = !!user && hasPermission(user.permissions, ['admin', 'project_view']);
@@ -474,6 +479,16 @@ export default function Page() {
     },
     [getProjectSalesOrderDraftStorageKey],
   );
+
+  const clearOpenProjectParam = useCallback(() => {
+    if (!searchParams.has('open')) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('open');
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const ownerNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -751,6 +766,20 @@ export default function Page() {
   ]);
 
   useEffect(() => {
+    if (!openProjectId || loading) {
+      return;
+    }
+    const targetProject = projects.find((project) => project.id === openProjectId);
+    if (targetProject) {
+      setSelectedProject(targetProject);
+      setProjectDetailsView('general');
+      setIsViewOpen(true);
+      return;
+    }
+    clearOpenProjectParam();
+  }, [openProjectId, loading, projects, clearOpenProjectParam]);
+
+  useEffect(() => {
     if (!isViewOpen || !selectedProject) {
       setProjectTasks([]);
       setTaskError(null);
@@ -963,6 +992,7 @@ export default function Page() {
     setSelectedTask(null);
     setSalesOrderError(null);
     setSalesOrderSuccess(null);
+    clearOpenProjectParam();
   };
 
   const handleOpenSalesOrderModal = (sourceTask?: Task) => {
