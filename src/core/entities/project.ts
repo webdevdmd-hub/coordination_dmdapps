@@ -1,4 +1,10 @@
-export type ProjectStatus = 'not-started' | 'in-progress' | 'on-hold' | 'completed' | 'canceled';
+export type ProjectStatus =
+  | 'unassigned'
+  | 'not-started'
+  | 'in-progress'
+  | 'on-hold'
+  | 'completed'
+  | 'canceled';
 export type ProjectStatusOverride = 'completed' | 'canceled';
 
 export type Project = {

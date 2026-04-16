@@ -15,6 +15,7 @@ import { Project } from '@/core/entities/project';
 import { Quotation } from '@/core/entities/quotation';
 import { Task } from '@/core/entities/task';
 import { formatCurrency } from '@/lib/currency';
+import { ACTIVE_PROJECT_STATUSES, getProjectStatusLabel } from '@/lib/projectStatusWorkflow';
 import {
   getModuleCacheEntry,
   isModuleCacheFresh,
@@ -208,7 +209,7 @@ export default function DashboardPage() {
     const pipelineLeads = leads.filter((lead) => lead.status !== 'lost');
     const pipelineValue = pipelineLeads.reduce((sum, lead) => sum + (lead.value || 0), 0);
     const activeProjects = projects.filter((project) =>
-      ['not-started', 'in-progress', 'on-hold'].includes(project.status),
+      ACTIVE_PROJECT_STATUSES.includes(project.status),
     );
     const dueToday = tasks.filter((task) => task.dueDate === todayKey());
     const overdue = tasks.filter((task) => task.status !== 'done' && isBeforeToday(task.dueDate));
@@ -244,9 +245,7 @@ export default function DashboardPage() {
 
   const activeProjectList = useMemo(
     () =>
-      projects
-        .filter((project) => ['not-started', 'in-progress', 'on-hold'].includes(project.status))
-        .slice(0, 5),
+      projects.filter((project) => ACTIVE_PROJECT_STATUSES.includes(project.status)).slice(0, 5),
     [projects],
   );
 
@@ -461,7 +460,7 @@ export default function DashboardPage() {
                     <p className="mt-1 text-xs text-muted">{project.customerName}</p>
                   </div>
                   <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                    {project.status.replace('-', ' ')}
+                    {getProjectStatusLabel(project.status)}
                   </span>
                 </div>
               ))

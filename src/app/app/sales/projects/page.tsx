@@ -48,6 +48,7 @@ import {
 import { getProjectStatusLabel, setProjectStatusOverride } from '@/lib/projectStatusWorkflow';
 
 const statusOptions: Array<{ value: ProjectStatus; label: string }> = [
+  { value: 'unassigned', label: 'Unassigned' },
   { value: 'not-started', label: 'Pending' },
   { value: 'in-progress', label: 'In Progress' },
   { value: 'on-hold', label: 'On Hold' },
@@ -56,6 +57,7 @@ const statusOptions: Array<{ value: ProjectStatus; label: string }> = [
 ];
 
 const statusStyles: Record<ProjectStatus, string> = {
+  unassigned: 'border border-orange-400/35 bg-orange-400/12 text-orange-200',
   'not-started': 'border border-slate-500/30 bg-slate-400/10 text-slate-200',
   'in-progress': 'border border-sky-400/35 bg-sky-400/12 text-sky-200',
   'on-hold': 'border border-amber-400/35 bg-amber-400/12 text-amber-200',
@@ -932,11 +934,12 @@ export default function Page() {
   }, [projects, search, statusFilter]);
 
   const totals = useMemo(() => {
+    const unassigned = projects.filter((project) => project.status === 'unassigned').length;
     const pending = projects.filter((project) => project.status === 'not-started').length;
     const inProgress = projects.filter((project) => project.status === 'in-progress').length;
     const onHold = projects.filter((project) => project.status === 'on-hold').length;
     const completed = projects.filter((project) => project.status === 'completed').length;
-    return { pending, inProgress, onHold, completed };
+    return { unassigned, pending, inProgress, onHold, completed };
   }, [projects]);
   const projectStatusFilterOptions = [
     'all',
@@ -2019,7 +2022,13 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-5">
+          <div className="rounded-3xl border border-border bg-surface p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
+              Unassigned
+            </p>
+            <p className="mt-4 text-5xl font-semibold text-text">{totals.unassigned}</p>
+          </div>
           <div className="rounded-3xl border border-border bg-surface p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted/80">
               Pending

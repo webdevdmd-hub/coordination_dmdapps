@@ -20,6 +20,8 @@ const toProject = (id: string, data: Omit<Project, 'id'>): Project => ({
 
 export const getProjectStatusLabel = (status: ProjectStatus) => {
   switch (status) {
+    case 'unassigned':
+      return 'Unassigned';
     case 'not-started':
       return 'Pending';
     case 'in-progress':
@@ -44,7 +46,7 @@ export const deriveProjectStatusFromTasks = (
 
   const allAssigned = tasks.every((task) => hasAssignedUser(task));
   if (!allAssigned) {
-    return 'not-started';
+    return 'unassigned';
   }
 
   const allCompleted = tasks.every((task) => task.status === 'done');
@@ -54,6 +56,13 @@ export const deriveProjectStatusFromTasks = (
 
   return 'in-progress';
 };
+
+export const ACTIVE_PROJECT_STATUSES: ProjectStatus[] = [
+  'unassigned',
+  'not-started',
+  'in-progress',
+  'on-hold',
+];
 
 export const syncProjectWorkflowStatus = async (
   projectId: string,

@@ -20,6 +20,7 @@ import { Project } from '@/core/entities/project';
 import { Quotation } from '@/core/entities/quotation';
 import { Task } from '@/core/entities/task';
 import { hasPermission } from '@/lib/permissions';
+import { getProjectStatusLabel } from '@/lib/projectStatusWorkflow';
 
 type TopBarProps = {
   userName: string;
@@ -301,7 +302,7 @@ export function TopBar({
               nextResults.push({
                 id: project.id,
                 title: project.name,
-                subtitle: `${project.customerName} · ${project.status}`,
+                subtitle: `${project.customerName} · ${getProjectStatusLabel(project.status)}`,
                 module: 'Projects',
                 href: '/app/sales/projects',
               }),
