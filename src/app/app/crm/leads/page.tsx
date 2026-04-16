@@ -46,6 +46,55 @@ const createLeadStatusOptions: Array<{ label: string; value: LeadStatus }> = [
 ];
 
 const LEAD_CREATE_DRAFT_STORAGE_KEY = 'leads-create-modal-draft';
+const LEAD_LIST_PAGE_SIZE_STORAGE_KEY = 'leads-list-page-size';
+const LEAD_VISIBLE_COLUMNS_STORAGE_KEY = 'leads-visible-columns';
+
+type LeadListColumnKey =
+  | 'assignee'
+  | 'leadName'
+  | 'company'
+  | 'source'
+  | 'created'
+  | 'updated'
+  | 'status'
+  | 'value'
+  | 'action';
+
+const LEAD_LIST_COLUMNS: Array<{
+  key: LeadListColumnKey;
+  label: string;
+  width: string;
+}> = [
+  { key: 'assignee', label: 'Assigned To', width: '1.1fr' },
+  { key: 'leadName', label: 'Lead Name', width: '1.4fr' },
+  { key: 'company', label: 'Company', width: '1.1fr' },
+  { key: 'source', label: 'Source', width: '1fr' },
+  { key: 'created', label: 'Created', width: '0.9fr' },
+  { key: 'updated', label: 'Updated', width: '0.9fr' },
+  { key: 'status', label: 'Status', width: '1fr' },
+  { key: 'value', label: 'Value', width: '0.9fr' },
+  { key: 'action', label: 'Action', width: '0.8fr' },
+];
+
+const DEFAULT_VISIBLE_LEAD_COLUMNS: LeadListColumnKey[] = LEAD_LIST_COLUMNS.map(
+  (column) => column.key,
+);
+const LEAD_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50];
+
+const formatLeadDate = (value?: string) => {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
 
 export default function Page() {
   const { user } = useAuth();
@@ -53,7 +102,7 @@ export default function Page() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [view, setView] = useState<'cards' | 'list'>('cards');
+  const [view, setView] = useState<'cards' | 'list'>('list');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
@@ -64,6 +113,39 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState<number>(() => {
+    if (typeof window === 'undefined') {
+      return 10;
+    }
+    const stored = window.localStorage.getItem(LEAD_LIST_PAGE_SIZE_STORAGE_KEY);
+    const parsed = Number(stored);
+    return LEAD_LIST_PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : 10;
+  });
+  const [visibleListColumns, setVisibleListColumns] = useState<LeadListColumnKey[]>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_VISIBLE_LEAD_COLUMNS;
+    }
+    try {
+      const raw = window.localStorage.getItem(LEAD_VISIBLE_COLUMNS_STORAGE_KEY);
+      if (!raw) {
+        return DEFAULT_VISIBLE_LEAD_COLUMNS;
+      }
+      const parsed = JSON.parse(raw) as LeadListColumnKey[];
+      const filtered = parsed.filter((key) =>
+        LEAD_LIST_COLUMNS.some((column) => column.key === key),
+      );
+      return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_LEAD_COLUMNS;
+    } catch {
+      return DEFAULT_VISIBLE_LEAD_COLUMNS;
+    }
+  });
+  const [isCustomizeColumnsOpen, setIsCustomizeColumnsOpen] = useState(false);
+  const [columnSearch, setColumnSearch] = useState('');
+  const [columnDraft, setColumnDraft] = useState<LeadListColumnKey[]>(DEFAULT_VISIBLE_LEAD_COLUMNS);
+  const [columnSnapshot, setColumnSnapshot] = useState<LeadListColumnKey[]>(
+    DEFAULT_VISIBLE_LEAD_COLUMNS,
+  );
   const [newLead, setNewLead] = useState({
     name: '',
     company: '',
@@ -193,6 +275,46 @@ export default function Page() {
       won: leads.filter((lead) => lead.status === 'won').length,
     }),
     [leads],
+  );
+
+  const visibleLeadColumns = useMemo(() => {
+    const validKeys = new Set(LEAD_LIST_COLUMNS.map((column) => column.key));
+    const filtered = visibleListColumns.filter((key) => validKeys.has(key));
+    return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_LEAD_COLUMNS;
+  }, [visibleListColumns]);
+
+  const selectedLeadColumns = useMemo(
+    () => LEAD_LIST_COLUMNS.filter((column) => visibleLeadColumns.includes(column.key)),
+    [visibleLeadColumns],
+  );
+
+  const listGridTemplateColumns = useMemo(
+    () => selectedLeadColumns.map((column) => `minmax(0, ${column.width})`).join(' '),
+    [selectedLeadColumns],
+  );
+
+  const listPageCount = Math.max(1, Math.ceil(filteredLeads.length / listPageSize));
+  const paginatedLeads = useMemo(() => {
+    const start = (listPage - 1) * listPageSize;
+    return filteredLeads.slice(start, start + listPageSize);
+  }, [filteredLeads, listPage, listPageSize]);
+  const listRangeStart = filteredLeads.length === 0 ? 0 : (listPage - 1) * listPageSize + 1;
+  const listRangeEnd = Math.min(filteredLeads.length, listPage * listPageSize);
+
+  const filteredColumnOptions = useMemo(() => {
+    const term = columnSearch.trim().toLowerCase();
+    return LEAD_LIST_COLUMNS.filter((column) =>
+      term.length === 0 ? true : column.label.toLowerCase().includes(term),
+    );
+  }, [columnSearch]);
+
+  const pageSizeOptions = useMemo(
+    () =>
+      LEAD_LIST_PAGE_SIZE_OPTIONS.map((size) => ({
+        id: String(size),
+        name: `${size}`,
+      })),
+    [],
   );
 
   const sourceOptions = useMemo(() => {
@@ -350,6 +472,33 @@ export default function Page() {
     };
     loadSources();
   }, [user, defaultLeadSources]);
+
+  useEffect(() => {
+    if (listPage > listPageCount) {
+      setListPage(listPageCount);
+    }
+  }, [listPage, listPageCount]);
+
+  useEffect(() => {
+    setListPage(1);
+  }, [search, dateFilter, ownerFilter, listPageSize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(LEAD_LIST_PAGE_SIZE_STORAGE_KEY, String(listPageSize));
+  }, [listPageSize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(
+      LEAD_VISIBLE_COLUMNS_STORAGE_KEY,
+      JSON.stringify(visibleLeadColumns),
+    );
+  }, [visibleLeadColumns]);
 
   useEffect(() => {
     if (!openLeadId || loading) {
@@ -615,6 +764,163 @@ export default function Page() {
     }
   };
 
+  const openCustomizeColumns = () => {
+    setColumnSnapshot(visibleLeadColumns);
+    setColumnDraft(visibleLeadColumns);
+    setColumnSearch('');
+    setIsCustomizeColumnsOpen(true);
+  };
+
+  const handleToggleColumnDraft = (key: LeadListColumnKey) => {
+    setColumnDraft((current) => {
+      if (current.includes(key)) {
+        if (current.length === 1) {
+          return current;
+        }
+        return current.filter((item) => item !== key);
+      }
+      return LEAD_LIST_COLUMNS.map((column) => column.key).filter(
+        (columnKey) => current.includes(columnKey) || columnKey === key,
+      );
+    });
+  };
+
+  const handleSaveColumnDraft = () => {
+    setVisibleListColumns(columnDraft);
+    setIsCustomizeColumnsOpen(false);
+  };
+
+  const handleCancelColumnDraft = () => {
+    setColumnDraft(columnSnapshot);
+    setIsCustomizeColumnsOpen(false);
+    setColumnSearch('');
+  };
+
+  const renderLeadListRow = (lead: Lead) => {
+    const canEditLeadStatus =
+      !!user &&
+      hasPermission(user.permissions, ['admin', 'lead_edit']) &&
+      (user.permissions.includes('admin') || lead.ownerId === user.id);
+
+    return (
+      <div
+        key={lead.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => setSelectedLead(lead)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setSelectedLead(lead);
+          }
+        }}
+        className="grid cursor-pointer gap-3 border-b border-border px-3 py-3 transition hover:bg-[var(--surface-soft)] last:border-b-0 md:items-center md:gap-3 md:px-4"
+        style={{ gridTemplateColumns: listGridTemplateColumns }}
+      >
+        {selectedLeadColumns.map((column) => {
+          switch (column.key) {
+            case 'assignee':
+              return (
+                <div key={column.key} className="flex min-w-0 items-center gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
+                    {getOwnerInitials(lead.ownerId)}
+                  </span>
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+                    {getOwnerName(lead.ownerId)}
+                  </p>
+                </div>
+              );
+            case 'leadName':
+              return (
+                <div key={column.key} className="min-w-0">
+                  <p className="truncate text-base font-semibold text-text">{lead.name}</p>
+                  <p className="truncate text-xs text-muted">{lead.email}</p>
+                </div>
+              );
+            case 'company':
+              return (
+                <p
+                  key={column.key}
+                  className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted"
+                >
+                  {lead.company || '-'}
+                </p>
+              );
+            case 'source':
+              return (
+                <p
+                  key={column.key}
+                  className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted"
+                >
+                  {lead.source || '-'}
+                </p>
+              );
+            case 'created':
+              return (
+                <p key={column.key} className="text-sm text-text">
+                  {formatLeadDate(lead.createdAt)}
+                </p>
+              );
+            case 'updated':
+              return (
+                <p key={column.key} className="text-sm text-text">
+                  {formatLeadDate(lead.lastTouchedAt)}
+                </p>
+              );
+            case 'status':
+              return (
+                <div key={column.key}>
+                  <select
+                    value={lead.status}
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    onChange={(event) =>
+                      void handleUpdateLead(
+                        lead.id,
+                        { status: event.target.value as LeadStatus },
+                        { syncSelected: false },
+                      )
+                    }
+                    disabled={!canEditLeadStatus}
+                    className="w-full rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {createLeadStatusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            case 'value':
+              return (
+                <span
+                  key={column.key}
+                  className="inline-flex w-fit rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                >
+                  {formatCurrency(lead.value)}
+                </span>
+              );
+            case 'action':
+              return (
+                <button
+                  key={column.key}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedLead(lead);
+                  }}
+                  className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                >
+                  Update
+                </button>
+              );
+          }
+        })}
+      </div>
+    );
+  };
+
   const leadViewOptions: Array<'list' | 'cards'> = ['list', 'cards'];
   const selectedLeadViewIndex = Math.max(0, leadViewOptions.indexOf(view));
 
@@ -762,90 +1068,119 @@ export default function Page() {
           <>
             {view === 'list' ? (
               <div className="space-y-4">
-                <div className="overflow-hidden rounded-3xl border border-border bg-surface">
-                  {filteredLeads.map((lead) => (
-                    <div
-                      key={lead.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedLead(lead)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setSelectedLead(lead);
-                        }
-                      }}
-                      className="grid cursor-pointer gap-3 border-b border-border px-3 py-3 transition hover:bg-[var(--surface-soft)] last:border-b-0 md:grid-cols-[1.15fr_1.25fr_1fr_0.9fr_1fr_0.9fr_auto] md:items-center md:gap-2 md:px-4"
+                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  <button
+                    type="button"
+                    onClick={openCustomizeColumns}
+                    aria-label="Customize columns"
+                    title="Customize columns"
+                    className="rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-text transition hover:bg-hover/80"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
                     >
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
-                          {getOwnerInitials(lead.ownerId)}
-                        </span>
-                        <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
-                          {getOwnerName(lead.ownerId)}
-                        </p>
-                      </div>
+                      <line x1="4" y1="6" x2="20" y2="6" />
+                      <line x1="4" y1="12" x2="20" y2="12" />
+                      <line x1="4" y1="18" x2="20" y2="18" />
+                      <circle cx="9" cy="6" r="2" />
+                      <circle cx="15" cy="12" r="2" />
+                      <circle cx="11" cy="18" r="2" />
+                    </svg>
+                  </button>
+                  <FilterDropdown
+                    value={String(listPageSize)}
+                    onChange={(value) => setListPageSize(Number(value))}
+                    options={pageSizeOptions}
+                    ariaLabel="Leads per page"
+                    prefixLabel="Per page"
+                    buttonClassName="min-w-[136px] gap-2 bg-[var(--surface-soft)] px-3 py-2 text-[11px] shadow-none"
+                  />
+                  <div className="flex items-center overflow-hidden rounded-2xl border border-border bg-[var(--surface-soft)]">
+                    <button
+                      type="button"
+                      onClick={() => setListPage((current) => Math.max(1, current - 1))}
+                      disabled={listPage === 1}
+                      className="px-2.5 py-2 text-sm text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Prev
+                    </button>
+                    <span className="border-x border-border px-2.5 py-2 text-sm text-muted">
+                      {listRangeStart}-{listRangeEnd}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setListPage((current) => Math.min(listPageCount, current + 1))}
+                      disabled={listPage === listPageCount}
+                      className="px-2.5 py-2 text-sm text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                  <p className="whitespace-nowrap text-[11px] text-muted/70">
+                    {filteredLeads.length} leads visible
+                  </p>
+                </div>
 
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-semibold text-text">{lead.name}</p>
-                        <p className="truncate text-xs text-muted">{lead.email}</p>
-                      </div>
-
-                      <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                        {lead.company}
-                      </p>
-
-                      <p className="text-sm text-text">
-                        {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}
-                      </p>
-
-                      <div>
-                        <select
-                          value={lead.status}
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                          onChange={(event) =>
-                            void handleUpdateLead(
-                              lead.id,
-                              { status: event.target.value as LeadStatus },
-                              { syncSelected: false },
-                            )
-                          }
-                          disabled={
-                            !user ||
-                            !hasPermission(user.permissions, ['admin', 'lead_edit']) ||
-                            (!user.permissions.includes('admin') && lead.ownerId !== user.id)
-                          }
-                          className="w-full rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {createLeadStatusOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <span className="inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] border border-border bg-[var(--surface-soft)] text-text">
-                        {formatCurrency(lead.value)}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelectedLead(lead);
-                        }}
-                        className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
-                      >
-                        Update
-                      </button>
-                    </div>
+                <div
+                  className="mb-3 hidden rounded-3xl border border-border bg-[var(--surface-soft)] px-4 py-3 md:grid md:items-center md:gap-3"
+                  style={{ gridTemplateColumns: listGridTemplateColumns }}
+                >
+                  {selectedLeadColumns.map((column) => (
+                    <p
+                      key={column.key}
+                      className="flex items-center gap-2 truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-muted"
+                    >
+                      <span className="truncate">{column.label}</span>
+                      {column.key === 'created' ? (
+                        <span aria-hidden="true">↓</span>
+                      ) : (
+                        <span aria-hidden="true">↕</span>
+                      )}
+                    </p>
                   ))}
                 </div>
-                <p className="text-sm text-muted">
-                  Showing {filteredLeads.length} of {leads.length} leads
-                </p>
+
+                <div className="overflow-hidden rounded-3xl border border-border bg-surface">
+                  {paginatedLeads.map((lead) => renderLeadListRow(lead))}
+                  {paginatedLeads.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted">
+                      No leads match the current filters.
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex flex-col gap-3 rounded-3xl border border-border bg-[var(--surface-soft)] px-4 py-4 text-sm text-muted md:flex-row md:items-center md:justify-between">
+                  <p>
+                    Showing {listRangeStart}-{listRangeEnd} of {filteredLeads.length} leads
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setListPage((current) => Math.max(1, current - 1))}
+                      disabled={listPage === 1}
+                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                      Page {listPage} / {listPageCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setListPage((current) => Math.min(listPageCount, current + 1))}
+                      disabled={listPage === listPageCount}
+                      className="rounded-xl border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -950,6 +1285,92 @@ export default function Page() {
       {error ? (
         <div className="rounded-2xl border border-border/60 bg-rose-500/10 p-4 text-sm text-rose-100">
           {error}
+        </div>
+      ) : null}
+      {isCustomizeColumnsOpen ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
+          onClick={handleCancelColumnDraft}
+        >
+          <DraggablePanel
+            className="w-full max-w-xl rounded-3xl border border-border/60 bg-surface/95 p-5 shadow-floating"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                  Customize Columns
+                </p>
+                <h3 className="mt-2 font-display text-2xl text-text">Lead list columns</h3>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  {columnDraft.length} of {LEAD_LIST_COLUMNS.length} selected
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancelColumnDraft}
+                  className="mt-2 rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted transition hover:bg-hover/80"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <input
+                type="search"
+                value={columnSearch}
+                onChange={(event) => setColumnSearch(event.target.value)}
+                placeholder="Search columns..."
+                className="w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none placeholder:text-muted/80"
+              />
+            </div>
+
+            <div className="mt-5 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+              {filteredColumnOptions.map((column) => {
+                const checked = columnDraft.includes(column.key);
+                return (
+                  <label
+                    key={column.key}
+                    className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text"
+                  >
+                    <span className="font-medium">{column.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => handleToggleColumnDraft(column.key)}
+                      disabled={checked && columnDraft.length === 1}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                );
+              })}
+              {filteredColumnOptions.length === 0 ? (
+                <div className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-6 text-center text-sm text-muted">
+                  No columns match your search.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelColumnDraft}
+                className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm font-semibold text-text transition hover:bg-hover/80"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveColumnDraft}
+                className="rounded-2xl border border-emerald-500 bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600"
+              >
+                Save
+              </button>
+            </div>
+          </DraggablePanel>
         </div>
       ) : null}
       <LeadModal

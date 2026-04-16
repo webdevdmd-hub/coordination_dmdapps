@@ -2285,9 +2285,14 @@ export default function Page() {
                   {selectedTaskColumns.map((column) => (
                     <p
                       key={column.key}
-                      className="truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-muted"
+                      className="flex items-center gap-2 truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-muted"
                     >
-                      {column.label}
+                      <span className="truncate">{column.label}</span>
+                      {column.key === 'date' ? (
+                        <span aria-hidden="true">↓</span>
+                      ) : (
+                        <span aria-hidden="true">↕</span>
+                      )}
                     </p>
                   ))}
                 </div>

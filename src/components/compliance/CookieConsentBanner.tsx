@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 
 import { COOKIE_CONSENT_STORAGE_KEY } from '@/lib/auth/sessionPolicy';
 
@@ -75,7 +76,16 @@ const subscribeToConsent = (onStoreChange: () => void) => {
   };
 };
 
+const subscribeToClientReady = () => () => {};
+const getClientReadySnapshot = () => true;
+const getClientReadyServerSnapshot = () => false;
+
 export function CookieConsentBanner() {
+  const isClientReady = useSyncExternalStore(
+    subscribeToClientReady,
+    getClientReadySnapshot,
+    getClientReadyServerSnapshot,
+  );
   const storedConsentRaw = useSyncExternalStore(
     subscribeToConsent,
     getStoredConsentSnapshot,
@@ -84,7 +94,7 @@ export function CookieConsentBanner() {
   const storedConsent = useMemo(() => parseStoredConsent(storedConsentRaw), [storedConsentRaw]);
   const [showDetails, setShowDetails] = useState(false);
 
-  if (storedConsent) {
+  if (storedConsent || !isClientReady) {
     return null;
   }
 
@@ -103,64 +113,67 @@ export function CookieConsentBanner() {
     setShowDetails(false);
   };
 
-  return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 sm:bottom-6 sm:right-6">
-      <section className="animate-popup-corner pointer-events-auto w-[min(100vw-1.5rem,348px)] rounded-[22px] border border-border/70 bg-surface/98 px-4 py-4 text-text shadow-[0_20px_50px_rgba(15,23,42,0.14)] backdrop-blur">
-        <p className="max-w-[272px] text-[14px] leading-[1.55] sm:text-[15px]">
-          We use cookies to improve your experience on our site. By using our site, you consent to
-          cookies.{' '}
-          <button
-            type="button"
-            onClick={() => setShowDetails((current) => !current)}
-            className="font-extrabold text-accent underline decoration-transparent underline-offset-2 transition hover:decoration-accent"
-          >
-            Learn more
-          </button>
-        </p>
+  return createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[9999]">
+      <div className="absolute bottom-4 right-4 pointer-events-none sm:bottom-6 sm:right-6">
+        <section className="animate-popup-corner pointer-events-auto w-[min(100vw-1.5rem,348px)] rounded-[22px] border border-border/70 bg-surface/98 px-4 py-4 text-text shadow-[0_20px_50px_rgba(15,23,42,0.14)] backdrop-blur">
+          <p className="max-w-[272px] text-[14px] leading-[1.55] sm:text-[15px]">
+            We use cookies to improve your experience on our site. By using our site, you consent to
+            cookies.{' '}
+            <button
+              type="button"
+              onClick={() => setShowDetails((current) => !current)}
+              className="font-extrabold text-accent underline decoration-transparent underline-offset-2 transition hover:decoration-accent"
+            >
+              Learn more
+            </button>
+          </p>
 
-        {showDetails ? (
-          <div className="mt-3 rounded-2xl border border-border/60 bg-surface-soft p-3 text-[12px] leading-5 text-muted">
-            <p>
-              Continue where you left off with essential session cookies that keep your login secure
-              across visits.
-            </p>
-            <p className="mt-2">
-              Declining keeps only essential cookies required for secure sign-in and protected
-              routes.
-            </p>
+          {showDetails ? (
+            <div className="mt-3 rounded-2xl border border-border/60 bg-surface-soft p-3 text-[12px] leading-5 text-muted">
+              <p>
+                Continue where you left off with essential session cookies that keep your login
+                secure across visits.
+              </p>
+              <p className="mt-2">
+                Declining keeps only essential cookies required for secure sign-in and protected
+                routes.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-2.5">
+            <button
+              type="button"
+              onClick={() =>
+                savePreferences('accepted', {
+                  essential: true,
+                  preferences: true,
+                  analytics: true,
+                })
+              }
+              className="block w-full rounded-[14px] bg-accent px-4 py-3 text-center text-[15px] font-bold text-white transition hover:bg-accent-strong"
+            >
+              Allow Cookies
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                savePreferences('declined', {
+                  essential: true,
+                  preferences: false,
+                  analytics: false,
+                })
+              }
+              className="block w-full rounded-[14px] border border-border bg-surface px-4 py-3 text-center text-[15px] font-bold text-text transition hover:bg-surface-soft"
+            >
+              Decline
+            </button>
           </div>
-        ) : null}
-
-        <div className="mt-4 space-y-2.5">
-          <button
-            type="button"
-            onClick={() =>
-              savePreferences('accepted', {
-                essential: true,
-                preferences: true,
-                analytics: true,
-              })
-            }
-            className="block w-full rounded-[14px] bg-accent px-4 py-3 text-center text-[15px] font-bold text-white transition hover:bg-accent-strong"
-          >
-            Allow Cookies
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              savePreferences('declined', {
-                essential: true,
-                preferences: false,
-                analytics: false,
-              })
-            }
-            className="block w-full rounded-[14px] border border-border bg-surface px-4 py-3 text-center text-[15px] font-bold text-text transition hover:bg-surface-soft"
-          >
-            Decline
-          </button>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </div>,
+    document.body,
   );
 }

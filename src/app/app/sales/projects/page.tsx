@@ -151,6 +151,40 @@ const TIMELINE_PAGE_SIZE = 12;
 const PROJECT_MODAL_DRAFT_STORAGE_KEY = 'projects-modal-draft';
 const PROJECT_TASK_MODAL_DRAFT_STORAGE_KEY = 'projects-task-modal-draft';
 const PROJECT_SALES_ORDER_MODAL_DRAFT_STORAGE_KEY = 'projects-sales-order-modal-draft';
+const PROJECT_LIST_PAGE_SIZE_STORAGE_KEY = 'projects-list-page-size';
+const PROJECT_VISIBLE_COLUMNS_STORAGE_KEY = 'projects-visible-columns';
+
+type ProjectListColumnKey =
+  | 'assignee'
+  | 'projectName'
+  | 'customer'
+  | 'startDate'
+  | 'dueDate'
+  | 'updated'
+  | 'status'
+  | 'value'
+  | 'action';
+
+const PROJECT_LIST_COLUMNS: Array<{
+  key: ProjectListColumnKey;
+  label: string;
+  width: string;
+}> = [
+  { key: 'assignee', label: 'Assigned To', width: '1.1fr' },
+  { key: 'projectName', label: 'Project Name', width: '1.3fr' },
+  { key: 'customer', label: 'Customer', width: '1.1fr' },
+  { key: 'startDate', label: 'Start Date', width: '0.9fr' },
+  { key: 'dueDate', label: 'Due Date', width: '0.9fr' },
+  { key: 'updated', label: 'Updated', width: '0.9fr' },
+  { key: 'status', label: 'Status', width: '1fr' },
+  { key: 'value', label: 'Value', width: '0.9fr' },
+  { key: 'action', label: 'Action', width: '0.8fr' },
+];
+
+const DEFAULT_VISIBLE_PROJECT_COLUMNS: ProjectListColumnKey[] = PROJECT_LIST_COLUMNS.map(
+  (column) => column.key,
+);
+const PROJECT_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const emptySalesOrderForm = (): SalesOrderRequestFormState => ({
@@ -260,6 +294,41 @@ export default function Page() {
   const [isStatusOverrideSaving, setIsStatusOverrideSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState<number>(() => {
+    if (typeof window === 'undefined') {
+      return 10;
+    }
+    const stored = window.localStorage.getItem(PROJECT_LIST_PAGE_SIZE_STORAGE_KEY);
+    const parsed = Number(stored);
+    return PROJECT_LIST_PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : 10;
+  });
+  const [visibleListColumns, setVisibleListColumns] = useState<ProjectListColumnKey[]>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_VISIBLE_PROJECT_COLUMNS;
+    }
+    try {
+      const raw = window.localStorage.getItem(PROJECT_VISIBLE_COLUMNS_STORAGE_KEY);
+      if (!raw) {
+        return DEFAULT_VISIBLE_PROJECT_COLUMNS;
+      }
+      const parsed = JSON.parse(raw) as ProjectListColumnKey[];
+      const filtered = parsed.filter((key) =>
+        PROJECT_LIST_COLUMNS.some((column) => column.key === key),
+      );
+      return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_PROJECT_COLUMNS;
+    } catch {
+      return DEFAULT_VISIBLE_PROJECT_COLUMNS;
+    }
+  });
+  const [isCustomizeColumnsOpen, setIsCustomizeColumnsOpen] = useState(false);
+  const [columnSearch, setColumnSearch] = useState('');
+  const [columnDraft, setColumnDraft] = useState<ProjectListColumnKey[]>(
+    DEFAULT_VISIBLE_PROJECT_COLUMNS,
+  );
+  const [columnSnapshot, setColumnSnapshot] = useState<ProjectListColumnKey[]>(
+    DEFAULT_VISIBLE_PROJECT_COLUMNS,
+  );
   const [projectTasks, setProjectTasks] = useState<Task[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isTaskSaving, setIsTaskSaving] = useState(false);
@@ -933,6 +1002,46 @@ export default function Page() {
     });
   }, [projects, search, statusFilter]);
 
+  const visibleProjectColumns = useMemo(() => {
+    const validKeys = new Set(PROJECT_LIST_COLUMNS.map((column) => column.key));
+    const filteredColumns = visibleListColumns.filter((key) => validKeys.has(key));
+    return filteredColumns.length > 0 ? filteredColumns : DEFAULT_VISIBLE_PROJECT_COLUMNS;
+  }, [visibleListColumns]);
+
+  const selectedProjectColumns = useMemo(
+    () => PROJECT_LIST_COLUMNS.filter((column) => visibleProjectColumns.includes(column.key)),
+    [visibleProjectColumns],
+  );
+
+  const listGridTemplateColumns = useMemo(
+    () => selectedProjectColumns.map((column) => `minmax(0, ${column.width})`).join(' '),
+    [selectedProjectColumns],
+  );
+
+  const listPageCount = Math.max(1, Math.ceil(filteredProjects.length / listPageSize));
+  const paginatedProjects = useMemo(() => {
+    const start = (listPage - 1) * listPageSize;
+    return filteredProjects.slice(start, start + listPageSize);
+  }, [filteredProjects, listPage, listPageSize]);
+  const listRangeStart = filteredProjects.length === 0 ? 0 : (listPage - 1) * listPageSize + 1;
+  const listRangeEnd = Math.min(filteredProjects.length, listPage * listPageSize);
+
+  const filteredColumnOptions = useMemo(() => {
+    const term = columnSearch.trim().toLowerCase();
+    return PROJECT_LIST_COLUMNS.filter((column) =>
+      term.length === 0 ? true : column.label.toLowerCase().includes(term),
+    );
+  }, [columnSearch]);
+
+  const pageSizeOptions = useMemo(
+    () =>
+      PROJECT_LIST_PAGE_SIZE_OPTIONS.map((size) => ({
+        id: String(size),
+        name: `${size}`,
+      })),
+    [],
+  );
+
   const totals = useMemo(() => {
     const unassigned = projects.filter((project) => project.status === 'unassigned').length;
     const pending = projects.filter((project) => project.status === 'not-started').length;
@@ -946,6 +1055,33 @@ export default function Page() {
     ...statusOptions.map((status) => status.value),
   ] as const;
   const selectedProjectStatusIndex = Math.max(0, projectStatusFilterOptions.indexOf(statusFilter));
+
+  useEffect(() => {
+    if (listPage > listPageCount) {
+      setListPage(listPageCount);
+    }
+  }, [listPage, listPageCount]);
+
+  useEffect(() => {
+    setListPage(1);
+  }, [search, statusFilter, ownerFilter, listPageSize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(PROJECT_LIST_PAGE_SIZE_STORAGE_KEY, String(listPageSize));
+  }, [listPageSize]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(
+      PROJECT_VISIBLE_COLUMNS_STORAGE_KEY,
+      JSON.stringify(visibleProjectColumns),
+    );
+  }, [visibleProjectColumns]);
 
   const handleOpenCreate = () => {
     if (!user) {
@@ -983,6 +1119,149 @@ export default function Page() {
       event.preventDefault();
       handleEntryOpen(project);
     }
+  };
+
+  const openCustomizeColumns = () => {
+    setColumnSnapshot(visibleProjectColumns);
+    setColumnDraft(visibleProjectColumns);
+    setColumnSearch('');
+    setIsCustomizeColumnsOpen(true);
+  };
+
+  const handleToggleColumnDraft = (key: ProjectListColumnKey) => {
+    setColumnDraft((current) => {
+      if (current.includes(key)) {
+        if (current.length === 1) {
+          return current;
+        }
+        return current.filter((item) => item !== key);
+      }
+      return PROJECT_LIST_COLUMNS.map((column) => column.key).filter(
+        (columnKey) => current.includes(columnKey) || columnKey === key,
+      );
+    });
+  };
+
+  const handleSaveColumnDraft = () => {
+    setVisibleListColumns(columnDraft);
+    setIsCustomizeColumnsOpen(false);
+  };
+
+  const handleCancelColumnDraft = () => {
+    setColumnDraft(columnSnapshot);
+    setIsCustomizeColumnsOpen(false);
+    setColumnSearch('');
+  };
+
+  const renderProjectListRow = (project: Project) => {
+    const ownerName = ownerNameMap.get(project.assignedTo) ?? project.assignedTo;
+    const ownerInitials = ownerName
+      .split(' ')
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+
+    return (
+      <div
+        key={project.id}
+        role={canOpenDetails ? 'button' : undefined}
+        tabIndex={canOpenDetails ? 0 : -1}
+        onClick={() => handleEntryOpen(project)}
+        onKeyDown={(event) => handleEntryKeyDown(event, project)}
+        aria-disabled={!canOpenDetails}
+        className={`grid gap-3 border-b border-border px-3 py-3 last:border-b-0 md:items-center md:gap-3 md:px-4 ${
+          canOpenDetails ? 'cursor-pointer transition hover:bg-[var(--surface-soft)]' : ''
+        }`}
+        style={{ gridTemplateColumns: listGridTemplateColumns }}
+      >
+        {selectedProjectColumns.map((column) => {
+          switch (column.key) {
+            case 'assignee':
+              return (
+                <div key={column.key} className="flex min-w-0 items-center gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
+                    {ownerInitials}
+                  </span>
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
+                    {ownerName}
+                  </p>
+                </div>
+              );
+            case 'projectName':
+              return (
+                <div key={column.key} className="min-w-0">
+                  <p className="truncate text-base font-semibold text-text">{project.name}</p>
+                  <p className="truncate text-xs text-muted">{project.customerName}</p>
+                </div>
+              );
+            case 'customer':
+              return (
+                <p
+                  key={column.key}
+                  className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted"
+                >
+                  {project.customerName}
+                </p>
+              );
+            case 'startDate':
+              return (
+                <p key={column.key} className="text-sm text-text">
+                  {formatDate(project.startDate)}
+                </p>
+              );
+            case 'dueDate':
+              return (
+                <p key={column.key} className="text-sm text-text">
+                  {formatDate(project.dueDate)}
+                </p>
+              );
+            case 'updated':
+              return (
+                <p key={column.key} className="text-sm text-text">
+                  {formatTimelineDate(project.updatedAt)}
+                </p>
+              );
+            case 'status':
+              return (
+                <span
+                  key={column.key}
+                  className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${
+                    statusStyles[project.status]
+                  }`}
+                >
+                  {formatStatusLabel(project.status)}
+                </span>
+              );
+            case 'value':
+              return (
+                <span
+                  key={column.key}
+                  className="inline-flex w-fit rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                >
+                  AED {project.value.toLocaleString()}
+                </span>
+              );
+            case 'action':
+              return canEdit ? (
+                <button
+                  key={column.key}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleOpenEdit(project);
+                  }}
+                  className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
+                >
+                  Update
+                </button>
+              ) : (
+                <div key={column.key} />
+              );
+          }
+        })}
+      </div>
+    );
   };
 
   const handleCloseModal = () => {
@@ -2131,7 +2410,67 @@ export default function Page() {
               </div>
             </div>
           </div>
-          <div className="text-xs text-muted">{filteredProjects.length} projects visible</div>
+          {viewMode === 'list' ? (
+            <div className="flex flex-wrap items-center gap-2 md:justify-end">
+              <button
+                type="button"
+                onClick={openCustomizeColumns}
+                aria-label="Customize columns"
+                title="Customize columns"
+                className="rounded-2xl border border-border bg-[var(--surface-soft)] px-3 py-2 text-text transition hover:bg-hover/80"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="4" y1="6" x2="20" y2="6" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="18" x2="20" y2="18" />
+                  <circle cx="9" cy="6" r="2" />
+                  <circle cx="15" cy="12" r="2" />
+                  <circle cx="11" cy="18" r="2" />
+                </svg>
+              </button>
+              <FilterDropdown
+                value={String(listPageSize)}
+                onChange={(value) => setListPageSize(Number(value))}
+                options={pageSizeOptions}
+                ariaLabel="Projects per page"
+                prefixLabel="Per page"
+                buttonClassName="min-w-[136px] gap-2 bg-[var(--surface-soft)] px-3 py-2 text-[11px] shadow-none"
+              />
+              <div className="flex items-center overflow-hidden rounded-2xl border border-border bg-[var(--surface-soft)]">
+                <button
+                  type="button"
+                  onClick={() => setListPage((current) => Math.max(1, current - 1))}
+                  disabled={listPage === 1}
+                  className="px-2.5 py-2 text-sm text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <span className="border-x border-border px-2.5 py-2 text-sm text-muted">
+                  {listRangeStart}-{listRangeEnd}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setListPage((current) => Math.min(listPageCount, current + 1))}
+                  disabled={listPage === listPageCount}
+                  className="px-2.5 py-2 text-sm text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+              <div className="text-xs text-muted">{filteredProjects.length} projects visible</div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted">{filteredProjects.length} projects visible</div>
+          )}
         </div>
 
         {!canView ? (
@@ -2233,70 +2572,59 @@ export default function Page() {
             ))}
           </div>
         ) : (
-          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-surface">
-            {filteredProjects.map((project) => (
-              <div
-                key={project.id}
-                role={canOpenDetails ? 'button' : undefined}
-                tabIndex={canOpenDetails ? 0 : -1}
-                onClick={() => handleEntryOpen(project)}
-                onKeyDown={(event) => handleEntryKeyDown(event, project)}
-                aria-disabled={!canOpenDetails}
-                className={`grid gap-3 border-b border-border px-3 py-3 last:border-b-0 md:grid-cols-[1.1fr_1.2fr_1fr_0.95fr_1fr_0.9fr_auto] md:items-center md:gap-2 md:px-4 ${
-                  canOpenDetails ? 'cursor-pointer' : ''
-                } transition hover:bg-[var(--surface-soft)]`}
-              >
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-[var(--surface-muted)] text-[11px] font-semibold uppercase tracking-[0.12em] text-text">
-                    {(ownerNameMap.get(project.assignedTo) ?? project.assignedTo)
-                      .split(' ')
-                      .map((word) => word[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
-                  <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-text">
-                    {ownerNameMap.get(project.assignedTo) ?? project.assignedTo}
-                  </p>
-                </div>
-
-                <div className="min-w-0">
-                  <p className="truncate text-base font-semibold text-text">{project.name}</p>
-                  <p className="truncate text-xs text-muted">{project.customerName}</p>
-                </div>
-
-                <p className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                  {project.customerName}
-                </p>
-
-                <p className="text-sm text-text">{formatDate(project.dueDate)}</p>
-
-                <span
-                  className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] ${
-                    statusStyles[project.status]
-                  }`}
+          <div className="mt-6 space-y-4">
+            <div
+              className="hidden rounded-3xl border border-border bg-[var(--surface-soft)] px-4 py-3 md:grid md:items-center md:gap-3"
+              style={{ gridTemplateColumns: listGridTemplateColumns }}
+            >
+              {selectedProjectColumns.map((column) => (
+                <p
+                  key={column.key}
+                  className="flex items-center gap-2 truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-muted"
                 >
-                  {formatStatusLabel(project.status)}
+                  <span className="truncate">{column.label}</span>
+                  {column.key === 'dueDate' ? (
+                    <span aria-hidden="true">↓</span>
+                  ) : (
+                    <span aria-hidden="true">↕</span>
+                  )}
+                </p>
+              ))}
+            </div>
+            <div className="overflow-hidden rounded-3xl border border-border bg-surface">
+              {paginatedProjects.map((project) => renderProjectListRow(project))}
+              {paginatedProjects.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-muted">
+                  No projects match the current filters.
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-col gap-3 rounded-3xl border border-border bg-[var(--surface-soft)] px-4 py-4 text-sm text-muted md:flex-row md:items-center md:justify-between">
+              <p>
+                Showing {listRangeStart}-{listRangeEnd} of {filteredProjects.length} projects
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setListPage((current) => Math.max(1, current - 1))}
+                  disabled={listPage === 1}
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                  Page {listPage} / {listPageCount}
                 </span>
-
-                <span className="inline-flex w-fit rounded-full border border-border bg-[var(--surface-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text">
-                  AED {project.value.toLocaleString()}
-                </span>
-
-                {canEdit ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleOpenEdit(project);
-                    }}
-                    className="rounded-xl border border-border bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text"
-                  >
-                    Update
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setListPage((current) => Math.min(listPageCount, current + 1))}
+                  disabled={listPage === listPageCount}
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-text transition hover:bg-hover/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
               </div>
-            ))}
+            </div>
           </div>
         )}
         {filteredProjects.length === 0 ? (
@@ -2309,6 +2637,93 @@ export default function Page() {
       {error ? (
         <div className="rounded-2xl border border-border/60 bg-rose-500/10 p-4 text-sm text-rose-100">
           {error}
+        </div>
+      ) : null}
+
+      {isCustomizeColumnsOpen ? (
+        <div
+          data-modal-overlay="true"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur"
+          onClick={handleCancelColumnDraft}
+        >
+          <DraggablePanel
+            className="w-full max-w-xl rounded-3xl border border-border/60 bg-surface/95 p-5 shadow-floating"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted">
+                  Customize Columns
+                </p>
+                <h3 className="mt-2 font-display text-2xl text-text">Project list columns</h3>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+                  {columnDraft.length} of {PROJECT_LIST_COLUMNS.length} selected
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancelColumnDraft}
+                  className="mt-2 rounded-full border border-border/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted transition hover:bg-hover/80"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <input
+                type="search"
+                value={columnSearch}
+                onChange={(event) => setColumnSearch(event.target.value)}
+                placeholder="Search columns..."
+                className="w-full rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text outline-none placeholder:text-muted/80"
+              />
+            </div>
+
+            <div className="mt-5 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+              {filteredColumnOptions.map((column) => {
+                const checked = columnDraft.includes(column.key);
+                return (
+                  <label
+                    key={column.key}
+                    className="flex items-center justify-between rounded-2xl border border-border/60 bg-bg/70 px-4 py-3 text-sm text-text"
+                  >
+                    <span className="font-medium">{column.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => handleToggleColumnDraft(column.key)}
+                      disabled={checked && columnDraft.length === 1}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                );
+              })}
+              {filteredColumnOptions.length === 0 ? (
+                <div className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-6 text-center text-sm text-muted">
+                  No columns match your search.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelColumnDraft}
+                className="rounded-2xl border border-border/60 bg-bg/70 px-4 py-2 text-sm font-semibold text-text transition hover:bg-hover/80"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveColumnDraft}
+                className="rounded-2xl border border-emerald-500 bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600"
+              >
+                Save
+              </button>
+            </div>
+          </DraggablePanel>
         </div>
       ) : null}
 
